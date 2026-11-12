@@ -34,7 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -87,7 +87,7 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
         return
     }
 
-    val tabs = graph.sources.map { it.displayName } + "Account"
+    val tabs = graph.sources.map { it.displayName } + "Playlists" + "Account"
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val state by graph.hub.state.collectAsStateWithLifecycle()
     // Re-read feed lists after sign-in / sign-out.
@@ -99,12 +99,14 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
             if (state.current != null) {
                 NowPlayingCard(graph, onFullscreen = { onFullscreenChange(true) })
             }
-            PrimaryTabRow(selectedTabIndex = tab) {
+            PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
                 tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t, maxLines = 1) }) }
             }
             if (tab < graph.sources.size) {
                 val source = graph.sources[tab]
                 SourceTab(graph, source, refreshKey = "$ytSignedIn/$biliLoggedIn")
+            } else if (tab == graph.sources.size) {
+                PlaylistsTab(graph)
             } else {
                 AccountScreen(graph)
             }
@@ -115,6 +117,8 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
 @Composable
 private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
     val s by graph.hub.state.collectAsStateWithLifecycle()
+    var adding by remember { mutableStateOf<VideoItem?>(null) }
+    adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
     Column(Modifier.fillMaxWidth()) {
         if (s.carActive) {
             Box(
@@ -140,6 +144,9 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
                 Icon(painterResource(if (s.isPlaying) R.drawable.ic_pause else R.drawable.ic_play), "Play/pause")
             }
             IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), "Next") }
+            s.current?.let { cur ->
+                IconButton(onClick = { adding = cur }) { Icon(painterResource(R.drawable.ic_playlist_add), "Add to playlist") }
+            }
             if (s.carActive) {
                 IconButton(onClick = graph.hub::toggleMode) {
                     Icon(painterResource(if (s.mode == DisplayMode.FULL) R.drawable.ic_split else R.drawable.ic_fullscreen), "Car layout")
@@ -198,6 +205,8 @@ private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) 
     var query by rememberSaveable(source.id) { mutableStateOf("") }
     var activeQuery by rememberSaveable(source.id) { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var adding by remember { mutableStateOf<VideoItem?>(null) }
+    adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
     val feed = feeds.firstOrNull { it.key == feedKey } ?: feeds.firstOrNull()
 
     val load by produceState<LoadState>(LoadState.Loading, source, feed, activeQuery, reload) {
@@ -251,7 +260,11 @@ private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) 
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     itemsIndexed(l.items, key = { i, it -> "$i:${it.id}" }) { i, item ->
-                        VideoRow(graph, item) { graph.hub.play(item, l.items.drop(i)) }
+                        VideoRow(graph, item, onClick = { graph.hub.playQueue(l.items, i) }) {
+                            IconButton(onClick = { adding = item }) {
+                                Icon(painterResource(R.drawable.ic_playlist_add), "Add to playlist")
+                            }
+                        }
                     }
                 }
             }
@@ -260,7 +273,7 @@ private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) 
 }
 
 @Composable
-private fun VideoRow(graph: AppGraph, item: VideoItem, onClick: () -> Unit) {
+fun VideoRow(graph: AppGraph, item: VideoItem, onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
     val thumb by produceState(graph.thumbnails.cached(item), item) { value = graph.thumbnails.load(item) }
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
@@ -279,5 +292,6 @@ private fun VideoRow(graph: AppGraph, item: VideoItem, onClick: () -> Unit) {
             Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             item.author?.let { Text(it, maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
+        trailing()
     }
 }

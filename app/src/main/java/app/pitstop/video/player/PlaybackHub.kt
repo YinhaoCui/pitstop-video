@@ -110,6 +110,11 @@ class PlaybackHub(
         playAt(q, q.indexOf(item))
     }
 
+    /** Plays [queue] starting at [index]; earlier items stay reachable with previous(). */
+    fun playQueue(queue: List<VideoItem>, index: Int = 0) {
+        if (index in queue.indices) playAt(queue, index)
+    }
+
     private fun playAt(queue: List<VideoItem>, index: Int) {
         val item = queue[index]
         resolveJob?.cancel()

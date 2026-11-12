@@ -100,6 +100,11 @@ class BrowseScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
                     .setOnClickListener { screenManager.push(SourceScreen(carContext, hub, src)) }.build()
             )
         }
+        list.addItem(
+            Row.Builder().setTitle("Playlists").setBrowsable(true)
+                .setImage(carContext.icon(R.drawable.ic_playlist_play))
+                .setOnClickListener { screenManager.push(CarPlaylistsScreen(carContext, hub)) }.build()
+        )
         val upNext = hub.state.value.upNext
         if (upNext.isNotEmpty()) {
             list.addItem(
@@ -193,7 +198,7 @@ class ResultsScreen(
             val row = Row.Builder()
                 .setTitle(item.title.ifBlank { "(untitled)" })
                 .setOnClickListener {
-                    hub.play(item, loaded.drop(i))
+                    hub.playQueue(loaded, i)
                     screenManager.popToRoot()
                 }
             val sub = listOfNotNull(item.author?.takeIf { it.isNotBlank() }, formatDuration(item.durationSec).ifEmpty { null })
@@ -204,5 +209,25 @@ class ResultsScreen(
             list.addItem(row.build())
         }
         return ListTemplate.Builder().setHeader(backHeader(title)).setSingleList(list.build()).build()
+    }
+}
+
+/** The user's playlists (created on the phone). Picking one lists its videos; tapping a video plays from there. */
+class CarPlaylistsScreen(carContext: CarContext, private val hub: PlaybackHub) : Screen(carContext) {
+    override fun onGetTemplate(): Template {
+        val store = carContext.graph.playlists
+        val list = ItemList.Builder().setNoItemsMessage("No playlists yet – create them in the phone app")
+        store.playlists.value.take(carContext.listLimit()).forEach { p ->
+            val row = Row.Builder().setTitle(p.name).addText("${p.items.size} video(s)")
+            if (p.items.isEmpty()) {
+                row.setOnClickListener { }
+            } else {
+                row.setBrowsable(true).setOnClickListener {
+                    screenManager.push(ResultsScreen(carContext, hub, p.name) { store.get(p.id)?.items.orEmpty() })
+                }
+            }
+            list.addItem(row.build())
+        }
+        return ListTemplate.Builder().setHeader(backHeader("Playlists")).setSingleList(list.build()).build()
     }
 }

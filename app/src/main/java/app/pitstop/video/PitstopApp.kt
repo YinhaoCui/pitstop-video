@@ -5,7 +5,9 @@ import android.content.Context
 import app.pitstop.video.bilibili.BiliApi
 import app.pitstop.video.bilibili.BiliCookieJar
 import app.pitstop.video.bilibili.BiliSource
+import app.pitstop.video.core.PlaylistStore
 import app.pitstop.video.core.SourceId
+import java.io.File
 import app.pitstop.video.core.ThumbnailLoader
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.buildHttpClient
@@ -35,6 +37,7 @@ class AppGraph(app: Application) {
     val youTubeAccount = YouTubeAccount(app, http)
     val thumbnails = ThumbnailLoader(app, http)
     val driving = DrivingMonitor(app)
+    val playlists = PlaylistStore(File(app.filesDir, "playlists.json"))
 
     val sources: List<VideoSource> = listOf(
         YouTubeSource(youTubeAccount),
