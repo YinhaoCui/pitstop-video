@@ -80,12 +80,15 @@ class DrivingMonitor(private val context: Context) {
 
     private val locationListener = LocationListener { loc -> if (loc.hasSpeed()) onPhoneSpeed(loc.speed) }
     private var gpsActive = false
+    /** GPS is shared by the Android Auto session and the on-device player; it runs while anyone needs it. */
+    private val gpsUsers = mutableSetOf<String>()
 
     fun hasLocationPermission() =
         context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission")
-    fun startPhoneGps() {
+    fun startPhoneGps(user: String) {
+        gpsUsers += user
         if (gpsActive || !hasLocationPermission()) return
         val lm = context.getSystemService(LocationManager::class.java) ?: return
         runCatching {
@@ -94,8 +97,9 @@ class DrivingMonitor(private val context: Context) {
         }
     }
 
-    fun stopPhoneGps() {
-        if (!gpsActive) return
+    fun stopPhoneGps(user: String) {
+        gpsUsers -= user
+        if (!gpsActive || gpsUsers.isNotEmpty()) return
         context.getSystemService(LocationManager::class.java)?.removeUpdates(locationListener)
         gpsActive = false
     }

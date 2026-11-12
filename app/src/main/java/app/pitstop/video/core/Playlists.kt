@@ -20,7 +20,9 @@ data class Playlist(val id: String, val name: String, val items: List<VideoItem>
 
 /** Pure playlist operations + JSON codec (unit-tested). */
 object PlaylistOps {
-    fun contains(p: Playlist, item: VideoItem) = p.items.any { it.source == item.source && it.id == item.id }
+    /** Same video = same source, id and part (Bilibili parts share one id). */
+    fun contains(p: Playlist, item: VideoItem) =
+        p.items.any { it.source == item.source && it.id == item.id && it.part == item.part }
 
     fun add(p: Playlist, item: VideoItem): Playlist = if (contains(p, item)) p else p.copy(items = p.items + item)
 
@@ -49,6 +51,7 @@ object PlaylistOps {
                             v.thumbnailUrl?.let { put("thumb", it) }
                             v.durationSec?.let { put("duration", it) }
                             v.extra?.let { put("extra", it) }
+                            v.part?.let { put("part", it) }
                         })
                     }
                 })
@@ -75,6 +78,7 @@ object PlaylistOps {
                         thumbnailUrl = v.optString("thumb").ifEmpty { null },
                         durationSec = if (v.has("duration")) v.getLong("duration") else null,
                         extra = v.optString("extra").ifEmpty { null },
+                        part = if (v.has("part")) v.getInt("part") else null,
                     )
                 },
             )

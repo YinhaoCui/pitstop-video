@@ -33,6 +33,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (graph.inCarDevice) graph.driving.startPhoneGps("device")
+    }
+
+    override fun onStop() {
+        graph.driving.stopPhoneGps("device")
+        super.onStop()
+    }
+
     /** Phone full-screen: landscape + hidden system bars. */
     private fun setFullscreen(on: Boolean) {
         fullscreen.value = on

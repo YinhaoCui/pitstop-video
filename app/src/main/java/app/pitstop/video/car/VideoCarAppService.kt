@@ -45,7 +45,7 @@ class VideoSession : Session() {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onCreate(owner: LifecycleOwner) {
                 runCatching { carInfo?.addSpeedListener(ContextCompat.getMainExecutor(carContext), speedListener) }
-                graph.driving.startPhoneGps()
+                graph.driving.startPhoneGps("car")
             }
 
             // Leaving the app on the car screen (opening Maps, Phone, ...) pauses the video.
@@ -56,7 +56,7 @@ class VideoSession : Session() {
             override fun onDestroy(owner: LifecycleOwner) {
                 hub.player.pause()
                 runCatching { carInfo?.removeSpeedListener(speedListener) }
-                graph.driving.stopPhoneGps()
+                graph.driving.stopPhoneGps("car")
                 renderer.release()
             }
         })

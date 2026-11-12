@@ -1,21 +1,33 @@
 # Pitstop Video
 
-A personal Android Auto app for watching videos on the car screen **while parked**:
-YouTube, Bilibili (signed in or not), and offline videos stored on the phone.
+A video player for watching videos on a car's screen **while parked**:
+YouTube, Bilibili (signed in or not), and offline videos stored on the device.
 
-Target setup: Pixel 9 Pro · Android 17 (API 37) · Mazda CX-5 (Mazda Connect, Android Auto).
+Developed on a Pixel 9 Pro · Android 17 · Mazda CX-5 (Android Auto), and built to run on:
+
+| Where | How |
+|---|---|
+| **Android Auto, any car brand** | Phone app projected to the car screen. Wide, portrait and small screens; touch, rotary knob and touchpad. |
+| **Android Automotive OS** (Google built-in: Volvo, Polestar, GM, Honda, …) | Install the APK on the car. The app runs on the car screen; the car blocks video while driving. |
+| **Aftermarket Android head units** | Install the APK on the unit and turn on *Account → This device is installed in a car* (GPS-based lock). |
+| **Phones, tablets, foldables** | Android 8.0+. Side-by-side layout on tablets / landscape; picture-in-picture; split-screen. |
+
+Not supported: Apple CarPlay / iOS (CarPlay does not allow third-party video apps), Huawei HiCar and Baidu CarLife (closed SDKs).
 
 ## Features
 
 | | |
 |---|---|
 | **YouTube** | Popular + search without an account. Optional Google sign-in adds *Subscriptions* and *Liked videos*. |
-| **Bilibili** | Recommended / Popular / search without an account (≤ 480–720p). Sign in (web page or QR code) for 1080p and the *Following* feed. |
-| **Offline** | Every video in the phone's MediaStore (Camera, Downloads, Movies…). No network needed. |
-| **Car: full screen** | Video fills the whole infotainment screen. |
-| **Car: split screen** | Video on the left, title / progress / up-next on the right. Toggle with the *Split / Full* button. |
-| **Phone** | Inline player, full-screen landscape, picture-in-picture, and Android split-screen (multi-window). |
-| **Parked-only lock** | When the car moves the car-screen video pauses and is hidden. Speed comes from the car, or the phone GPS as a fallback. |
+| **Bilibili** | Recommended / Popular / search without an account (≤ 480–720p). Sign in (web page or QR code) for 1080p and the *Following* feed. Multi-part videos (分P) expand into one queue entry per part. |
+| **Offline** | Every video in the device's MediaStore (Camera, Downloads, Movies…). No network needed. |
+| **Subtitles** | YouTube: uploaded tracks, auto-generated in your language, and auto-translation into your language. Bilibili: uploaded and AI subtitles (AI ones usually need login). *CC* on the phone player; *Queue → CC* on the car screen cycles Off → languages. |
+| **Queue** | Car: *Queue* opens a side panel over the playing video; tap any entry (or Bilibili part) to jump to it. Phone: queue button in the now-playing bar. |
+| **Playlists** | Mix YouTube, Bilibili and offline videos; play or shuffle from the phone or the car. |
+| **Car: full screen** | Video fills the visible screen; title and author show with Android Auto's buttons. |
+| **Car: split screen** | Video beside (or, on portrait screens, above) title / progress / up-next. Toggle with *Split / Full*. |
+| **Parked-only lock** | When the car moves, car-screen video pauses and is hidden. Speed comes from the car, or GPS as a fallback. |
+| **Device-aware quality** | Picks only streams the device can decode; on a decoder failure it retries once at 480p AVC. |
 
 Pick a video on the car screen (*Browse*) or on the phone — the same player is shared, and
 when Android Auto is connected the video goes to the car display.
@@ -45,7 +57,7 @@ app/src/main/java/app/pitstop/video/
 
 ## Build
 
-Requirements: JDK 17+ (21 used), Android SDK platform 37.
+Requirements: JDK 17+ (21 used), Android SDK platform 37. The app itself runs on Android 8.0 (API 26) and newer.
 
 ```bash
 ./gradlew testDebugUnitTest assembleDebug

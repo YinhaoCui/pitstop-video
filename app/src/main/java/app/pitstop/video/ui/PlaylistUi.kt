@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -144,6 +145,41 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
         text = { Text("The playlist is removed. The videos themselves are not affected.") },
         confirmButton = { TextButton(onClick = { graph.playlists.delete(p.id); confirmDelete = false; onBack() }) { Text("Delete") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+    )
+}
+
+/** What's queued (including the parts of a multi-part Bilibili video); tap one to jump to it. */
+@Composable
+fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
+    val s by graph.hub.state.collectAsStateWithLifecycle()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (s.queue.isEmpty()) "Queue" else "Queue (${s.index + 1}/${s.queue.size})") },
+        text = {
+            if (s.queue.isEmpty()) {
+                Text("Nothing queued.")
+            } else {
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    itemsIndexed(s.queue, key = { i, it -> "$i:${it.id}:${it.part}" }) { i, item ->
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable { if (i != s.index) graph.hub.playQueue(s.queue, i); onDismiss() }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (i == s.index) Icon(painterResource(R.drawable.ic_play), "Now playing", Modifier.size(20.dp))
+                            else Spacer(Modifier.size(20.dp))
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                item.title, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                style = if (i == s.index) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
 }
 

@@ -15,6 +15,7 @@ import androidx.car.app.model.MessageTemplate
 import androidx.car.app.model.Row
 import androidx.car.app.model.SearchTemplate
 import androidx.car.app.model.Template
+import androidx.car.app.navigation.model.MapWithContentTemplate
 import androidx.car.app.navigation.model.NavigationTemplate
 import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.Lifecycle
@@ -76,14 +77,15 @@ class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
                     .setOnClickListener { hub.toggleMode() }.build()
             )
             .addAction(
-                Action.Builder().setIcon(carContext.icon(R.drawable.ic_skip_next))
-                    .setOnClickListener { hub.next() }.build()
+                Action.Builder().setTitle("Queue").setIcon(carContext.icon(R.drawable.ic_playlist_play))
+                    .setOnClickListener { screenManager.push(QueueScreen(carContext, hub)) }.build()
             )
             .build()
+        // Android Auto allows 4 actions per strip; "previous" lives in the Queue panel.
         val seek = ActionStrip.Builder()
             .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_replay_10)).setOnClickListener { hub.seekBy(-10_000) }.build())
             .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_forward_10)).setOnClickListener { hub.seekBy(10_000) }.build())
-            .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_skip_previous)).setOnClickListener { hub.previous() }.build())
+            .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_skip_next)).setOnClickListener { hub.next() }.build())
             // Android Auto keeps navigation-category apps alive in the map slot; give the driver a real way out.
             .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_close)).setOnClickListener {
                 hub.player.pause()
@@ -91,6 +93,67 @@ class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
             }.build())
             .build()
         return NavigationTemplate.Builder().setActionStrip(actions).setMapActionStrip(seek).build()
+    }
+}
+
+/**
+ * The current playlist / queue as a side panel over the still-playing video (car API 7+,
+ * MapWithContentTemplate); older hosts get a regular full-screen list. Tap an entry to jump to it.
+ */
+class QueueScreen(carContext: CarContext, private val hub: PlaybackHub) : Screen(carContext) {
+    init {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                hub.state.map { Triple(it.queue to it.index, it.subtitle, it.subtitleOptions to it.wantsToPlay) }
+                    .distinctUntilChanged().collect { invalidate() }
+            }
+        }
+    }
+
+    override fun onGetTemplate(): Template {
+        val s = hub.state.value
+        val limit = carContext.listLimit()
+        // Show the window of the queue around what's playing (one before, then what's next).
+        val start = (s.index - 1).coerceAtLeast(0).coerceAtMost((s.queue.size - limit).coerceAtLeast(0))
+        val list = ItemList.Builder().setNoItemsMessage("Nothing queued – pick videos with Browse")
+        s.queue.withIndex().drop(start).take(limit).forEach { (i, item) ->
+            val row = Row.Builder().setTitle(item.title.ifBlank { "(untitled)" })
+            val sub = listOfNotNull(
+                if (i == s.index) "▶ Now playing" else null,
+                item.author?.takeIf { it.isNotBlank() },
+                formatDuration(item.durationSec).ifEmpty { null },
+            )
+            if (sub.isNotEmpty()) row.addText(sub.joinToString(" · "))
+            if (i == s.index) row.setImage(carContext.icon(R.drawable.ic_play))
+            row.setOnClickListener {
+                if (i != s.index) hub.playQueue(s.queue, i)
+                screenManager.pop()
+            }
+            list.addItem(row.build())
+        }
+        val title = if (s.queue.isEmpty()) "Queue" else "Queue (${s.index + 1}/${s.queue.size})"
+        val listTemplate = ListTemplate.Builder().setHeader(backHeader(title)).setSingleList(list.build()).build()
+        if (carContext.carAppApiLevel < 7) return listTemplate
+
+        val strip = ActionStrip.Builder()
+            .addAction(
+                Action.Builder()
+                    .setIcon(carContext.icon(if (s.wantsToPlay) R.drawable.ic_pause else R.drawable.ic_play))
+                    .setOnClickListener { hub.togglePause() }.build()
+            )
+        if (s.subtitleOptions.isNotEmpty()) {
+            // Cycles Off -> each language -> Off.
+            strip.addAction(
+                Action.Builder()
+                    .setTitle(s.subtitle?.let { "CC: $it" } ?: "CC: Off")
+                    .setIcon(carContext.icon(R.drawable.ic_subtitles))
+                    .setOnClickListener { hub.cycleSubtitles() }.build()
+            )
+        }
+        return MapWithContentTemplate.Builder()
+            .setContentTemplate(listTemplate)
+            .setActionStrip(strip.build())
+            .build()
     }
 }
 

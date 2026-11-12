@@ -23,6 +23,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,10 +60,18 @@ fun AccountScreen(graph: AppGraph) {
         HorizontalDivider()
         Text("Using it in the car", style = MaterialTheme.typography.titleMedium)
         Text(
-            "1. Android Auto settings → tap Version 10× → ⋮ → Developer settings → enable “Unknown sources”.\n" +
-                "2. Android Auto settings → Customize launcher → make sure Pitstop Video is shown.\n" +
-                "3. Connect to the car and open Pitstop Video from the Android Auto launcher.\n" +
-                "Video only plays while the car is parked.",
+            if (graph.isAutomotiveOs) {
+                "This car runs Android Automotive OS: use Pitstop Video directly on this screen. " +
+                    "The car blocks video while driving."
+            } else {
+                "Android Auto (any car brand):\n" +
+                    "1. Android Auto settings → tap Version 10× → ⋮ → Developer settings → enable “Unknown sources”.\n" +
+                    "2. Connect to the car; Pitstop Video is in the app grid (A–Z, after Phone).\n" +
+                    "3. Use ✕ on the car screen to close it.\n\n" +
+                    "Aftermarket Android head unit: install the APK on the unit and turn on " +
+                    "“This device is installed in a car” above.\n\n" +
+                    "Video only plays while the car is parked."
+            },
             style = MaterialTheme.typography.bodyMedium,
         )
     }
@@ -204,5 +214,28 @@ private fun SafetySection(graph: AppGraph) {
         Button(onClick = {
             launcher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }) { Text("Allow location (GPS speed fallback)") }
+    }
+
+    // Head units / car tablets: this screen itself is in the car, so the lock applies here too.
+    var inCar by remember { mutableStateOf(graph.inCarDevice) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("This device is installed in a car", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (graph.isAutomotiveOs) "Android Automotive OS detected – always on."
+                else "For aftermarket Android head units and car-mounted tablets: video on this screen " +
+                    "pauses while driving (needs location).",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Switch(
+            checked = inCar,
+            enabled = !graph.isAutomotiveOs,
+            onCheckedChange = { on ->
+                graph.inCarDevice = on
+                inCar = graph.inCarDevice
+                if (on) graph.driving.startPhoneGps("device") else graph.driving.stopPhoneGps("device")
+            },
+        )
     }
 }

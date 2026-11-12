@@ -9,6 +9,7 @@ object StreamSelector {
         /** "avc", "hevc", "av1", "vp9" ... */
         val codec: String,
         val bandwidth: Long = 0,
+        val width: Int = 0,
     )
 
     data class AudioTrack(val url: String, val bandwidth: Long, val codec: String = "")
@@ -22,9 +23,18 @@ object StreamSelector {
         else -> 4
     }
 
-    /** Highest resolution not above [maxHeight] (falls back to the smallest one), best codec within it. */
-    fun pickVideo(tracks: List<VideoTrack>, maxHeight: Int = 1080): VideoTrack? {
+    /**
+     * Highest resolution not above [maxHeight] (falls back to the smallest one), best codec within it.
+     * Tracks the device can't decode ([supported] false) are dropped first, unless nothing is left.
+     */
+    fun pickVideo(
+        tracks: List<VideoTrack>,
+        maxHeight: Int = 1080,
+        supported: (VideoTrack) -> Boolean = { true },
+    ): VideoTrack? {
         if (tracks.isEmpty()) return null
+        val playable = tracks.filter(supported)
+        if (playable.isNotEmpty() && playable.size < tracks.size) return pickVideo(playable, maxHeight)
         val allowed = tracks.filter { it.height in 1..maxHeight }
         val pool = allowed.ifEmpty { listOf(tracks.minBy { it.height }) }
         val best = pool.maxOf { it.height }

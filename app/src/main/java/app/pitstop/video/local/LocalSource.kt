@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.MediaStore
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.PlayableStream
@@ -17,13 +18,19 @@ import kotlinx.coroutines.withContext
 /** Videos stored on the phone (MediaStore). Works fully offline. */
 class LocalSource(private val context: Context) : VideoSource {
     override val id = SourceId.LOCAL
-    override val displayName = "On this phone"
+    override val displayName = "On this device"
 
     override fun feeds() = listOf(Feed(FEED_ALL, "All videos"))
 
+    /** Android 13+ has a video-only permission (plus "selected videos" on 14+); older versions use storage. */
+    val requiredPermissions: Array<String> = when {
+        Build.VERSION.SDK_INT >= 34 -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+        Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
+        else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
+
     fun hasPermission(): Boolean =
-        listOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-            .any { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+        requiredPermissions.any { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
     override suspend fun load(feed: Feed): List<VideoItem> = query(null)
 
@@ -32,8 +39,8 @@ class LocalSource(private val context: Context) : VideoSource {
     override suspend fun resolve(item: VideoItem) = PlayableStream(item.id)
 
     private suspend fun query(nameFilter: String?): List<VideoItem> = withContext(Dispatchers.IO) {
-        if (!hasPermission()) throw UserFacingException("Allow video access in Pitstop Video on the phone")
-        val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        if (!hasPermission()) throw UserFacingException("Allow video access in Pitstop Video (On this device tab)")
+        val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
             MediaStore.Video.Media._ID,
             MediaStore.Video.Media.DISPLAY_NAME,

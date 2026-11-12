@@ -11,6 +11,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -94,11 +97,8 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
     val ytSignedIn by graph.youTubeAccount.signedIn.collectAsStateWithLifecycle()
     val biliLoggedIn by graph.biliCookies.loggedIn.collectAsStateWithLifecycle()
 
-    Surface(Modifier.fillMaxSize()) {
-        Column(Modifier.safeDrawingPadding()) {
-            if (state.current != null) {
-                NowPlayingCard(graph, onFullscreen = { onFullscreenChange(true) })
-            }
+    val browser: @Composable () -> Unit = {
+        Column {
             PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
                 tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t, maxLines = 1) }) }
             }
@@ -112,6 +112,35 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
             }
         }
     }
+
+    Surface(Modifier.fillMaxSize()) {
+        BoxWithConstraints(Modifier.safeDrawingPadding()) {
+            // Tablets, foldables, landscape phones and in-car / head-unit screens: player and
+            // library side by side. Narrow portrait phones: player stacked above the library.
+            val twoPane = maxWidth >= 600.dp && maxWidth > maxHeight * 0.9f
+            if (twoPane) {
+                Row(Modifier.fillMaxSize()) {
+                    Column(Modifier.weight(0.55f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                        if (state.current != null) {
+                            NowPlayingCard(graph, onFullscreen = { onFullscreenChange(true) })
+                        } else {
+                            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color(0xFF0F172A)), contentAlignment = Alignment.Center) {
+                                Text("Pick a video", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    }
+                    Box(Modifier.weight(0.45f).fillMaxHeight()) { browser() }
+                }
+            } else {
+                Column {
+                    if (state.current != null) {
+                        NowPlayingCard(graph, onFullscreen = { onFullscreenChange(true) })
+                    }
+                    browser()
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -119,6 +148,8 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
     val s by graph.hub.state.collectAsStateWithLifecycle()
     var adding by remember { mutableStateOf<VideoItem?>(null) }
     adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
+    var showQueue by remember { mutableStateOf(false) }
+    if (showQueue) QueueDialog(graph) { showQueue = false }
     Column(Modifier.fillMaxWidth()) {
         if (s.carActive) {
             Box(
@@ -144,6 +175,7 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
                 Icon(painterResource(if (s.wantsToPlay) R.drawable.ic_pause else R.drawable.ic_play), "Play/pause")
             }
             IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), "Next") }
+            IconButton(onClick = { showQueue = true }) { Icon(painterResource(R.drawable.ic_playlist_play), "Queue") }
             s.current?.let { cur ->
                 IconButton(onClick = { adding = cur }) { Icon(painterResource(R.drawable.ic_playlist_add), "Add to playlist") }
             }
@@ -163,16 +195,32 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
 @Composable
 fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
     val s by graph.hub.state.collectAsStateWithLifecycle()
-    AndroidView(
-        modifier = modifier.background(Color.Black),
-        factory = { ctx -> PlayerView(ctx).apply { setShowNextButton(false); setShowPreviousButton(false) } },
-        update = { view ->
-            view.useController = showControls
-            val wanted = if (s.carActive) null else graph.hub.player
-            if (view.player !== wanted) view.player = wanted
-        },
-        onRelease = { it.player = null },
-    )
+    Box(modifier.background(Color.Black)) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                PlayerView(ctx).apply {
+                    setShowNextButton(false); setShowPreviousButton(false); setShowSubtitleButton(true)
+                }
+            },
+            update = { view ->
+                view.useController = showControls && !s.drivingLocked
+                val wanted = if (s.carActive) null else graph.hub.player
+                if (view.player !== wanted) view.player = wanted
+            },
+            onRelease = { it.player = null },
+        )
+        // On a car screen (Automotive OS / head unit) video is hidden while moving.
+        if (s.drivingLocked && !s.carActive) {
+            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                Text(
+                    "Video is paused while the car is moving.\nPark to keep watching.",
+                    color = Color.White, style = MaterialTheme.typography.titleMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
+    }
 }
 
 private sealed interface LoadState {
@@ -190,10 +238,10 @@ private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) 
         }
         if (!granted) {
             Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Allow access to videos stored on this phone to play them offline in the car.")
+                Text("Allow access to videos stored on this device to play them offline.")
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = {
-                    launcher.launch(arrayOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED))
+                    launcher.launch(source.requiredPermissions)
                 }) { Text("Allow video access") }
             }
             return

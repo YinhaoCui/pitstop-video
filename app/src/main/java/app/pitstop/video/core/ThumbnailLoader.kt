@@ -3,7 +3,9 @@ package app.pitstop.video.core
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.util.LruCache
 import android.util.Size
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +31,20 @@ class ThumbnailLoader(private val context: Context, private val http: OkHttpClie
             withContext(Dispatchers.IO) {
                 runCatching {
                     if (item.source == SourceId.LOCAL) {
-                        context.contentResolver.loadThumbnail(Uri.parse(item.id), Size(width, width * 9 / 16), null)
+                        if (Build.VERSION.SDK_INT >= 29) {
+                            context.contentResolver.loadThumbnail(Uri.parse(item.id), Size(width, width * 9 / 16), null)
+                        } else {
+                            MediaMetadataRetriever().run {
+                                try {
+                                    setDataSource(context, Uri.parse(item.id))
+                                    getFrameAtTime(1_000_000)?.let { f ->
+                                        Bitmap.createScaledBitmap(f, width, f.height * width / f.width.coerceAtLeast(1), true)
+                                    }
+                                } finally {
+                                    release()
+                                }
+                            }
+                        }
                     } else {
                         val url = item.thumbnailUrl ?: return@runCatching null
                         http.newCall(Request.Builder().url(url).build()).execute().use { resp ->

@@ -11,8 +11,8 @@ android {
 
     defaultConfig {
         applicationId = "app.pitstop.video"
-        // Pixel 9 Pro ships Android 14+; Android 17 is API 37.
-        minSdk = 33
+        // Android 8.0+: older phones, tablets and most aftermarket Android head units.
+        minSdk = 26
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"

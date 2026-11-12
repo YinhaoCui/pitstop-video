@@ -65,6 +65,9 @@ class CarPresentation(
     private lateinit var upNext: LinearLayout
     private lateinit var lockOverlay: TextView
     private lateinit var fullProgress: ProgressBar
+    private lateinit var overlayInfo: LinearLayout
+    private lateinit var overlayTitle: TextView
+    private lateinit var overlayAuthor: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,13 +78,35 @@ class CarPresentation(
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             setShutterBackgroundColor(Color.BLACK)
             setKeepContentOnPlayerReset(true)
+            subtitleView?.setFractionalTextSize(androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 1.25f)
         }
         status = text(ctx, 20f, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(24), 0, dp(24), 0) }
         fullProgress = horizontalBar(ctx)
+        // Full mode: title + author top-left, shown together with Android Auto's buttons.
+        overlayTitle = text(ctx, 18f, bold = true).apply {
+            maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+            setShadowLayer(6f, 0f, 1f, Color.BLACK)
+        }
+        overlayAuthor = text(ctx, 14f).apply {
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(0xFFD0D0D0.toInt()); setShadowLayer(6f, 0f, 1f, Color.BLACK)
+        }
+        overlayInfo = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(20))
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0xCC000000.toInt(), 0x00000000),
+            )
+            addView(overlayTitle)
+            addView(overlayAuthor)
+            visibility = View.GONE
+        }
         videoFrame = FrameLayout(ctx).apply {
             setBackgroundColor(Color.BLACK)
             addView(playerView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(status, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            addView(overlayInfo, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
             addView(fullProgress, FrameLayout.LayoutParams(MATCH_PARENT, dp(4), Gravity.BOTTOM))
         }
 
@@ -124,9 +149,11 @@ class CarPresentation(
 
         playerView.player = hub.player
         scope.launch { hub.state.collect(::render) }
+        scope.launch { hub.infoPokedAt.collect { updateOverlay() } }
         scope.launch {
             while (isActive) {
                 updateProgress()
+                updateOverlay()
                 delay(1_000)
             }
         }
@@ -160,14 +187,30 @@ class CarPresentation(
         } else {
             content.setPadding(0, 0, 0, 0)
         }
-        videoFrame.layoutParams = LinearLayout.LayoutParams(0, MATCH_PARENT, if (split) 0.64f else 1f)
-        panel.layoutParams = LinearLayout.LayoutParams(0, MATCH_PARENT, if (split) 0.36f else 0f)
+        // Portrait or near-square car screens (and narrow side cards): stack video above the panel.
+        val areaW = (area?.width() ?: metrics.widthPixels).toFloat()
+        val areaH = (area?.height() ?: metrics.heightPixels).toFloat()
+        val stacked = split && (areaW < areaH * 1.3f || areaW / metrics.density < 520f)
+        content.orientation = if (stacked) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        if (stacked) {
+            videoFrame.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 0.6f)
+            panel.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 0.4f)
+        } else {
+            videoFrame.layoutParams = LinearLayout.LayoutParams(0, MATCH_PARENT, if (split) 0.64f else 1f)
+            panel.layoutParams = LinearLayout.LayoutParams(0, MATCH_PARENT, if (split) 0.36f else 0f)
+        }
         panel.visibility = if (split) View.VISIBLE else View.GONE
         fullProgress.visibility = if (split) View.GONE else View.VISIBLE
 
         val item = s.current
         title.text = item?.title ?: "Nothing playing"
         author.text = item?.author.orEmpty()
+
+        overlayTitle.text = item?.title.orEmpty()
+        overlayAuthor.text = item?.author.orEmpty()
+        overlayAuthor.visibility = if (item?.author.isNullOrBlank()) View.GONE else View.VISIBLE
+        // Keep the text left of Android Auto's button row, which takes the top right ~40%.
+        overlayInfo.setPadding(dp(16), dp(12), (videoFrame.width * 0.42f).toInt(), dp(20))
         status.text = when {
             s.error != null -> s.error
             s.loading -> "Loading…"
@@ -192,6 +235,14 @@ class CarPresentation(
         lockOverlay.visibility = if (s.drivingLocked) View.VISIBLE else View.GONE
         content.requestLayout()
         updateProgress()
+    }
+
+    /** Title + author for ~8 s after a touch, a button press or a new video (like Android Auto's own buttons). */
+    private fun updateOverlay() {
+        val s = hub.state.value
+        val recent = android.os.SystemClock.elapsedRealtime() - hub.infoPokedAt.value < 8_000
+        overlayInfo.visibility =
+            if (s.mode == DisplayMode.FULL && s.current != null && recent && !s.drivingLocked) View.VISIBLE else View.GONE
     }
 
     private fun updateProgress() {
