@@ -8,7 +8,9 @@ import app.pitstop.video.car.VideoCarAppService
 import app.pitstop.video.bilibili.BiliApi
 import app.pitstop.video.bilibili.BiliCookieJar
 import app.pitstop.video.bilibili.BiliSource
+import app.pitstop.video.core.I18n
 import app.pitstop.video.core.PlaylistStore
+import app.pitstop.video.core.Settings
 import app.pitstop.video.core.SourceId
 import java.io.File
 import app.pitstop.video.core.ThumbnailLoader
@@ -28,6 +30,9 @@ class PitstopApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val settingsPrefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        I18n.init(settingsPrefs)
+        Settings.init(settingsPrefs)
         graph = AppGraph(this)
         // Android Automotive OS runs the app's own screens; the Android Auto (projection) service is unused there.
         if (graph.isAutomotiveOs) {

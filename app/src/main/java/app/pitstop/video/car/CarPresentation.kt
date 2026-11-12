@@ -1,5 +1,8 @@
 package app.pitstop.video.car
 
+import app.pitstop.video.core.I18n
+import app.pitstop.video.core.Settings
+import app.pitstop.video.player.SubtitleStyling
 import android.app.Presentation
 import android.content.Context
 import android.graphics.Color
@@ -78,7 +81,8 @@ class CarPresentation(
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             setShutterBackgroundColor(Color.BLACK)
             setKeepContentOnPlayerReset(true)
-            subtitleView?.setFractionalTextSize(androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 1.25f)
+            // Seen from the driver's seat: a bit larger than on the phone.
+            SubtitleStyling.apply(subtitleView, Settings.subtitles.value, scale = 1.25f)
         }
         status = text(ctx, 20f, bold = true).apply { gravity = Gravity.CENTER; setPadding(dp(24), 0, dp(24), 0) }
         fullProgress = horizontalBar(ctx)
@@ -107,7 +111,7 @@ class CarPresentation(
             addView(playerView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(status, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(overlayInfo, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
-            addView(fullProgress, FrameLayout.LayoutParams(MATCH_PARENT, dp(4), Gravity.BOTTOM))
+            addView(fullProgress, FrameLayout.LayoutParams(MATCH_PARENT, dp(6), Gravity.BOTTOM))
         }
 
         title = text(ctx, 22f, bold = true).apply { maxLines = 3 }
@@ -124,7 +128,7 @@ class CarPresentation(
             addView(progress, LinearLayout.LayoutParams(MATCH_PARENT, dp(6)).apply { topMargin = dp(16) })
             addView(time, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(4) })
             addView(text(ctx, 15f, bold = true).apply {
-                text = "Up next"; setTextColor(0xFF5EEAD4.toInt())
+                text = I18n.s.upNext; setTextColor(0xFF5EEAD4.toInt())
             }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(24) })
             addView(upNext)
         }
@@ -137,7 +141,7 @@ class CarPresentation(
         lockOverlay = text(ctx, 22f, bold = true).apply {
             gravity = Gravity.CENTER
             setBackgroundColor(Color.BLACK)
-            text = "Video is paused while the car is moving.\nPark to keep watching."
+            text = I18n.s.pausedMoving
             visibility = View.GONE
         }
         val root = FrameLayout(ctx).apply {
@@ -150,6 +154,8 @@ class CarPresentation(
         playerView.player = hub.player
         scope.launch { hub.state.collect(::render) }
         scope.launch { hub.infoPokedAt.collect { updateOverlay() } }
+        scope.launch { I18n.language.collect { render(hub.state.value) } }
+        scope.launch { Settings.subtitles.collect { SubtitleStyling.apply(playerView.subtitleView, it, scale = 1.25f) } }
         scope.launch {
             while (isActive) {
                 updateProgress()
@@ -167,7 +173,17 @@ class CarPresentation(
 
     fun setVisibleArea(rect: Rect) {
         visibleArea = rect
-        fullArea = fullArea?.let { Rect(it).apply { union(rect) } } ?: Rect(rect)
+        // Remember the largest area so Android Auto's buttons float over the video instead of
+        // shrinking it. A big horizontal change (layout switch: full width <-> card, or a side panel)
+        // starts over instead, so the video never ends up under the media card.
+        // A side panel opening pushes the left edge far right: keep the layout area for that case.
+        val f = fullArea
+        fullArea = when {
+            f == null -> Rect(rect)
+            rect.left - f.left > f.width() * 0.15f -> f
+            Math.abs(rect.left - f.left) > f.width() * 0.15f || Math.abs(rect.right - f.right) > f.width() * 0.15f -> Rect(rect)
+            else -> Rect(f).apply { union(rect) }
+        }
         if (::content.isInitialized) render(hub.state.value)
     }
 
@@ -175,7 +191,11 @@ class CarPresentation(
         val split = s.mode == DisplayMode.SPLIT
         // Android Auto's surface extends under its own rail and side cards; only the visible area
         // is actually seen, so both layouts are fitted into it.
-        val area = if (split) visibleArea else fullArea ?: visibleArea
+        val area = when {
+            split -> visibleArea
+            s.panelOpen -> shrunkArea()
+            else -> fullArea ?: visibleArea
+        }
         val metrics = context.resources.displayMetrics
         if (area != null && !area.isEmpty) {
             content.setPadding(
@@ -203,19 +223,35 @@ class CarPresentation(
         fullProgress.visibility = if (split) View.GONE else View.VISIBLE
 
         val item = s.current
-        title.text = item?.title ?: "Nothing playing"
+        title.text = item?.title ?: I18n.s.nothingPlaying
         author.text = item?.author.orEmpty()
 
         overlayTitle.text = item?.title.orEmpty()
         overlayAuthor.text = item?.author.orEmpty()
         overlayAuthor.visibility = if (item?.author.isNullOrBlank()) View.GONE else View.VISIBLE
-        // Keep the text left of Android Auto's button row, which takes the top right ~40%.
-        overlayInfo.setPadding(dp(16), dp(12), (videoFrame.width * 0.42f).toInt(), dp(20))
+        // Wide screens: top-left, left of Android Auto's top button row (right ~50%).
+        // Narrow layouts (e.g. beside the media card): bottom-left, clear of the right button column.
+        val wide = videoFrame.width / context.resources.displayMetrics.density >= 900f
+        (overlayInfo.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+            val g = if (wide) Gravity.TOP else Gravity.BOTTOM
+            if (lp.gravity != g) {
+                lp.gravity = g
+                overlayInfo.layoutParams = lp
+            }
+        }
+        overlayInfo.background = android.graphics.drawable.GradientDrawable(
+            if (wide) android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM
+            else android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP,
+            intArrayOf(0xCC000000.toInt(), 0x00000000),
+        )
+        if (wide) overlayInfo.setPadding(dp(16), dp(12), (videoFrame.width * 0.52f).toInt(), dp(20))
+        else overlayInfo.setPadding(dp(16), dp(20), dp(88), dp(16))
         status.text = when {
+            s.scrubMs != null -> clock(s.scrubMs)
             s.error != null -> s.error
-            s.loading -> "Loading…"
-            s.buffering && s.wantsToPlay -> "Buffering…"
-            item == null -> "Tap Browse to pick a video,\nor choose one on your phone."
+            s.loading -> I18n.s.loading
+            s.buffering && s.wantsToPlay -> I18n.s.buffering
+            item == null -> I18n.s.tapBrowse
             else -> ""
         }
         status.visibility = if (status.text.isNullOrEmpty()) View.GONE else View.VISIBLE
@@ -232,6 +268,11 @@ class CarPresentation(
             text = "—"; setTextColor(0xFF808080.toInt()); setPadding(0, dp(10), 0, 0)
         })
 
+        lockOverlay.text = if (s.audioOnly) {
+            "♪  ${I18n.s.audioOnlyDriving}\n\n${item?.title.orEmpty()}\n\n${I18n.s.audioOnlyPark}"
+        } else {
+            I18n.s.pausedMoving
+        }
         lockOverlay.visibility = if (s.drivingLocked) View.VISIBLE else View.GONE
         content.requestLayout()
         updateProgress()
@@ -242,13 +283,45 @@ class CarPresentation(
         val s = hub.state.value
         val recent = android.os.SystemClock.elapsedRealtime() - hub.infoPokedAt.value < 8_000
         overlayInfo.visibility =
-            if (s.mode == DisplayMode.FULL && s.current != null && recent && !s.drivingLocked) View.VISIBLE else View.GONE
+            if (s.mode == DisplayMode.FULL && s.current != null && recent && !s.drivingLocked && !s.panelOpen) View.VISIBLE else View.GONE
     }
+
+    /** While a side panel (Browse, Queue, ...) is open: the part of the screen beside it. */
+    private fun shrunkArea(): Rect? {
+        val full = fullArea ?: return visibleArea
+        val vis = visibleArea
+        // Use what Android Auto reports when it accounts for the panel; else assume a left panel of ~42%.
+        if (vis != null && vis.width() < full.width() * 0.85f) return vis
+        return Rect(full.left + (full.width() * 0.42f).toInt(), full.top, full.right, full.bottom)
+    }
+
+    private fun clock(posMs: Long): String {
+        val dur = hub.player.duration
+        return if (dur != C.TIME_UNSET && dur > 0) "${formatDuration(posMs / 1000)} / ${formatDuration(dur / 1000)}"
+        else formatDuration(posMs / 1000)
+    }
+
+    /**
+     * Tap on the progress bar: position along it (0..1), or null when the tap was elsewhere.
+     * The touch target is generous (bottom 56 dp of the video) because the bar is thin.
+     */
+    fun progressFraction(x: Float, y: Float): Float? {
+        if (!::videoFrame.isInitialized || hub.state.value.mode != DisplayMode.FULL) return null
+        val loc = IntArray(2).also(videoFrame::getLocationInWindow)
+        val left = loc[0].toFloat()
+        val bottom = (loc[1] + videoFrame.height).toFloat()
+        if (y < bottom - dp(56) || y > bottom + dp(8) || x < left || x > left + videoFrame.width) return null
+        return ((x - left) / videoFrame.width).coerceIn(0f, 1f)
+    }
+
+    /** Horizontal drag distance as a fraction of the progress bar width. */
+    fun dragFraction(distanceX: Float): Float =
+        if (!::videoFrame.isInitialized || videoFrame.width == 0) 0f else -distanceX / videoFrame.width
 
     private fun updateProgress() {
         val p = hub.player
         val dur = p.duration
-        val pos = p.currentPosition
+        val pos = hub.state.value.scrubMs ?: p.currentPosition
         val pct = if (dur != C.TIME_UNSET && dur > 0) (pos * 1000 / dur).toInt() else 0
         progress.progress = pct
         fullProgress.progress = pct

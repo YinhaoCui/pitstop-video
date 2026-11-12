@@ -45,7 +45,18 @@ class CarVideoRenderer(
     override fun onSurfaceDestroyed(container: SurfaceContainer) = release()
 
     /** A tap brings back Android Auto's buttons; show the title with them, but never pause. */
-    override fun onClick(x: Float, y: Float) = hub.pokeInfo()
+    override fun onClick(x: Float, y: Float) {
+        // Tap on the progress bar jumps there; anywhere else just shows the title (never pauses).
+        val f = presentation?.progressFraction(x, y)
+        if (f != null) hub.seekToFraction(f) else hub.pokeInfo()
+    }
+
+    /** Horizontal drag on the video scrubs through it, like dragging a progress bar. */
+    override fun onScroll(distanceX: Float, distanceY: Float) {
+        if (Math.abs(distanceX) <= Math.abs(distanceY)) return
+        val f = presentation?.dragFraction(distanceX) ?: return
+        if (f != 0f) hub.scrubBy(f)
+    }
 
     fun release() {
         presentation?.dismiss()

@@ -1,5 +1,7 @@
 package app.pitstop.video.ui
 
+import app.pitstop.video.core.S
+import app.pitstop.video.core.I18n
 import android.Manifest
 import android.content.Intent
 import android.graphics.Bitmap
@@ -52,26 +54,21 @@ fun AccountScreen(graph: AppGraph) {
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        LanguageSection()
+        HorizontalDivider()
+        SubtitleSettingsSection()
+        HorizontalDivider()
+        Text(S.accounts, style = MaterialTheme.typography.titleLarge)
         YouTubeSection(graph)
         HorizontalDivider()
         BilibiliSection(graph)
         HorizontalDivider()
         SafetySection(graph)
+        DrivingAudioSection()
         HorizontalDivider()
-        Text("Using it in the car", style = MaterialTheme.typography.titleMedium)
+        Text(S.usingInCar, style = MaterialTheme.typography.titleMedium)
         Text(
-            if (graph.isAutomotiveOs) {
-                "This car runs Android Automotive OS: use Pitstop Video directly on this screen. " +
-                    "The car blocks video while driving."
-            } else {
-                "Android Auto (any car brand):\n" +
-                    "1. Android Auto settings → tap Version 10× → ⋮ → Developer settings → enable “Unknown sources”.\n" +
-                    "2. Connect to the car; Pitstop Video is in the app grid (A–Z, after Phone).\n" +
-                    "3. Use ✕ on the car screen to close it.\n\n" +
-                    "Aftermarket Android head unit: install the APK on the unit and turn on " +
-                    "“This device is installed in a car” above.\n\n" +
-                    "Video only plays while the car is parked."
-            },
+            if (graph.isAutomotiveOs) S.aaosHelp else S.aaHelp,
             style = MaterialTheme.typography.bodyMedium,
         )
     }
@@ -87,22 +84,21 @@ private fun YouTubeSection(graph: AppGraph) {
         runCatching { account.completeSignIn(res.data) }.onFailure { message = it.message }
     }
 
-    Text("YouTube", style = MaterialTheme.typography.titleMedium)
+    Text(S.youtube, style = MaterialTheme.typography.titleMedium)
     Text(
-        if (signedIn) "Signed in – Subscriptions and Liked videos are available."
-        else "Works without signing in (Popular + search). Sign in to add your Subscriptions and Liked videos.",
+        if (signedIn) S.youtubeSignedIn else S.youtubeSignedOut,
         style = MaterialTheme.typography.bodyMedium,
     )
     if (signedIn) {
-        OutlinedButton(onClick = account::signOut) { Text("Sign out of YouTube") }
+        OutlinedButton(onClick = account::signOut) { Text(S.signOutYoutube) }
     } else {
         Button(onClick = {
             scope.launch {
                 runCatching { account.beginSignIn() }
                     .onSuccess { pi -> pi?.let { launcher.launch(IntentSenderRequest.Builder(it.intentSender).build()) } }
-                    .onFailure { message = "Google sign-in failed: ${it.message}. See README → YouTube sign-in setup." }
+                    .onFailure { message = I18n.s.googleFailed(it.message) }
             }
-        }) { Text("Sign in with Google") }
+        }) { Text(S.signInGoogle) }
     }
     message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }
@@ -119,18 +115,17 @@ private fun BilibiliSection(graph: AppGraph) {
         name = if (loggedIn) runCatching { graph.biliApi.profile().name }.getOrNull() else null
     }
 
-    Text("Bilibili", style = MaterialTheme.typography.titleMedium)
+    Text(S.bilibili, style = MaterialTheme.typography.titleMedium)
     Text(
-        if (loggedIn) "Signed in${name?.let { " as $it" } ?: ""} – Following feed and higher quality (1080p) are available."
-        else "Works without signing in (up to 480p/720p). Sign in for 1080p and your Following feed.",
+        if (loggedIn) S.biliSignedIn(name) else S.biliSignedOut,
         style = MaterialTheme.typography.bodyMedium,
     )
     if (loggedIn) {
-        OutlinedButton(onClick = { graph.biliCookies.logout() }) { Text("Sign out of Bilibili") }
+        OutlinedButton(onClick = { graph.biliCookies.logout() }) { Text(S.signOutBili) }
     } else {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { webLogin.launch(Intent(context, BiliLoginActivity::class.java)) }) { Text("Sign in (web)") }
-            OutlinedButton(onClick = { showQr = true }) { Text("Sign in (QR code)") }
+            Button(onClick = { webLogin.launch(Intent(context, BiliLoginActivity::class.java)) }) { Text(S.signInWeb) }
+            OutlinedButton(onClick = { showQr = true }) { Text(S.signInQr) }
         }
     }
     if (showQr) BiliQrDialog(graph.biliApi) { showQr = false }
@@ -140,18 +135,18 @@ private fun BilibiliSection(graph: AppGraph) {
 private fun BiliQrDialog(api: BiliApi, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var qr by remember { mutableStateOf<BiliApi.QrCode?>(null) }
-    var status by remember { mutableStateOf("Generating QR code…") }
+    var status by remember { mutableStateOf(I18n.s.qrGenerating) }
 
     LaunchedEffect(Unit) {
-        val code = runCatching { api.qrGenerate() }.getOrElse { status = "Failed: ${it.message}"; return@LaunchedEffect }
+        val code = runCatching { api.qrGenerate() }.getOrElse { status = I18n.s.failed(it.message); return@LaunchedEffect }
         qr = code
-        status = "Scan with the Bilibili app on another device, or tap “Open in Bilibili app”."
+        status = I18n.s.qrScanHint
         repeat(90) {
             delay(2_000)
             when (runCatching { api.qrPoll(code.key) }.getOrNull()) {
                 BiliApi.QrState.DONE -> { onDismiss(); return@LaunchedEffect }
-                BiliApi.QrState.SCANNED -> status = "Scanned – confirm the login in the Bilibili app."
-                BiliApi.QrState.EXPIRED -> { status = "QR code expired. Close and try again."; return@LaunchedEffect }
+                BiliApi.QrState.SCANNED -> status = I18n.s.qrScanned
+                BiliApi.QrState.EXPIRED -> { status = I18n.s.qrExpired; return@LaunchedEffect }
                 else -> Unit
             }
         }
@@ -159,12 +154,12 @@ private fun BiliQrDialog(api: BiliApi, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Bilibili QR login") },
+        title = { Text(S.qrTitle) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 qr?.let { code ->
                     val bmp = remember(code.url) { qrBitmap(code.url) }
-                    Image(bmp.asImageBitmap(), "QR code", Modifier.size(220.dp))
+                    Image(bmp.asImageBitmap(), S.qrCode, Modifier.size(220.dp))
                 }
                 Text(status)
             }
@@ -174,10 +169,10 @@ private fun BiliQrDialog(api: BiliApi, onDismiss: () -> Unit) {
                 TextButton(onClick = {
                     val deepLink = Uri.parse("bilibili://browser?url=" + Uri.encode(code.url))
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, deepLink)) }
-                }) { Text("Open in Bilibili app") }
+                }) { Text(S.openInBili) }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(S.close) } },
     )
 }
 
@@ -196,35 +191,35 @@ private fun SafetySection(graph: AppGraph) {
         hasLocation = graph.driving.hasLocationPermission()
     }
 
-    Text("Parked-only safety lock", style = MaterialTheme.typography.titleMedium)
+    Text(S.safetyTitle, style = MaterialTheme.typography.titleMedium)
     Text(
-        "Video on the car screen pauses and hides whenever the car moves. Speed comes from the car " +
-            "when Android Auto provides it, otherwise from the phone's GPS.",
+        S.safetyText,
         style = MaterialTheme.typography.bodyMedium,
     )
     Text(
-        "Speed source: " + when (signal) {
-            DrivingMonitor.Signal.CAR -> "car"
-            DrivingMonitor.Signal.PHONE_GPS -> "phone GPS"
-            DrivingMonitor.Signal.NONE -> "none yet"
-        } + if (moving) " · moving" else " · stopped",
+        S.speedSource(
+            when (signal) {
+                DrivingMonitor.Signal.CAR -> S.speedCar
+                DrivingMonitor.Signal.PHONE_GPS -> S.speedGps
+                DrivingMonitor.Signal.NONE -> S.speedNone
+            },
+            moving,
+        ),
         style = MaterialTheme.typography.bodySmall,
     )
     if (!hasLocation) {
         Button(onClick = {
             launcher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-        }) { Text("Allow location (GPS speed fallback)") }
+        }) { Text(S.allowLocation) }
     }
 
     // Head units / car tablets: this screen itself is in the car, so the lock applies here too.
     var inCar by remember { mutableStateOf(graph.inCarDevice) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("This device is installed in a car", style = MaterialTheme.typography.bodyLarge)
+            Text(S.inCarTitle, style = MaterialTheme.typography.bodyLarge)
             Text(
-                if (graph.isAutomotiveOs) "Android Automotive OS detected – always on."
-                else "For aftermarket Android head units and car-mounted tablets: video on this screen " +
-                    "pauses while driving (needs location).",
+                if (graph.isAutomotiveOs) S.inCarAaos else S.inCarText,
                 style = MaterialTheme.typography.bodySmall,
             )
         }

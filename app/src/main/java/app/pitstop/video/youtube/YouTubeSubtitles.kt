@@ -14,7 +14,7 @@ object YouTubeSubtitles {
     private fun lang(tag: String) = tag.substringBefore('-').substringBefore('_').lowercase()
 
     fun pick(all: List<Candidate>, deviceLanguage: String, max: Int = 8): List<SubtitleTrack> {
-        val device = deviceLanguage.lowercase()
+        val device = lang(deviceLanguage)
         val manual = all.filter { !it.auto }
         val autoMine = all.filter { it.auto && lang(it.languageTag) == device }
         val chosen = (manual.sortedByDescending { lang(it.languageTag) == device } + autoMine)

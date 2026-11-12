@@ -1,5 +1,6 @@
 package app.pitstop.video.bilibili
 
+import app.pitstop.video.core.I18n
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
@@ -8,12 +9,12 @@ import app.pitstop.video.core.VideoSource
 
 class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) : VideoSource {
     override val id = SourceId.BILIBILI
-    override val displayName = "Bilibili"
+    override val displayName get() = I18n.s.bilibili
 
     override fun feeds(): List<Feed> = buildList {
-        add(Feed(FEED_RECOMMENDED, "Recommended"))
-        add(Feed(FEED_POPULAR, "Popular"))
-        if (cookies.loggedIn.value) add(Feed(FEED_FOLLOWING, "Following"))
+        add(Feed(FEED_RECOMMENDED, I18n.s.recommended))
+        add(Feed(FEED_POPULAR, I18n.s.popular))
+        if (cookies.loggedIn.value) add(Feed(FEED_FOLLOWING, I18n.s.following))
     }
 
     override suspend fun load(feed: Feed): List<VideoItem> = when (feed.key) {

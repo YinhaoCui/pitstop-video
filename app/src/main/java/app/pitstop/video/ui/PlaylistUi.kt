@@ -1,5 +1,6 @@
 package app.pitstop.video.ui
 
+import app.pitstop.video.core.S
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -58,12 +59,12 @@ fun PlaylistsTab(graph: AppGraph) {
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("${playlists.size} playlist(s)", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-            Button(onClick = { creating = true }) { Text("New playlist") }
+            Text(S.playlistCount(playlists.size), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Button(onClick = { creating = true }) { Text(S.newPlaylist) }
         }
         if (playlists.isEmpty()) {
             Text(
-                "No playlists yet. Tap + next to any video to add it to a playlist, or create one here.",
+                S.noPlaylists,
                 Modifier.padding(24.dp),
             )
         }
@@ -77,17 +78,17 @@ fun PlaylistsTab(graph: AppGraph) {
                     Spacer(Modifier.size(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(p.name, style = MaterialTheme.typography.titleMedium)
-                        Text("${p.items.size} video(s)", style = MaterialTheme.typography.bodySmall)
+                        Text(S.videoCount(p.items.size), style = MaterialTheme.typography.bodySmall)
                     }
                     IconButton(onClick = { graph.hub.playQueue(p.items) }, enabled = p.items.isNotEmpty()) {
-                        Icon(painterResource(R.drawable.ic_play), "Play all")
+                        Icon(painterResource(R.drawable.ic_play), S.playAll)
                     }
                 }
                 HorizontalDivider()
             }
         }
     }
-    if (creating) NameDialog("New playlist", "", onDismiss = { creating = false }) {
+    if (creating) NameDialog(S.newPlaylist, "", onDismiss = { creating = false }) {
         openId = graph.playlists.create(it).id
         creating = false
     }
@@ -100,51 +101,51 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_back), "Back") }
+            IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_back), S.back) }
             Text(
                 p.name, Modifier.weight(1f).clickable { renaming = true },
                 style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
-            IconButton(onClick = { confirmDelete = true }) { Icon(painterResource(R.drawable.ic_delete), "Delete playlist") }
+            IconButton(onClick = { confirmDelete = true }) { Icon(painterResource(R.drawable.ic_delete), S.deletePlaylist) }
         }
         Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { graph.hub.playQueue(p.items) }, enabled = p.items.isNotEmpty()) {
-                Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.size(6.dp)); Text("Play all")
+                Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.size(6.dp)); Text(S.playAll)
             }
             OutlinedButton(onClick = { graph.hub.playQueue(p.items.shuffled()) }, enabled = p.items.size > 1) {
-                Icon(painterResource(R.drawable.ic_shuffle), null); Spacer(Modifier.size(6.dp)); Text("Shuffle")
+                Icon(painterResource(R.drawable.ic_shuffle), null); Spacer(Modifier.size(6.dp)); Text(S.shuffle)
             }
         }
         Spacer(Modifier.height(8.dp))
-        if (p.items.isEmpty()) Text("Empty. Tap + next to a video in any tab to add it here.", Modifier.padding(24.dp))
+        if (p.items.isEmpty()) Text(S.playlistEmpty, Modifier.padding(24.dp))
         LazyColumn(Modifier.fillMaxSize()) {
             itemsIndexed(p.items, key = { i, it -> "$i:${it.source}:${it.id}" }) { i, item ->
                 VideoRow(graph, item, onClick = { graph.hub.playQueue(p.items, i) }) {
                     Column {
                         IconButton(onClick = { graph.playlists.move(p.id, i, i - 1) }, enabled = i > 0, modifier = Modifier.size(32.dp)) {
-                            Icon(painterResource(R.drawable.ic_arrow_up), "Move up")
+                            Icon(painterResource(R.drawable.ic_arrow_up), S.moveUp)
                         }
                         IconButton(onClick = { graph.playlists.move(p.id, i, i + 1) }, enabled = i < p.items.lastIndex, modifier = Modifier.size(32.dp)) {
-                            Icon(painterResource(R.drawable.ic_arrow_down), "Move down")
+                            Icon(painterResource(R.drawable.ic_arrow_down), S.moveDown)
                         }
                     }
                     IconButton(onClick = { graph.playlists.removeAt(p.id, i) }) {
-                        Icon(painterResource(R.drawable.ic_delete), "Remove from playlist")
+                        Icon(painterResource(R.drawable.ic_delete), S.removeFromPlaylist)
                     }
                 }
             }
         }
     }
-    if (renaming) NameDialog("Rename playlist", p.name, onDismiss = { renaming = false }) {
+    if (renaming) NameDialog(S.renamePlaylist, p.name, onDismiss = { renaming = false }) {
         graph.playlists.rename(p.id, it)
         renaming = false
     }
     if (confirmDelete) AlertDialog(
         onDismissRequest = { confirmDelete = false },
-        title = { Text("Delete “${p.name}”?") },
-        text = { Text("The playlist is removed. The videos themselves are not affected.") },
-        confirmButton = { TextButton(onClick = { graph.playlists.delete(p.id); confirmDelete = false; onBack() }) { Text("Delete") } },
-        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        title = { Text(S.deleteConfirm(p.name)) },
+        text = { Text(S.deleteExplain) },
+        confirmButton = { TextButton(onClick = { graph.playlists.delete(p.id); confirmDelete = false; onBack() }) { Text(S.delete) } },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(S.cancel) } },
     )
 }
 
@@ -154,10 +155,10 @@ fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
     val s by graph.hub.state.collectAsStateWithLifecycle()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (s.queue.isEmpty()) "Queue" else "Queue (${s.index + 1}/${s.queue.size})") },
+        title = { Text(if (s.queue.isEmpty()) S.queue else S.queueCount(s.index + 1, s.queue.size)) },
         text = {
             if (s.queue.isEmpty()) {
-                Text("Nothing queued.")
+                Text(S.nothingQueuedPhone)
             } else {
                 LazyColumn(Modifier.heightIn(max = 420.dp)) {
                     itemsIndexed(s.queue, key = { i, it -> "$i:${it.id}:${it.part}" }) { i, item ->
@@ -167,7 +168,7 @@ fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
                                 .padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            if (i == s.index) Icon(painterResource(R.drawable.ic_play), "Now playing", Modifier.size(20.dp))
+                            if (i == s.index) Icon(painterResource(R.drawable.ic_play), S.nowPlaying, Modifier.size(20.dp))
                             else Spacer(Modifier.size(20.dp))
                             Spacer(Modifier.size(8.dp))
                             Text(
@@ -179,7 +180,7 @@ fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(S.close) } },
     )
 }
 
@@ -190,7 +191,7 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
     var creating by remember { mutableStateOf(false) }
 
     if (creating) {
-        NameDialog("New playlist", "", onDismiss = onDismiss) {
+        NameDialog(S.newPlaylist, "", onDismiss = onDismiss) {
             graph.playlists.create(it, listOf(item))
             onDismiss()
         }
@@ -198,7 +199,7 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to playlist") },
+        title = { Text(S.addToPlaylist) },
         text = {
             Column {
                 Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
@@ -210,13 +211,13 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
                             .padding(vertical = 12.dp),
                     ) {
                         Text(p.name, Modifier.weight(1f))
-                        Text(if (already) "added" else "${p.items.size}", style = MaterialTheme.typography.bodySmall)
+                        Text(if (already) S.added else "${p.items.size}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { creating = true }) { Text("New playlist") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = { creating = true }) { Text(S.newPlaylist) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(S.cancel) } },
     )
 }
 
@@ -226,8 +227,8 @@ private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, on
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { OutlinedTextField(name, { name = it }, singleLine = true, placeholder = { Text("Name") }) },
-        confirmButton = { TextButton(onClick = { onConfirm(name) }, enabled = name.isNotBlank()) { Text("OK") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        text = { OutlinedTextField(name, { name = it }, singleLine = true, placeholder = { Text(S.name) }) },
+        confirmButton = { TextButton(onClick = { onConfirm(name) }, enabled = name.isNotBlank()) { Text(S.ok) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(S.cancel) } },
     )
 }

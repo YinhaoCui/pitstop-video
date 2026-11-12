@@ -1,5 +1,6 @@
 package app.pitstop.video.bilibili
 
+import app.pitstop.video.core.I18n
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
@@ -110,7 +111,7 @@ class BiliApi(
 
     /** Video posts from followed uploaders (requires login). */
     suspend fun following(): List<VideoItem> {
-        if (!cookies.loggedIn.value) throw UserFacingException("Sign in to Bilibili on the phone first")
+        if (!cookies.loggedIn.value) throw UserFacingException(I18n.s.needBiliLogin)
         val items = data("https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?type=video&page=1")
             .optJSONArray("items")
         return items.objects().mapNotNull { post ->

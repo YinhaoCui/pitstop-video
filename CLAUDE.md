@@ -15,7 +15,10 @@ Car App Library 1.7 for the car. See README.md for the architecture overview.
 - `PlaybackHub` owns the only ExoPlayer. Phone and car views attach/detach their surface; the car wins
   while `HubState.carActive` is true.
 - The parked-only lock (`DrivingMonitor` → `HubState.drivingLocked`) must stay mandatory: never add a
-  setting that lets video play on the car screen while moving.
+  setting that lets *video* show on a car screen while moving. Audio-only mode (video track disabled,
+  picture hidden) is the only allowed alternative to pausing.
+- All user-visible text lives in `core/I18n.kt` (English + Simplified Chinese); use `S.x` in Compose,
+  `I18n.s.x` elsewhere. Never hard-code UI strings.
 - Every source implements `core/VideoSource`; add new feeds there instead of special-casing the UI.
 - Car templates: the root must stay a `NavigationTemplate` (it is what provides the drawing surface).
   Respect host limits (max 4 actions per strip, list length from `ConstraintManager`).

@@ -1,5 +1,8 @@
 package app.pitstop.video.ui
 
+import app.pitstop.video.player.SubtitleStyling
+import app.pitstop.video.core.Settings
+import app.pitstop.video.core.S
 import android.Manifest
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -84,13 +87,13 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             PhonePlayer(graph, Modifier.fillMaxSize(), showControls = true)
             IconButton(onClick = { onFullscreenChange(false) }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
-                Icon(painterResource(R.drawable.ic_split), contentDescription = "Exit full screen", tint = Color.White)
+                Icon(painterResource(R.drawable.ic_split), contentDescription = S.exitFullScreen, tint = Color.White)
             }
         }
         return
     }
 
-    val tabs = graph.sources.map { it.displayName } + "Playlists" + "Account"
+    val tabs = graph.sources.map { S.sourceName(it.id) } + S.playlists + S.account
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val state by graph.hub.state.collectAsStateWithLifecycle()
     // Re-read feed lists after sign-in / sign-out.
@@ -125,7 +128,7 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
                             NowPlayingCard(graph, onFullscreen = { onFullscreenChange(true) })
                         } else {
                             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color(0xFF0F172A)), contentAlignment = Alignment.Center) {
-                                Text("Pick a video", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                                Text(S.pickVideo, color = Color.White, style = MaterialTheme.typography.titleMedium)
                             }
                         }
                     }
@@ -157,7 +160,7 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    if (s.drivingLocked) "Paused – car is moving" else "Playing on the car display",
+                    if (s.audioOnly) S.audioOnlyPhone else if (s.drivingLocked) S.pausedCarMoving else S.playingOnCar,
                     color = Color.White, style = MaterialTheme.typography.titleMedium,
                 )
             }
@@ -167,24 +170,24 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(s.current?.title.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                val sub = s.error ?: if (s.loading) "Loading…" else s.current?.author.orEmpty()
+                val sub = s.error ?: if (s.loading) S.loading else s.current?.author.orEmpty()
                 Text(sub, maxLines = 1, style = MaterialTheme.typography.bodySmall,
                     color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = graph.hub::togglePause) {
-                Icon(painterResource(if (s.wantsToPlay) R.drawable.ic_pause else R.drawable.ic_play), "Play/pause")
+                Icon(painterResource(if (s.wantsToPlay) R.drawable.ic_pause else R.drawable.ic_play), S.playPause)
             }
-            IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), "Next") }
-            IconButton(onClick = { showQueue = true }) { Icon(painterResource(R.drawable.ic_playlist_play), "Queue") }
+            IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), S.next) }
+            IconButton(onClick = { showQueue = true }) { Icon(painterResource(R.drawable.ic_playlist_play), S.queue) }
             s.current?.let { cur ->
-                IconButton(onClick = { adding = cur }) { Icon(painterResource(R.drawable.ic_playlist_add), "Add to playlist") }
+                IconButton(onClick = { adding = cur }) { Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist) }
             }
             if (s.carActive) {
                 IconButton(onClick = graph.hub::toggleMode) {
-                    Icon(painterResource(if (s.mode == DisplayMode.FULL) R.drawable.ic_split else R.drawable.ic_fullscreen), "Car layout")
+                    Icon(painterResource(if (s.mode == DisplayMode.FULL) R.drawable.ic_split else R.drawable.ic_fullscreen), S.carLayout)
                 }
             } else {
-                IconButton(onClick = onFullscreen) { Icon(painterResource(R.drawable.ic_fullscreen), "Full screen") }
+                IconButton(onClick = onFullscreen) { Icon(painterResource(R.drawable.ic_fullscreen), S.fullScreen) }
             }
         }
     }
@@ -195,6 +198,7 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
 @Composable
 fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
     val s by graph.hub.state.collectAsStateWithLifecycle()
+    val subtitleStyle by Settings.subtitles.collectAsStateWithLifecycle()
     Box(modifier.background(Color.Black)) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -204,6 +208,7 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
                 }
             },
             update = { view ->
+                SubtitleStyling.apply(view.subtitleView, subtitleStyle)
                 view.useController = showControls && !s.drivingLocked
                 val wanted = if (s.carActive) null else graph.hub.player
                 if (view.player !== wanted) view.player = wanted
@@ -214,7 +219,7 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
         if (s.drivingLocked && !s.carActive) {
             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
                 Text(
-                    "Video is paused while the car is moving.\nPark to keep watching.",
+                    if (s.audioOnly) "♪  ${S.audioOnlyDriving}\n${S.audioOnlyPark}" else S.pausedMoving,
                     color = Color.White, style = MaterialTheme.typography.titleMedium,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
@@ -238,11 +243,11 @@ private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) 
         }
         if (!granted) {
             Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Allow access to videos stored on this device to play them offline.")
+                Text(S.allowLocalText)
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = {
                     launcher.launch(source.requiredPermissions)
-                }) { Text("Allow video access") }
+                }) { Text(S.allowVideoAccess) }
             }
             return
         }
@@ -275,7 +280,7 @@ private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) 
                 onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                 singleLine = true,
-                placeholder = { Text("Search ${source.displayName}") },
+                placeholder = { Text(S.searchIn(S.sourceName(source.id))) },
                 leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { activeQuery = query.trim().ifEmpty { null } }),
@@ -301,16 +306,16 @@ private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) 
             is LoadState.Failed -> Column(Modifier.fillMaxWidth().padding(24.dp)) {
                 Text(l.message, color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = { reload++ }) { Text("Retry") }
+                Button(onClick = { reload++ }) { Text(S.retry) }
             }
             is LoadState.Loaded -> if (l.items.isEmpty()) {
-                Text("No videos", Modifier.padding(24.dp))
+                Text(S.noVideos, Modifier.padding(24.dp))
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     itemsIndexed(l.items, key = { i, it -> "$i:${it.id}" }) { i, item ->
                         VideoRow(graph, item, onClick = { graph.hub.playQueue(l.items, i) }) {
                             IconButton(onClick = { adding = item }) {
-                                Icon(painterResource(R.drawable.ic_playlist_add), "Add to playlist")
+                                Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist)
                             }
                         }
                     }

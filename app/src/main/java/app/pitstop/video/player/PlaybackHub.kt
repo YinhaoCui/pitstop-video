@@ -21,6 +21,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import android.net.Uri
 import app.pitstop.video.core.StreamPolicy
+import app.pitstop.video.core.Settings
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
@@ -63,6 +64,12 @@ data class HubState(
     /** Subtitle languages available for the current video, and the one shown (null = off). */
     val subtitleOptions: List<String> = emptyList(),
     val subtitle: String? = null,
+    /** A list / browse panel is open on the car screen: the video shrinks beside it. */
+    val panelOpen: Boolean = false,
+    /** Driving with audio-only mode on: picture hidden, sound keeps playing. */
+    val audioOnly: Boolean = false,
+    /** Position being previewed while the user drags on the car screen; null when not seeking. */
+    val scrubMs: Long? = null,
 ) {
     val current: VideoItem? get() = queue.getOrNull(index)
     val upNext: List<VideoItem> get() = if (index < 0) emptyList() else queue.drop(index + 1)
@@ -149,8 +156,22 @@ class PlaybackHub(
             ) { moving, onCarScreen -> moving && onCarScreen }
                 .distinctUntilChanged()
                 .collect { locked ->
-                    _state.update { it.copy(drivingLocked = locked) }
-                    if (locked) player.pause()
+                    val audioOnly = locked && Settings.audioOnlyWhileDriving.value
+                    _state.update { it.copy(drivingLocked = locked, audioOnly = audioOnly) }
+                    // Audio-only: stop decoding / downloading video, keep the sound. Otherwise pause.
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, locked).build()
+                    if (locked && !audioOnly) player.pause()
+                }
+        }
+        // Subtitle preferences: on/off by default and the preferred language.
+        scope.launch {
+            Settings.subtitles.map { it.showByDefault to Settings.subtitleLanguage() }.distinctUntilChanged()
+                .collect { (show, lang) ->
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !show)
+                        .setPreferredTextLanguage(lang)
+                        .build()
                 }
         }
     }
@@ -199,7 +220,7 @@ class PlaybackHub(
                 player.prepare()
                 if (resumeAtMs > 0) player.seekTo(resumeAtMs)
                 resumeAtMs = 0
-                player.playWhenReady = !_state.value.drivingLocked
+                player.playWhenReady = !_state.value.drivingLocked || _state.value.audioOnly
                 _state.update { it.copy(loading = false) }
             } catch (e: CancellationException) {
                 throw e
@@ -207,6 +228,26 @@ class PlaybackHub(
                 _state.update { it.copy(loading = false, error = e.message ?: e.javaClass.simpleName) }
             }
         }
+    }
+
+    /** Subtitles on (preferred language, else the first track) / off. */
+    fun toggleSubtitles() {
+        pokeInfo()
+        val groups = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        val showing = groups.any { it.isSelected }
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().apply {
+            clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            if (showing || groups.isEmpty()) {
+                setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            } else {
+                val lang = Settings.subtitleLanguage()
+                val match = groups.firstOrNull { g ->
+                    g.getTrackFormat(0).language?.let { it.startsWith(lang.substringBefore('-'), ignoreCase = true) } == true
+                } ?: groups.first()
+                setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                setOverrideForType(TrackSelectionOverride(match.mediaTrackGroup, 0))
+            }
+        }.build()
     }
 
     /** Off -> each available language -> off. The language choice sticks for following videos. */
@@ -250,7 +291,7 @@ class PlaybackHub(
             player.pause()
             return
         }
-        if (_state.value.drivingLocked) return
+        if (_state.value.drivingLocked && !_state.value.audioOnly) return
         if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
         player.play()
     }
@@ -274,6 +315,35 @@ class PlaybackHub(
 
     fun pokeInfo() {
         _infoPokedAt.value = android.os.SystemClock.elapsedRealtime()
+    }
+
+    fun setPanelOpen(open: Boolean) = _state.update { it.copy(panelOpen = open) }
+
+    private var scrubJob: Job? = null
+
+    /** Drag on the car screen: move the preview by [fraction] of the whole video, seek when the drag pauses. */
+    fun scrubBy(fraction: Float) {
+        val dur = player.duration
+        if (dur == C.TIME_UNSET || dur <= 0) return
+        pokeInfo()
+        val base = _state.value.scrubMs ?: player.currentPosition
+        val target = (base + fraction * dur).toLong().coerceIn(0, dur)
+        _state.update { it.copy(scrubMs = target) }
+        scrubJob?.cancel()
+        scrubJob = scope.launch {
+            kotlinx.coroutines.delay(400)
+            player.seekTo(target)
+            kotlinx.coroutines.delay(600)
+            _state.update { it.copy(scrubMs = null) }
+        }
+    }
+
+    /** Tap on the progress bar: jump to that point. */
+    fun seekToFraction(fraction: Float) {
+        val dur = player.duration
+        if (dur == C.TIME_UNSET || dur <= 0) return
+        pokeInfo()
+        player.seekTo((fraction.coerceIn(0f, 1f) * dur).toLong())
     }
 
     fun setCarActive(active: Boolean) = _state.update { it.copy(carActive = active) }

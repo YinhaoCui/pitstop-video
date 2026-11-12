@@ -1,5 +1,6 @@
 package app.pitstop.video.youtube
 
+import app.pitstop.video.core.I18n
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -56,7 +57,7 @@ class YouTubeAccount(private val context: Context, private val http: OkHttpClien
 
     private suspend fun token(): String {
         val result = client.authorize(request()).await()
-        if (result.hasResolution()) throw UserFacingException("Open Pitstop Video on the phone to finish YouTube sign-in")
+        if (result.hasResolution()) throw UserFacingException(I18n.s.finishYoutubeSignIn)
         return result.accessToken ?: throw UserFacingException("YouTube sign-in failed")
     }
 

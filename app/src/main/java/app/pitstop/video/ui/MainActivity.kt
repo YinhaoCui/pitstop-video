@@ -8,7 +8,13 @@ import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import app.pitstop.video.core.I18n
+import app.pitstop.video.core.LocalStrings
+import app.pitstop.video.core.Strings
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -22,6 +28,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val language by I18n.language.collectAsState()
+            CompositionLocalProvider(LocalStrings provides Strings(language)) {
             PitstopTheme {
                 AppRoot(
                     graph = graph,
@@ -29,6 +37,7 @@ class MainActivity : ComponentActivity() {
                     fullscreen = fullscreen.value,
                     onFullscreenChange = ::setFullscreen,
                 )
+            }
             }
         }
     }

@@ -1,5 +1,6 @@
 package app.pitstop.video.local
 
+import app.pitstop.video.core.I18n
 import android.Manifest
 import android.content.ContentUris
 import android.content.Context
@@ -18,9 +19,9 @@ import kotlinx.coroutines.withContext
 /** Videos stored on the phone (MediaStore). Works fully offline. */
 class LocalSource(private val context: Context) : VideoSource {
     override val id = SourceId.LOCAL
-    override val displayName = "On this device"
+    override val displayName get() = I18n.s.onThisDevice
 
-    override fun feeds() = listOf(Feed(FEED_ALL, "All videos"))
+    override fun feeds() = listOf(Feed(FEED_ALL, I18n.s.allVideos))
 
     /** Android 13+ has a video-only permission (plus "selected videos" on 14+); older versions use storage. */
     val requiredPermissions: Array<String> = when {
@@ -39,7 +40,7 @@ class LocalSource(private val context: Context) : VideoSource {
     override suspend fun resolve(item: VideoItem) = PlayableStream(item.id)
 
     private suspend fun query(nameFilter: String?): List<VideoItem> = withContext(Dispatchers.IO) {
-        if (!hasPermission()) throw UserFacingException("Allow video access in Pitstop Video (On this device tab)")
+        if (!hasPermission()) throw UserFacingException(I18n.s.allowVideoAccessHint)
         val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
             MediaStore.Video.Media._ID,
