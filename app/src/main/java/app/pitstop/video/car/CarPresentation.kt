@@ -139,12 +139,17 @@ class CarPresentation(
 
     private fun render(s: HubState) {
         val split = s.mode == DisplayMode.SPLIT
-        // Full mode uses the whole surface for an immersive picture; split mode respects the
-        // area not covered by Android Auto's own controls.
+        // Android Auto's surface extends under its own rail and side cards; only the visible area
+        // is actually seen, so both layouts are fitted into it.
         val area = visibleArea
-        val root = content.parent as? View
-        if (split && area != null && root != null && root.width > 0) {
-            content.setPadding(area.left, area.top, (root.width - area.right).coerceAtLeast(0), (root.height - area.bottom).coerceAtLeast(0))
+        val metrics = context.resources.displayMetrics
+        if (area != null && !area.isEmpty) {
+            content.setPadding(
+                area.left.coerceAtLeast(0),
+                area.top.coerceAtLeast(0),
+                (metrics.widthPixels - area.right).coerceAtLeast(0),
+                (metrics.heightPixels - area.bottom).coerceAtLeast(0),
+            )
         } else {
             content.setPadding(0, 0, 0, 0)
         }

@@ -44,8 +44,8 @@ class CarVideoRenderer(
 
     override fun onSurfaceDestroyed(container: SurfaceContainer) = release()
 
-    /** Tap on the video toggles play / pause (touch is only available while parked on most cars). */
-    override fun onClick(x: Float, y: Float) = hub.togglePause()
+    // No onClick handling: a tap on the video is how the user brings back Android Auto's faded
+    // buttons, so it must not also pause playback.
 
     fun release() {
         presentation?.dismiss()
