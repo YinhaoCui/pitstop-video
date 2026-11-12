@@ -129,26 +129,42 @@ class BiliApi(private val http: OkHttpClient, private val cookies: BiliCookieJar
             mapOf("bvid" to bvid, "cid" to cid.toString(), "qn" to "0", "fnval" to "4048", "fnver" to "0", "fourk" to "1"),
         )
         val headers = mapOf("Referer" to "https://www.bilibili.com/", "User-Agent" to DESKTOP_UA)
+        val overseas = isOverseas()
+        fun url(o: JSONObject): String {
+            val all = listOf(o.optString("baseUrl").ifEmpty { o.optString("base_url") }) +
+                (o.optJSONArray("backupUrl") ?: o.optJSONArray("backup_url")).strings()
+            return BiliCdn.choose(all, overseas) ?: all.first()
+        }
         val dash = d.optJSONObject("dash")
         if (dash != null) {
             val videos = dash.optJSONArray("video").objects().map {
                 StreamSelector.VideoTrack(
-                    url = it.optString("baseUrl").ifEmpty { it.optString("base_url") },
+                    url = url(it),
                     height = it.optInt("height").takeIf { h -> h > 0 } ?: StreamSelector.biliQnHeight(it.optInt("id")),
                     codec = StreamSelector.biliCodec(it.optInt("codecid")),
                     bandwidth = it.optLong("bandwidth"),
                 )
             }
             val audios = dash.optJSONArray("audio").objects().map {
-                StreamSelector.AudioTrack(it.optString("baseUrl").ifEmpty { it.optString("base_url") }, it.optLong("bandwidth"))
+                StreamSelector.AudioTrack(url(it), it.optLong("bandwidth"))
             }
             val v = StreamSelector.pickVideo(videos)
             if (v != null) return PlayableStream(v.url, StreamSelector.pickAudio(audios)?.url, headers)
         }
-        val durl = d.optJSONArray("durl").objects().firstOrNull()?.optString("url")
+        val durl = d.optJSONArray("durl").objects().firstOrNull()?.let { o ->
+            val all = listOf(o.optString("url")) + o.optJSONArray("backup_url").strings()
+            BiliCdn.choose(all, overseas)
+        }
             ?: throw UserFacingException("No playable stream for $bvid (it may need a Bilibili login or be region-locked)")
         return PlayableStream(durl, headers = headers)
     }
+
+    private var overseas: Boolean? = null
+
+    /** Bilibili's own IP geolocation; country_code 86 is mainland China. Defaults to overseas on failure. */
+    private suspend fun isOverseas(): Boolean = overseas ?: runCatching {
+        data("https://api.bilibili.com/x/web-interface/zone").optInt("country_code", 0) != 86
+    }.getOrDefault(true).also { overseas = it }
 
     suspend fun qrGenerate(): QrCode {
         val d = data("https://passport.bilibili.com/x/passport-login/web/qrcode/generate")
@@ -186,6 +202,9 @@ class BiliApi(private val http: OkHttpClient, private val cookies: BiliCookieJar
         extra = o.optLong("cid").takeIf { it > 0 }?.toString(),
     )
 }
+
+private fun JSONArray?.strings(): List<String> =
+    if (this == null) emptyList() else (0 until length()).mapNotNull { optString(it).ifEmpty { null } }
 
 private fun JSONArray?.objects(): List<JSONObject> =
     if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }

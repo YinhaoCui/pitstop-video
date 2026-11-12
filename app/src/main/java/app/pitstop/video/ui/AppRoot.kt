@@ -141,7 +141,7 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
                     color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = graph.hub::togglePause) {
-                Icon(painterResource(if (s.isPlaying) R.drawable.ic_pause else R.drawable.ic_play), "Play/pause")
+                Icon(painterResource(if (s.wantsToPlay) R.drawable.ic_pause else R.drawable.ic_play), "Play/pause")
             }
             IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), "Next") }
             s.current?.let { cur ->

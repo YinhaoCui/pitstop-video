@@ -46,6 +46,9 @@ data class HubState(
     val loading: Boolean = false,
     val error: String? = null,
     val isPlaying: Boolean = false,
+    /** User intent (play pressed); stays true while buffering, so icons don't flicker. */
+    val wantsToPlay: Boolean = false,
+    val buffering: Boolean = false,
     /** True while the Android Auto surface owns the video output. */
     val carActive: Boolean = false,
     val mode: DisplayMode = DisplayMode.FULL,
@@ -84,7 +87,12 @@ class PlaybackHub(
                 _state.update { it.copy(isPlaying = isPlaying) }
             }
 
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                _state.update { it.copy(wantsToPlay = playWhenReady) }
+            }
+
             override fun onPlaybackStateChanged(playbackState: Int) {
+                _state.update { it.copy(buffering = playbackState == Player.STATE_BUFFERING) }
                 if (playbackState == Player.STATE_ENDED) next()
             }
 
@@ -146,7 +154,7 @@ class PlaybackHub(
     }
 
     fun togglePause() {
-        if (player.isPlaying) {
+        if (player.playWhenReady) {
             player.pause()
             return
         }

@@ -67,6 +67,11 @@ Android Auto only shows apps that are not from the Play Store when developer mod
 4. **Customize launcher** → make sure *Pitstop Video* is ticked.
 5. Plug into the CX-5 (or connect wirelessly) and open *Pitstop Video* from the Android Auto launcher.
 
+Pitstop Video is listed in the Android Auto app grid (A–Z, after *Phone*). Because Android Auto
+treats it as a navigation app it stays in the map card until another navigation app replaces it;
+use the **✕** button (bottom right) to pause and close it. Switching to another car app pauses
+the video.
+
 Mazda Connect notes: the touchscreen only works while parked (by Mazda's design); the commander
 knob moves between the on-screen buttons (*Browse*, play/pause, *Split/Full*, next, ±10 s).
 The on-screen keyboard for car search is also parked-only — or search on the phone, which plays
@@ -91,6 +96,9 @@ No client ID needs to go into the code; Google matches the package name + SHA-1.
 - **Sign in (QR code)** shows a QR code to scan with the Bilibili app on another device, or opens the Bilibili app on this phone to confirm.
 
 Cookies are stored in the app's private storage only.
+
+Outside mainland China the app prefers Bilibili's Akamai servers and avoids its peer-to-peer
+(PCDN) nodes, which stall badly abroad (`bilibili/BiliCdn.kt`).
 
 ## Caveats
 

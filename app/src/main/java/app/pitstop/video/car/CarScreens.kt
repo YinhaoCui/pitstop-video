@@ -50,7 +50,7 @@ class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
     init {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                hub.state.map { Triple(it.isPlaying, it.mode, it.drivingLocked) }
+                hub.state.map { Triple(it.wantsToPlay, it.mode, it.drivingLocked) }
                     .distinctUntilChanged()
                     .collect { invalidate() }
             }
@@ -66,7 +66,7 @@ class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
             )
             .addAction(
                 Action.Builder()
-                    .setIcon(carContext.icon(if (s.isPlaying) R.drawable.ic_pause else R.drawable.ic_play))
+                    .setIcon(carContext.icon(if (s.wantsToPlay) R.drawable.ic_pause else R.drawable.ic_play))
                     .setOnClickListener { hub.togglePause() }.build()
             )
             .addAction(
@@ -84,6 +84,11 @@ class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
             .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_replay_10)).setOnClickListener { hub.seekBy(-10_000) }.build())
             .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_forward_10)).setOnClickListener { hub.seekBy(10_000) }.build())
             .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_skip_previous)).setOnClickListener { hub.previous() }.build())
+            // Android Auto keeps navigation-category apps alive in the map slot; give the driver a real way out.
+            .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_close)).setOnClickListener {
+                hub.player.pause()
+                carContext.finishCarApp()
+            }.build())
             .build()
         return NavigationTemplate.Builder().setActionStrip(actions).setMapActionStrip(seek).build()
     }

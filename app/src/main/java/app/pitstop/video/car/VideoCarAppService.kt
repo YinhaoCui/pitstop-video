@@ -48,7 +48,13 @@ class VideoSession : Session() {
                 graph.driving.startPhoneGps()
             }
 
+            // Leaving the app on the car screen (opening Maps, Phone, ...) pauses the video.
+            override fun onStop(owner: LifecycleOwner) {
+                hub.player.pause()
+            }
+
             override fun onDestroy(owner: LifecycleOwner) {
+                hub.player.pause()
                 runCatching { carInfo?.removeSpeedListener(speedListener) }
                 graph.driving.stopPhoneGps()
                 renderer.release()

@@ -46,6 +46,12 @@ class CarPresentation(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var visibleArea: Rect? = null
+    /**
+     * Largest visible area seen for this surface. Android Auto shrinks the visible area while its
+     * buttons are shown; full-screen video uses this instead so it doesn't jump in size and the
+     * buttons simply float over the picture.
+     */
+    private var fullArea: Rect? = null
 
     private lateinit var content: LinearLayout
     private lateinit var videoFrame: FrameLayout
@@ -134,6 +140,7 @@ class CarPresentation(
 
     fun setVisibleArea(rect: Rect) {
         visibleArea = rect
+        fullArea = fullArea?.let { Rect(it).apply { union(rect) } } ?: Rect(rect)
         if (::content.isInitialized) render(hub.state.value)
     }
 
@@ -141,7 +148,7 @@ class CarPresentation(
         val split = s.mode == DisplayMode.SPLIT
         // Android Auto's surface extends under its own rail and side cards; only the visible area
         // is actually seen, so both layouts are fitted into it.
-        val area = visibleArea
+        val area = if (split) visibleArea else fullArea ?: visibleArea
         val metrics = context.resources.displayMetrics
         if (area != null && !area.isEmpty) {
             content.setPadding(
@@ -164,6 +171,7 @@ class CarPresentation(
         status.text = when {
             s.error != null -> s.error
             s.loading -> "Loading…"
+            s.buffering && s.wantsToPlay -> "Buffering…"
             item == null -> "Tap Browse to pick a video,\nor choose one on your phone."
             else -> ""
         }
