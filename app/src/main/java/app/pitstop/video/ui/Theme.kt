@@ -42,6 +42,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.random.Random
+import android.annotation.SuppressLint
+import androidx.compose.foundation.border
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
@@ -273,11 +275,21 @@ fun BrandHeader(title: String, kicker: String, modifier: Modifier = Modifier) {
         }
         Box(Modifier.padding(start = 8.dp)) {
             // Mascot avatar in a soft gradient bubble, with a sparkle.
+            // A personal picture (res/drawable-nodpi/header_avatar.*, local builds only) replaces the
+            // mascot when present; looked up by name so the public source builds without it.
+            val ctx = LocalContext.current
+            @SuppressLint("DiscouragedApi")
+            val personal = remember { ctx.resources.getIdentifier("header_avatar", "drawable", ctx.packageName) }
             Box(
-                Modifier.size(52.dp).clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(Color(0xFFFFE1EE), Color(0xFFE6E0FF), Color(0xFFD6F3FF)))),
+                Modifier.size(56.dp).clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(Color(0xFFFFE1EE), Color(0xFFE6E0FF), Color(0xFFD6F3FF))))
+                    .border(2.dp, Sakura.accentWide, CircleShape),
             ) {
-                Image(painterResource(R.drawable.ill_mascot), null, Modifier.fillMaxSize().padding(top = 3.dp))
+                if (personal != 0) {
+                    Image(painterResource(personal), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                } else {
+                    Image(painterResource(R.drawable.ill_mascot), null, Modifier.fillMaxSize().padding(top = 3.dp))
+                }
             }
             Sparkle(Modifier.align(Alignment.TopEnd).size(14.dp), if (isNight) Sakura.Lemon else Sakura.Pink)
         }
