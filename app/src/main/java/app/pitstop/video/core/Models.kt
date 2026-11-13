@@ -63,11 +63,35 @@ interface VideoSource {
     /** Splits a multi-part video into its parts (Bilibili 分P); null when it is a single video. */
     suspend fun expand(item: VideoItem): List<VideoItem>? = null
 
+    /** True for rows that open like a folder (subfolders + tracks) instead of playing. */
+    fun isFolder(item: VideoItem): Boolean = false
+
+    /** Contents of a folder row: subfolders first, then playable items. */
+    suspend fun browse(item: VideoItem): List<VideoItem> = emptyList()
+
     /** True when [creatorVideos] works (items then carry [VideoItem.authorId]). */
     val supportsCreators: Boolean get() = false
 
     /** Latest videos of one creator (channel / uploader). */
     suspend fun creatorVideos(authorId: String): List<VideoItem> = emptyList()
+}
+
+/**
+ * Every playable track inside a folder row, subfolders included (breadth-first), at most [limit].
+ * A non-folder item is returned as itself.
+ */
+suspend fun VideoSource.folderTracks(item: VideoItem, limit: Int = 1000): List<VideoItem> {
+    if (!isFolder(item)) return listOf(item)
+    val out = mutableListOf<VideoItem>()
+    val pending = ArrayDeque(listOf(item))
+    val seen = mutableSetOf(item.id)
+    while (pending.isNotEmpty() && out.size < limit) {
+        for (child in browse(pending.removeFirst())) {
+            if (isFolder(child)) { if (seen.add(child.id)) pending += child }
+            else if (out.size < limit) out += child
+        }
+    }
+    return out
 }
 
 /**

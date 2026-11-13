@@ -30,6 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import app.pitstop.video.core.folderTracks
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -112,7 +114,7 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
             Button(onClick = { graph.hub.playQueue(p.items) }, enabled = p.items.isNotEmpty()) {
                 Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.size(6.dp)); Text(S.playAll)
             }
-            OutlinedButton(onClick = { graph.hub.playQueue(p.items.shuffled()) }, enabled = p.items.size > 1) {
+            OutlinedButton(onClick = { graph.hub.playShuffled(p.items) }, enabled = p.items.size > 1) {
                 Icon(painterResource(R.drawable.ic_shuffle), null); Spacer(Modifier.size(6.dp)); Text(S.shuffle)
             }
         }
@@ -164,7 +166,7 @@ fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
                     itemsIndexed(s.queue, key = { i, it -> "$i:${it.id}:${it.part}" }) { i, item ->
                         Row(
                             Modifier.fillMaxWidth()
-                                .clickable { if (i != s.index) graph.hub.playQueue(s.queue, i); onDismiss() }
+                                .clickable { graph.hub.jumpTo(i); onDismiss() }
                                 .padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -184,15 +186,26 @@ fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
     )
 }
 
-/** Pick a playlist for [item], or create a new one containing it. */
+/**
+ * Pick a playlist for [item], or create a new one containing it. A folder row adds the songs
+ * inside it (subfolders too), never the folder itself.
+ */
 @Composable
 fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit) {
     val playlists by graph.playlists.playlists.collectAsStateWithLifecycle()
     var creating by remember { mutableStateOf(false) }
+    val source = remember(item.source) { graph.source(item.source) }
+    val isFolder = source.isFolder(item)
+    // null while a folder's songs are still loading.
+    val tracks by produceState<Result<List<VideoItem>>?>(if (isFolder) null else Result.success(listOf(item)), item) {
+        if (isFolder) value = runCatching { source.folderTracks(item) }
+    }
+    val songs = tracks?.getOrNull().orEmpty()
+    val ready = songs.isNotEmpty()
 
     if (creating) {
-        NameDialog(S.newPlaylist, "", onDismiss = onDismiss) {
-            graph.playlists.create(it, listOf(item))
+        NameDialog(S.newPlaylist, if (isFolder) item.title else "", onDismiss = onDismiss) {
+            graph.playlists.create(it, songs)
             onDismiss()
         }
         return
@@ -203,11 +216,24 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
         text = {
             Column {
                 Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                if (isFolder) {
+                    val t = tracks
+                    Text(
+                        when {
+                            t == null -> S.loading
+                            t.isFailure -> t.exceptionOrNull()?.message ?: S.noVideos
+                            songs.isEmpty() -> S.noVideos
+                            else -> S.songsInFolder(songs.size)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (t?.isFailure == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 playlists.forEach { p ->
-                    val already = PlaylistOps.contains(p, item)
+                    val already = ready && songs.all { PlaylistOps.contains(p, it) }
                     Row(
-                        Modifier.fillMaxWidth().clickable(enabled = !already) { graph.playlists.add(p.id, item); onDismiss() }
+                        Modifier.fillMaxWidth().clickable(enabled = ready && !already) { graph.playlists.addAll(p.id, songs); onDismiss() }
                             .padding(vertical = 12.dp),
                     ) {
                         Text(p.name, Modifier.weight(1f))
@@ -216,7 +242,7 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { creating = true }) { Text(S.newPlaylist) } },
+        confirmButton = { TextButton(onClick = { creating = true }, enabled = ready) { Text(S.newPlaylist) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(S.cancel) } },
     )
 }

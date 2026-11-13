@@ -2,6 +2,7 @@ package app.pitstop.video.ui
 
 import app.pitstop.video.player.SubtitleStyling
 import app.pitstop.video.core.Settings
+import app.pitstop.video.core.PlayerStyle
 import app.pitstop.video.core.S
 import android.Manifest
 import androidx.activity.compose.BackHandler
@@ -86,6 +87,7 @@ import app.pitstop.video.local.PermissionSource
 import app.pitstop.video.core.feedsWith
 import app.pitstop.video.core.loadFeed
 import app.pitstop.video.player.DisplayMode
+import app.pitstop.video.player.RepeatMode
 import kotlinx.coroutines.CancellationException
 
 @Composable
@@ -148,11 +150,30 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
                     Box(Modifier.weight(0.45f).fillMaxHeight()) { browser() }
                 }
             } else {
-                Column {
-                    if (state.current != null) {
-                        NowPlayingCard(graph, onFullscreen = { onFullscreenChange(true) })
+                // Narrow phones: library and player are separate screens. A mini bar under the
+                // library opens the player; a new video opens it by itself (it needs to be seen).
+                var playerOpen by rememberSaveable { mutableStateOf(false) }
+                var autoOpenedFor by rememberSaveable { mutableStateOf<String?>(null) }
+                val current = state.current
+                val style by Settings.playerStyle.collectAsStateWithLifecycle()
+                val floating = style == PlayerStyle.FLOATING
+                LaunchedEffect(current?.id, state.isMusic, floating) {
+                    if (current == null) playerOpen = false
+                    // The floating window already shows the video, so only the page style auto-opens.
+                    else if (!floating && !state.isMusic && autoOpenedFor != current.id) { autoOpenedFor = current.id; playerOpen = true }
+                }
+                // The library stays composed under the player, so open folders / scroll survive.
+                Box(Modifier.fillMaxSize()) {
+                    Column {
+                        BoxWithConstraints(Modifier.weight(1f)) {
+                            browser()
+                            if (current != null && floating && !playerOpen) FloatingPlayer(graph, onOpen = { playerOpen = true })
+                        }
+                        if (current != null && !floating) MiniPlayer(graph, onOpen = { playerOpen = true })
                     }
-                    browser()
+                    if (playerOpen && current != null) AppBackground(Modifier.fillMaxSize()) {
+                        PlayerScreen(graph, onClose = { playerOpen = false }, onFullscreen = { onFullscreenChange(true) })
+                    }
                 }
             }
         }
@@ -220,7 +241,7 @@ private fun PlayButton(playing: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
+internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
     val s by graph.hub.state.collectAsStateWithLifecycle()
     var adding by remember { mutableStateOf<VideoItem?>(null) }
     adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
@@ -259,6 +280,19 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
             IconButton(onClick = graph.hub::previous) { Icon(painterResource(R.drawable.ic_skip_previous), S.previous) }
             PlayButton(s.wantsToPlay, graph.hub::togglePause)
             IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), S.next) }
+            // Lit (accent colour) when on; repeat cycles off → all → one.
+            val on = MaterialTheme.colorScheme.primary
+            val off = MaterialTheme.colorScheme.onSurfaceVariant
+            IconButton(onClick = graph.hub::toggleShuffle) {
+                Icon(painterResource(R.drawable.ic_shuffle), S.shuffle, tint = if (s.shuffle) on else off)
+            }
+            IconButton(onClick = graph.hub::cycleRepeat) {
+                Icon(
+                    painterResource(if (s.repeat == RepeatMode.ONE) R.drawable.ic_repeat_one else R.drawable.ic_repeat),
+                    when (s.repeat) { RepeatMode.OFF -> S.repeatOff; RepeatMode.ALL -> S.repeatAll; RepeatMode.ONE -> S.repeatOne },
+                    tint = if (s.repeat == RepeatMode.OFF) off else on,
+                )
+            }
             IconButton(onClick = { showQueue = true }) { Icon(painterResource(R.drawable.ic_playlist_play), S.queue) }
             s.current?.let { cur ->
                 IconButton(onClick = { adding = cur }) { Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist) }
@@ -344,6 +378,13 @@ internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String)
         return
     }
 
+    // Opened folders (Google Drive): the innermost one replaces the list until Back.
+    var openFolders by remember(source.id) { mutableStateOf(listOf<VideoItem>()) }
+    openFolders.lastOrNull()?.let { folder ->
+        FolderPage(graph, source, folder, onOpen = { openFolders = openFolders + it }, onBack = { openFolders = openFolders.dropLast(1) })
+        return
+    }
+
     val savedCreators by graph.creators.creators.collectAsStateWithLifecycle()
     val feeds = remember(source, refreshKey, savedCreators) { source.feedsWith(graph.creators) }
     var feedKey by rememberSaveable(source.id) { mutableStateOf(feeds.firstOrNull()?.key) }
@@ -408,7 +449,15 @@ internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String)
                         val openCreator = item.authorId?.takeIf { source.supportsCreators }?.let { id ->
                             { creatorId = id; creatorName = item.author.orEmpty() }
                         }
-                        VideoRow(graph, item, onClick = { graph.hub.playQueue(l.items, i) }, onAuthor = openCreator) {
+                        val onClick = if (source.isFolder(item)) {
+                            { openFolders = openFolders + item }
+                        } else {
+                            {
+                                val tracks = l.items.filterNot(source::isFolder)
+                                graph.hub.playQueue(tracks, tracks.indexOf(item))
+                            }
+                        }
+                        VideoRow(graph, item, onClick = onClick, onAuthor = openCreator) {
                             IconButton(onClick = { adding = item }) {
                                 Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist)
                             }
