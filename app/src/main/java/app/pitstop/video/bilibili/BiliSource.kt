@@ -2,6 +2,7 @@ package app.pitstop.video.bilibili
 
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.Feed
+import app.pitstop.video.core.FeedPage
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.VideoItem
@@ -19,8 +20,16 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
 
     override suspend fun load(feed: Feed): List<VideoItem> = when (feed.key) {
         FEED_POPULAR -> api.popular()
-        FEED_FOLLOWING -> api.following()
+        FEED_FOLLOWING -> api.following().items
         else -> api.recommended()
+    }
+
+    /** Following scrolls endlessly; the cursor is Bilibili's offset plus our page number ("offset|page"). */
+    override suspend fun loadPage(feed: Feed, cursor: String?): FeedPage {
+        if (feed.key != FEED_FOLLOWING) return super.loadPage(feed, cursor)
+        val (offset, page) = cursor?.split('|', limit = 2)?.let { it[0] to (it.getOrNull(1)?.toIntOrNull() ?: 2) } ?: (null to 1)
+        val p = api.following(offset, page)
+        return p.copy(next = p.next?.let { "$it|${page + 1}" })
     }
 
     override suspend fun search(query: String) = api.search(query)

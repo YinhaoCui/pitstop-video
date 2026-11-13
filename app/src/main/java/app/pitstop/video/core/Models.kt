@@ -37,6 +37,9 @@ data class SubtitleTrack(
 /** A browsable list inside a source ("Popular", "Subscriptions", ...). */
 data class Feed(val key: String, val title: String)
 
+/** One page of a feed; [next] is the cursor for the following page, null at the end. */
+data class FeedPage(val items: List<VideoItem>, val next: String? = null)
+
 /** Where the player should actually fetch media from. */
 data class PlayableStream(
     val videoUri: String,
@@ -59,6 +62,13 @@ interface VideoSource {
     /** Feeds available right now (login-only feeds disappear when signed out). */
     fun feeds(): List<Feed>
     suspend fun load(feed: Feed): List<VideoItem>
+
+    /**
+     * Endless feeds: [cursor] null for the first page, then the previous page's [FeedPage.next].
+     * By default a feed is a single page.
+     */
+    suspend fun loadPage(feed: Feed, cursor: String?): FeedPage =
+        if (cursor == null) FeedPage(load(feed)) else FeedPage(emptyList())
     suspend fun search(query: String): List<VideoItem>
     suspend fun resolve(item: VideoItem): PlayableStream
 

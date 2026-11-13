@@ -88,6 +88,7 @@ import app.pitstop.video.core.formatDuration
 import app.pitstop.video.local.PermissionSource
 import app.pitstop.video.core.feedsWith
 import app.pitstop.video.core.loadFeed
+import app.pitstop.video.core.loadFeedPage
 import app.pitstop.video.player.DisplayMode
 import app.pitstop.video.player.RepeatMode
 import kotlinx.coroutines.CancellationException
@@ -398,7 +399,8 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
 
 private sealed interface LoadState {
     data object Loading : LoadState
-    data class Loaded(val items: List<VideoItem>) : LoadState
+    /** [next]: cursor of the following page (endless feeds); [moreFailed]: loading it failed, offer a retry. */
+    data class Loaded(val items: List<VideoItem>, val next: String? = null, val moreFailed: String? = null) : LoadState
     data class Failed(val message: String) : LoadState
 }
 
@@ -446,14 +448,34 @@ internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String)
     adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
     val feed = feeds.firstOrNull { it.key == feedKey } ?: feeds.firstOrNull()
 
-    val load by produceState<LoadState>(LoadState.Loading, source, feed, activeQuery, reload) {
-        value = LoadState.Loading
-        value = try {
-            LoadState.Loaded(activeQuery?.let { source.search(it) } ?: feed?.let { source.loadFeed(it) } ?: emptyList())
+    var load by remember { mutableStateOf<LoadState>(LoadState.Loading) }
+    LaunchedEffect(source, feed, activeQuery, reload) {
+        load = LoadState.Loading
+        load = try {
+            if (activeQuery != null) LoadState.Loaded(source.search(activeQuery!!))
+            else feed?.let { f -> source.loadFeedPage(f, null).let { LoadState.Loaded(it.items, it.next) } }
+                ?: LoadState.Loaded(emptyList())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             LoadState.Failed(e.message ?: e.javaClass.simpleName)
+        }
+    }
+    // Endless feeds: the next page is fetched when the end of the list comes into view.
+    var moreTry by remember { mutableIntStateOf(0) }
+    suspend fun loadMore(from: LoadState.Loaded) {
+        val f = feed ?: return
+        val cursor = from.next ?: return
+        load = try {
+            val page = source.loadFeedPage(f, cursor)
+            val seen = from.items.mapTo(HashSet()) { it.id }
+            val fresh = page.items.filter { it.id !in seen }
+            // A page with nothing new means the feed has run out.
+            LoadState.Loaded(from.items + fresh, page.next.takeIf { fresh.isNotEmpty() })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            from.copy(moreFailed = e.message ?: e.javaClass.simpleName)
         }
     }
 
@@ -511,6 +533,19 @@ internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String)
                         VideoRow(graph, item, onClick = onClick, onAuthor = openCreator) {
                             IconButton(onClick = { adding = item }) {
                                 Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist)
+                            }
+                        }
+                    }
+                    if (l.next != null) item(key = "more") {
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            if (l.moreFailed != null) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(l.moreFailed, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                    Button(onClick = { load = l.copy(moreFailed = null); moreTry++ }) { Text(S.retry) }
+                                }
+                            } else {
+                                CircularProgressIndicator(Modifier.size(28.dp))
+                                LaunchedEffect(l.next, moreTry) { loadMore(l) }
                             }
                         }
                     }
