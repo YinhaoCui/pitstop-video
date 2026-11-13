@@ -92,17 +92,18 @@ class BiliApi(
         return items.objects().filter { it.optString("bvid").isNotEmpty() }.map(::archiveToItem)
     }
 
-    suspend fun search(keyword: String): List<VideoItem> {
-        val result = wbiData(
-            "https://api.bilibili.com/x/web-interface/wbi/search/type",
-            mapOf("search_type" to "video", "keyword" to keyword, "page" to "1"),
-        ).optJSONArray("result")
+    /** Video search; [tids] narrows to a zone (3 = music). */
+    suspend fun search(keyword: String, tids: String? = null, source: SourceId = SourceId.BILIBILI): List<VideoItem> {
+        val params = mapOf("search_type" to "video", "keyword" to keyword, "page" to "1") +
+            (tids?.let { mapOf("tids" to it) } ?: emptyMap())
+        val result = wbiData("https://api.bilibili.com/x/web-interface/wbi/search/type", params).optJSONArray("result")
         return result.objects().filter { it.optString("bvid").isNotEmpty() }.map {
             VideoItem(
-                source = SourceId.BILIBILI,
+                source = source,
                 id = it.getString("bvid"),
                 title = BiliText.clean(it.optString("title")),
                 author = it.optString("author"),
+                authorId = it.optLong("mid").takeIf { m -> m > 0 }?.toString(),
                 thumbnailUrl = BiliText.thumb(it.optString("pic")),
                 durationSec = parseClock(it.optString("duration")),
             )
@@ -123,6 +124,7 @@ class BiliApi(
                 id = archive.optString("bvid").ifEmpty { return@mapNotNull null },
                 title = archive.optString("title"),
                 author = modules.optJSONObject("module_author")?.optString("name"),
+                authorId = modules.optJSONObject("module_author")?.optLong("mid")?.takeIf { it > 0 }?.toString(),
                 thumbnailUrl = BiliText.thumb(archive.optString("cover")),
                 durationSec = parseClock(archive.optString("duration_text")),
             )
@@ -240,11 +242,66 @@ class BiliApi(
         }
     }
 
-    private fun archiveToItem(o: JSONObject) = VideoItem(
-        source = SourceId.BILIBILI,
+    /** An uploader's latest videos (space page). The dm_* fields are what the web page sends; without them Bilibili answers -352. */
+    suspend fun uploaderVideos(mid: String, source: SourceId): List<VideoItem> {
+        val d = wbiData(
+            "https://api.bilibili.com/x/space/wbi/arc/search",
+            mapOf(
+                "mid" to mid, "ps" to "30", "pn" to "1", "order" to "pubdate", "platform" to "web",
+                "dm_img_list" to "[]", "dm_img_str" to "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
+                "dm_cover_img_str" to "QU5HTEUgKEdvb2dsZSwgVnVsa2FuIDEuMy4wIChTd2lmdFNoYWRlciBEZXZpY2UgKFN1Ymdhem9yb2...",
+            ),
+        )
+        return d.optJSONObject("list")?.optJSONArray("vlist").objects().map {
+            VideoItem(
+                source = source,
+                id = it.getString("bvid"),
+                title = BiliText.clean(it.optString("title")),
+                author = it.optString("author"),
+                thumbnailUrl = BiliText.thumb(it.optString("pic")),
+                durationSec = parseClock(it.optString("length")),
+                authorId = mid,
+            )
+        }
+    }
+
+    /** Music zone (rid 3) ranking. */
+    suspend fun musicRanking(): List<VideoItem> {
+        ensureDeviceId()
+        val list = runCatching {
+            wbiData("https://api.bilibili.com/x/web-interface/ranking/v2", mapOf("rid" to "3", "type" to "all")).optJSONArray("list")
+        }.getOrElse { data("https://api.bilibili.com/x/web-interface/ranking/v2?rid=3&type=all").optJSONArray("list") }
+        return list.objects().map { archiveToItem(it, SourceId.BILI_MUSIC) }
+    }
+
+    /** Best audio-only stream of a video: Hi-Res FLAC / Dolby when offered (needs login / VIP), else AAC. */
+    suspend fun audioUrl(bvid: String, cid: Long): PlayableStream {
+        val d = wbiData(
+            "https://api.bilibili.com/x/player/wbi/playurl",
+            mapOf("bvid" to bvid, "cid" to cid.toString(), "qn" to "0", "fnval" to "4048", "fnver" to "0", "fourk" to "1"),
+        )
+        val headers = mapOf("Referer" to "https://www.bilibili.com/", "User-Agent" to DESKTOP_UA)
+        val overseas = isOverseas()
+        fun url(o: JSONObject): String {
+            val all = listOf(o.optString("baseUrl").ifEmpty { o.optString("base_url") }) +
+                (o.optJSONArray("backupUrl") ?: o.optJSONArray("backup_url")).strings()
+            return BiliCdn.choose(all, overseas) ?: all.first()
+        }
+        val dash = d.optJSONObject("dash")
+            ?: throw UserFacingException("No audio stream for $bvid (it may need a Bilibili login or be region-locked)")
+        val flac = dash.optJSONObject("flac")?.optJSONObject("audio")
+        val dolby = dash.optJSONObject("dolby")?.optJSONArray("audio").objects().firstOrNull()
+        val best = flac ?: dolby ?: dash.optJSONArray("audio").objects().maxByOrNull { it.optLong("bandwidth") }
+            ?: throw UserFacingException("No audio stream for $bvid")
+        return PlayableStream(url(best), headers = headers)
+    }
+
+    private fun archiveToItem(o: JSONObject, source: SourceId = SourceId.BILIBILI) = VideoItem(
+        source = source,
         id = o.getString("bvid"),
         title = BiliText.clean(o.optString("title")),
         author = o.optJSONObject("owner")?.optString("name"),
+        authorId = o.optJSONObject("owner")?.optLong("mid")?.takeIf { it > 0 }?.toString(),
         thumbnailUrl = BiliText.thumb(o.optString("pic")),
         durationSec = o.optLong("duration").takeIf { it > 0 },
         extra = o.optLong("cid").takeIf { it > 0 }?.toString(),

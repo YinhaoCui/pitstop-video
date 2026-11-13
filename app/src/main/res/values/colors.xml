@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="night">#FFFFF7FA</color>
+    <color name="night">#FFFFFBFC</color>
+    <color name="splash_background">#FFFFFBFC</color>
+    <color name="brand_pink">#FFD6336C</color>
 </resources>

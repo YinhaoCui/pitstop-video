@@ -1,5 +1,7 @@
 package app.pitstop.video.car
 
+import app.pitstop.video.graph
+
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.Settings
 import app.pitstop.video.player.SubtitleStyling
@@ -71,6 +73,12 @@ class CarPresentation(
     private lateinit var overlayInfo: LinearLayout
     private lateinit var overlayTitle: TextView
     private lateinit var overlayAuthor: TextView
+    /** Songs: artwork + title instead of an empty video area. */
+    private lateinit var musicView: LinearLayout
+    private lateinit var musicArt: android.widget.ImageView
+    private lateinit var musicTitle: TextView
+    private lateinit var musicAuthor: TextView
+    private var musicArtFor: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,9 +114,35 @@ class CarPresentation(
             addView(overlayAuthor)
             visibility = View.GONE
         }
+        musicArt = android.widget.ImageView(ctx).apply {
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            clipToOutline = true
+            outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: android.graphics.Outline) =
+                    outline.setRoundRect(0, 0, view.width, view.height, dp(12).toFloat())
+            }
+            setBackgroundColor(0xFF2A2529.toInt())
+        }
+        musicTitle = text(ctx, 24f, bold = true).apply { maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END }
+        musicAuthor = text(ctx, 17f).apply { setTextColor(0xFFE6DDF5.toInt()); maxLines = 1 }
+        musicView = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(32), dp(24), dp(32), dp(24))
+            setBackgroundColor(0xFF141217.toInt())
+            addView(musicArt, LinearLayout.LayoutParams(dp(180), dp(180)))
+            addView(LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(28), 0, 0, 0)
+                addView(musicTitle)
+                addView(musicAuthor, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(6) })
+            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            visibility = View.GONE
+        }
         videoFrame = FrameLayout(ctx).apply {
             setBackgroundColor(Color.BLACK)
             addView(playerView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            addView(musicView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(status, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(overlayInfo, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
             addView(fullProgress, FrameLayout.LayoutParams(MATCH_PARENT, dp(6), Gravity.BOTTOM))
@@ -128,7 +162,7 @@ class CarPresentation(
             addView(progress, LinearLayout.LayoutParams(MATCH_PARENT, dp(6)).apply { topMargin = dp(16) })
             addView(time, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(4) })
             addView(text(ctx, 15f, bold = true).apply {
-                text = I18n.s.upNext; setTextColor(0xFF5EEAD4.toInt())
+                text = I18n.s.upNext; setTextColor(0xFFFF8FB5.toInt())
             }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(24) })
             addView(upNext)
         }
@@ -269,11 +303,26 @@ class CarPresentation(
         })
 
         lockOverlay.text = if (s.audioOnly) {
-            "♪  ${I18n.s.audioOnlyDriving}\n\n${item?.title.orEmpty()}\n\n${I18n.s.audioOnlyPark}"
+            "${I18n.s.audioOnlyDriving}\n\n${item?.title.orEmpty()}\n\n${I18n.s.audioOnlyPark}"
         } else {
             I18n.s.pausedMoving
         }
-        lockOverlay.visibility = if (s.drivingLocked) View.VISIBLE else View.GONE
+        // Music has no picture: it keeps playing (and showing its cover) while driving.
+        lockOverlay.visibility = if (s.drivingLocked && !s.isMusic) View.VISIBLE else View.GONE
+        musicView.visibility = if (s.isMusic) View.VISIBLE else View.GONE
+        if (s.isMusic && item != null) {
+            musicTitle.text = item.title
+            musicAuthor.text = item.author.orEmpty()
+            val key = item.thumbnailUrl ?: item.id
+            if (musicArtFor != key) {
+                musicArtFor = key
+                musicArt.setImageDrawable(null)
+                scope.launch {
+                    val bmp = context.graph.thumbnails.load(item, 480)
+                    if (musicArtFor == key && bmp != null) musicArt.setImageBitmap(bmp)
+                }
+            }
+        }
         content.requestLayout()
         updateProgress()
     }
@@ -283,7 +332,7 @@ class CarPresentation(
         val s = hub.state.value
         val recent = android.os.SystemClock.elapsedRealtime() - hub.infoPokedAt.value < 8_000
         overlayInfo.visibility =
-            if (s.mode == DisplayMode.FULL && s.current != null && recent && !s.drivingLocked && !s.panelOpen) View.VISIBLE else View.GONE
+            if (s.mode == DisplayMode.FULL && s.current != null && recent && !s.drivingLocked && !s.panelOpen && !s.isMusic) View.VISIBLE else View.GONE
     }
 
     /** While a side panel (Browse, Queue, ...) is open: the part of the screen beside it. */

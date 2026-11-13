@@ -25,6 +25,10 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
 
     override suspend fun search(query: String) = api.search(query)
 
+    override val supportsCreators get() = true
+
+    override suspend fun creatorVideos(authorId: String) = api.uploaderVideos(authorId, SourceId.BILIBILI)
+
     /** 分P: a video with several parts becomes one queue entry per part. */
     override suspend fun expand(item: VideoItem): List<VideoItem>? {
         if (item.part != null) return null

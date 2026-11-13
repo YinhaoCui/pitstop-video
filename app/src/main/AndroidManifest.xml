@@ -13,6 +13,8 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <!-- Songs stored on the phone (e.g. downloaded from Google Drive) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <!-- Parked-only safety lock: phone GPS speed is the fallback when the car does not report speed -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -46,6 +48,7 @@
 
         <activity
             android:name=".ui.MainActivity"
+            android:theme="@style/Theme.Pitstop.Starting"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTask"
@@ -59,6 +62,10 @@
 
         <activity
             android:name=".ui.BiliLoginActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ui.NeteaseLoginActivity"
             android:exported="false" />
 
         <service

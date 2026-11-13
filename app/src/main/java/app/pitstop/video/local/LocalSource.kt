@@ -17,20 +17,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Videos stored on the phone (MediaStore). Works fully offline. */
-class LocalSource(private val context: Context) : VideoSource {
+class LocalSource(private val context: Context) : VideoSource, PermissionSource {
     override val id = SourceId.LOCAL
     override val displayName get() = I18n.s.onThisDevice
 
     override fun feeds() = listOf(Feed(FEED_ALL, I18n.s.allVideos))
 
     /** Android 13+ has a video-only permission (plus "selected videos" on 14+); older versions use storage. */
-    val requiredPermissions: Array<String> = when {
+    override val requiredPermissions: Array<String> = when {
         Build.VERSION.SDK_INT >= 34 -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
         Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
         else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
     }
 
-    fun hasPermission(): Boolean =
+    override fun hasPermission(): Boolean =
         requiredPermissions.any { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
     override suspend fun load(feed: Feed): List<VideoItem> = query(null)

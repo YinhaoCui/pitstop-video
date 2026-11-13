@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pitstop.video.AppGraph
 import app.pitstop.video.bilibili.BiliApi
+import app.pitstop.video.netease.NeteaseApi
 import app.pitstop.video.player.DrivingMonitor
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
@@ -65,6 +66,10 @@ fun AccountScreen(graph: AppGraph) {
         HorizontalDivider()
         BilibiliSection(graph)
         HorizontalDivider()
+        NeteaseSection(graph)
+        HorizontalDivider()
+        DriveSection(graph)
+        HorizontalDivider()
         SafetySection(graph)
         PhonePlaybackSection()
         DrivingAudioSection()
@@ -79,7 +84,7 @@ fun AccountScreen(graph: AppGraph) {
 }
 
 @Composable
-private fun YouTubeSection(graph: AppGraph) {
+internal fun YouTubeSection(graph: AppGraph) {
     val account = graph.youTubeAccount
     val signedIn by account.signedIn.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -108,7 +113,7 @@ private fun YouTubeSection(graph: AppGraph) {
 }
 
 @Composable
-private fun BilibiliSection(graph: AppGraph) {
+internal fun BilibiliSection(graph: AppGraph) {
     val context = LocalContext.current
     val loggedIn by graph.biliCookies.loggedIn.collectAsStateWithLifecycle()
     var name by remember { mutableStateOf<String?>(null) }
@@ -178,6 +183,92 @@ private fun BiliQrDialog(api: BiliApi, onDismiss: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(S.close) } },
     )
+}
+
+/** NetEase Cloud Music: web page login (phone + SMS / password) or QR code from another phone. */
+@Composable
+internal fun NeteaseSection(graph: AppGraph) {
+    val context = LocalContext.current
+    val signedIn by graph.neteaseCookies.signedIn.collectAsStateWithLifecycle()
+    var name by remember { mutableStateOf<String?>(null) }
+    var showQr by remember { mutableStateOf(false) }
+    val webLogin = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+    LaunchedEffect(signedIn) {
+        name = if (signedIn) runCatching { graph.neteaseApi.account()?.second }.getOrNull() else null
+    }
+    Text(S.netease, style = MaterialTheme.typography.titleMedium)
+    Text(if (signedIn) S.neteaseSignedIn(name) else S.neteaseSignedOut, style = MaterialTheme.typography.bodyMedium)
+    if (signedIn) {
+        OutlinedButton(onClick = { graph.neteaseApi.logout() }) { Text(S.signOutNetease) }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { webLogin.launch(Intent(context, NeteaseLoginActivity::class.java)) }) { Text(S.signInPhoneWeb) }
+            OutlinedButton(onClick = { showQr = true }) { Text(S.signInQr) }
+        }
+    }
+    if (showQr) NeteaseQrDialog(graph) { showQr = false }
+}
+
+@Composable
+private fun NeteaseQrDialog(graph: AppGraph, onDismiss: () -> Unit) {
+    val api = graph.neteaseApi
+    var content by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf(I18n.s.qrGenerating) }
+    LaunchedEffect(Unit) {
+        val key = runCatching { api.qrKey() }.getOrElse { status = I18n.s.failed(it.message); return@LaunchedEffect }
+        content = api.qrContent(key)
+        status = I18n.s.neteaseQrHint
+        repeat(90) {
+            delay(2_000)
+            when (runCatching { api.qrPoll(key) }.getOrNull()) {
+                NeteaseApi.QrState.DONE -> { onDismiss(); return@LaunchedEffect }
+                NeteaseApi.QrState.SCANNED -> status = I18n.s.qrScanned
+                NeteaseApi.QrState.EXPIRED -> { status = I18n.s.qrExpired; return@LaunchedEffect }
+                else -> Unit
+            }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(S.netease) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                content?.let { c ->
+                    val bmp = remember(c) { qrBitmap(c) }
+                    Image(bmp.asImageBitmap(), S.qrCode, Modifier.size(220.dp))
+                }
+                Text(status)
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(S.close) } },
+    )
+}
+
+/** Google Drive (read-only) for music in Drive folders. */
+@Composable
+internal fun DriveSection(graph: AppGraph) {
+    val account = graph.driveAccount
+    val signedIn by account.signedIn.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var message by remember { mutableStateOf<String?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        runCatching { account.completeSignIn(res.data) }.onFailure { message = it.message }
+    }
+    Text(S.googleDrive, style = MaterialTheme.typography.titleMedium)
+    Text(if (signedIn) S.driveSignedIn else S.driveSignedOut, style = MaterialTheme.typography.bodyMedium)
+    if (signedIn) {
+        OutlinedButton(onClick = account::signOut) { Text(S.signOutDrive) }
+    } else {
+        Button(onClick = {
+            scope.launch {
+                runCatching { account.beginSignIn() }
+                    .onSuccess { pi -> pi?.let { launcher.launch(IntentSenderRequest.Builder(it.intentSender).build()) } }
+                    .onFailure { message = I18n.s.googleFailed(it.message) }
+            }
+        }) { Text(S.signInGoogle) }
+    }
+    message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }
 
 private fun qrBitmap(text: String, size: Int = 512): Bitmap {

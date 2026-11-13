@@ -30,7 +30,21 @@ class ThumbnailLoader(private val context: Context, private val http: OkHttpClie
         return gate.withPermit {
             withContext(Dispatchers.IO) {
                 runCatching {
-                    if (item.source == SourceId.LOCAL) {
+                    if (item.source == SourceId.LOCAL_MUSIC) {
+                        // Album art embedded in / attached to the song.
+                        if (Build.VERSION.SDK_INT >= 29) {
+                            context.contentResolver.loadThumbnail(Uri.parse(item.id), Size(width, width), null)
+                        } else {
+                            MediaMetadataRetriever().run {
+                                try {
+                                    setDataSource(context, Uri.parse(item.id))
+                                    embeddedPicture?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                                } finally {
+                                    release()
+                                }
+                            }
+                        }
+                    } else if (item.source == SourceId.LOCAL) {
                         if (Build.VERSION.SDK_INT >= 29) {
                             context.contentResolver.loadThumbnail(Uri.parse(item.id), Size(width, width * 9 / 16), null)
                         } else {

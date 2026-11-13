@@ -10,6 +10,7 @@ import app.pitstop.video.bilibili.BiliCookieJar
 import app.pitstop.video.bilibili.BiliSource
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.PlaylistStore
+import app.pitstop.video.core.CreatorStore
 import app.pitstop.video.core.Settings
 import app.pitstop.video.core.SourceId
 import java.io.File
@@ -17,6 +18,15 @@ import app.pitstop.video.core.ThumbnailLoader
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.buildHttpClient
 import app.pitstop.video.local.LocalSource
+import app.pitstop.video.local.LocalMusicSource
+import app.pitstop.video.bilibili.BiliMusicSource
+import app.pitstop.video.core.CompositeCookieJar
+import app.pitstop.video.gdrive.DriveAccount
+import app.pitstop.video.gdrive.DriveSource
+import app.pitstop.video.netease.NeteaseApi
+import app.pitstop.video.netease.NeteaseCookieJar
+import app.pitstop.video.netease.NeteaseSource
+import app.pitstop.video.youtube.YouTubeMusicSource
 import app.pitstop.video.player.DrivingMonitor
 import app.pitstop.video.player.PlaybackHub
 import app.pitstop.video.youtube.NewPipeDownloader
@@ -48,18 +58,30 @@ class PitstopApp : Application() {
 /** Hand-wired singletons shared by the phone UI and the Android Auto session. */
 class AppGraph(app: Application) {
     val biliCookies = BiliCookieJar(app.getSharedPreferences("bilibili", Context.MODE_PRIVATE))
-    val http = buildHttpClient(biliCookies)
+    val neteaseCookies = NeteaseCookieJar(app.getSharedPreferences("netease", Context.MODE_PRIVATE))
+    val http = buildHttpClient(CompositeCookieJar(listOf(biliCookies, neteaseCookies)))
+    val neteaseApi = NeteaseApi(http, neteaseCookies)
+    val driveAccount = DriveAccount(app)
     val biliApi = BiliApi(http, biliCookies, app.cacheDir)
     val youTubeAccount = YouTubeAccount(app, http)
     val thumbnails = ThumbnailLoader(app, http)
     val driving = DrivingMonitor(app)
     val playlists = PlaylistStore(File(app.filesDir, "playlists.json"))
+    val creators = CreatorStore(File(app.filesDir, "creators.json"))
 
     val sources: List<VideoSource> = listOf(
         YouTubeSource(youTubeAccount),
         BiliSource(biliApi, biliCookies),
         LocalSource(app),
+        BiliMusicSource(biliApi),
+        YouTubeMusicSource(youTubeAccount),
+        NeteaseSource(neteaseApi, neteaseCookies),
+        DriveSource(driveAccount, http),
+        LocalMusicSource(app),
     )
+
+    val videoSources: List<VideoSource> get() = sources.filter { !it.id.music }
+    val musicSources: List<VideoSource> get() = sources.filter { it.id.music }
 
     fun source(id: SourceId): VideoSource = sources.first { it.id == id }
 

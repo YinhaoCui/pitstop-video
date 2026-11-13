@@ -21,6 +21,14 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import android.net.Uri
 import app.pitstop.video.core.StreamPolicy
+import app.pitstop.video.core.COLLECTION_PREFIX
+import app.pitstop.video.core.I18n
+import app.pitstop.video.core.QualityLadder
+import app.pitstop.video.core.StallTracker
+import app.pitstop.video.core.isNetworkErrorCode
+import app.pitstop.video.core.retryDelayMs
+import androidx.media3.exoplayer.DefaultLoadControl
+import kotlinx.coroutines.flow.first
 import app.pitstop.video.core.Settings
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.PlayableStream
@@ -72,6 +80,8 @@ data class HubState(
     val scrubMs: Long? = null,
 ) {
     val current: VideoItem? get() = queue.getOrNull(index)
+    /** Music has no picture, so the parked-only video lock never pauses it. */
+    val isMusic: Boolean get() = current?.source?.music == true
     val upNext: List<VideoItem> get() = if (index < 0) emptyList() else queue.drop(index + 1)
 }
 
@@ -93,7 +103,17 @@ class PlaybackHub(
 
     // Decoder fallback: if a device's preferred (often hardware) decoder fails to start, try the next
     // one – helps cheap head units and older phones with flaky codecs.
-    val player: ExoPlayer = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setEnableDecoderFallback(true)).build().apply {
+    val player: ExoPlayer = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setEnableDecoderFallback(true))
+        .setLoadControl(
+            // Keep 30-120 s ahead (streaming-app style) so short network dips don't stall; start fast,
+            // but after a stall wait for 4 s of data so it doesn't stutter straight away again.
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(30_000, 120_000, 1_500, 4_000)
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .setBackBuffer(30_000, true)
+                .build()
+        )
+        .build().apply {
         setAudioAttributes(
             AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
             /* handleAudioFocus = */ true,
@@ -111,7 +131,21 @@ class PlaybackHub(
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 _state.update { it.copy(buffering = playbackState == Player.STATE_BUFFERING) }
+                if (playbackState == Player.STATE_READY) {
+                    reconnectAttempts = 0
+                    if (_state.value.error == I18n.s.reconnecting) _state.update { it.copy(error = null) }
+                    prefetchNext()
+                }
+                // A stall after playback had started (not the initial load / a seek).
+                if (playbackState == Player.STATE_BUFFERING && lastState == Player.STATE_READY && player.playWhenReady &&
+                    android.os.SystemClock.elapsedRealtime() - lastSeekAt > 3_000
+                ) onStall()
+                lastState = playbackState
                 if (playbackState == Player.STATE_ENDED) next()
+            }
+
+            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) lastSeekAt = android.os.SystemClock.elapsedRealtime()
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -136,6 +170,10 @@ class PlaybackHub(
                 val s = _state.value
                 val cur = s.current
                 val key = cur?.let { "${it.source}:${it.id}:${it.part}" }
+                if (isNetworkErrorCode(error.errorCode) && cur != null && reconnectAttempts < 6) {
+                    reconnect()
+                    return
+                }
                 if (decoderProblem && cur != null && cur.source != SourceId.LOCAL && safeRetriedFor != key) {
                     safeRetriedFor = key
                     safeNext = true
@@ -160,7 +198,7 @@ class PlaybackHub(
                     _state.update { it.copy(drivingLocked = locked, audioOnly = audioOnly) }
                     // Audio-only: stop decoding / downloading video, keep the sound. Otherwise pause.
                     applyVideoTrack()
-                    if (locked && !audioOnly) player.pause()
+                    if (locked && !audioOnly && !_state.value.isMusic) player.pause()
                 }
         }
         // Subtitle preferences: on/off by default and the preferred language.
@@ -191,10 +229,15 @@ class PlaybackHub(
     private var safeNext = false
     private var safeRetriedFor: String? = null
 
-    private fun playAt(queue: List<VideoItem>, index: Int) {
+    private fun playAt(queue: List<VideoItem>, index: Int, keepError: Boolean = false) {
         resolveJob?.cancel()
+        if (!keepError) {
+            reconnectJob?.cancel()
+            reconnectAttempts = 0
+            stalls.reset()
+        }
         player.stop()
-        _state.update { it.copy(queue = queue, index = index, loading = true, error = null) }
+        _state.update { it.copy(queue = queue, index = index, loading = true, error = if (keepError) it.error else null) }
         pokeInfo()
         resolveJob = scope.launch {
             try {
@@ -209,9 +252,14 @@ class PlaybackHub(
                 }
                 val item = q[i]
                 StreamPolicy.safe = safeNext
+                val useSafe = safeNext
                 safeNext = false
+                val ready = prefetched?.takeIf { (k, at, _) ->
+                    !useSafe && k == keyOf(item) && android.os.SystemClock.elapsedRealtime() - at < 20 * 60_000
+                }?.third
+                prefetched = null
                 val stream = try {
-                    withContext(Dispatchers.IO) { source.resolve(item) }
+                    ready ?: withContext(Dispatchers.IO) { source.resolve(item) }
                 } finally {
                     StreamPolicy.safe = false
                 }
@@ -219,13 +267,109 @@ class PlaybackHub(
                 player.prepare()
                 if (resumeAtMs > 0) player.seekTo(resumeAtMs)
                 resumeAtMs = 0
-                player.playWhenReady = !_state.value.drivingLocked || _state.value.audioOnly
+                player.playWhenReady = playAllowed()
                 _state.update { it.copy(loading = false) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(loading = false, error = e.message ?: e.javaClass.simpleName) }
+                // Resolving failed while reconnecting (still offline / server hiccup): keep trying.
+                if (keepError && reconnectAttempts < 6 && e is java.io.IOException) {
+                    _state.update { it.copy(loading = false) }
+                    reconnect()
+                } else {
+                    _state.update { it.copy(loading = false, error = e.message ?: e.javaClass.simpleName) }
+                }
             }
+        }
+    }
+
+    private fun keyOf(item: VideoItem) = "${item.source}:${item.id}:${item.part}:${StreamPolicy.capHeight}"
+
+    // --- Streaming resilience ------------------------------------------------------------------
+
+    private var lastState = Player.STATE_IDLE
+    private var lastSeekAt = 0L
+    private var reconnectAttempts = 0
+    private var reconnectJob: Job? = null
+    private val stalls = StallTracker()
+    private var prefetched: Triple<String, Long, PlayableStream>? = null
+    private var prefetchJob: Job? = null
+
+    private val connectivity = context.getSystemService(android.net.ConnectivityManager::class.java)
+    private val online = MutableStateFlow(true)
+
+    init {
+        // Watch the network: wake a pending reconnect as soon as it's back; a new network
+        // (e.g. phone hotspot -> Wi-Fi) gets a fresh chance at full quality.
+        runCatching {
+            connectivity?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                private var current: android.net.Network? = null
+                override fun onAvailable(network: android.net.Network) {
+                    if (current != null && current != network) {
+                        StreamPolicy.capHeight = QualityLadder.steps.first()
+                        stalls.reset()
+                    }
+                    current = network
+                    online.value = true
+                }
+                override fun onLost(network: android.net.Network) {
+                    if (network == current) online.value = false
+                }
+            })
+        }
+    }
+
+    /** Lost connection or an expired stream link: wait for the network, get a fresh link, resume at the same second. */
+    private fun reconnect() {
+        val s = _state.value
+        if (s.current == null) return
+        val position = player.currentPosition
+        val attempt = reconnectAttempts++
+        _state.update { it.copy(error = I18n.s.reconnecting) }
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            kotlinx.coroutines.delay(retryDelayMs(attempt))
+            // Offline: wait (up to 2 min) for the network instead of burning attempts.
+            kotlinx.coroutines.withTimeoutOrNull(120_000) { online.first { it } }
+            val now = _state.value
+            if (now.current?.let(::keyOf) != s.current?.let(::keyOf)) return@launch
+            resumeAtMs = position
+            playAt(now.queue, now.index, keepError = true)
+        }
+    }
+
+    /** Several stalls in a short time: the connection can't keep up, so drop one quality step. */
+    private fun onStall() {
+        val s = _state.value
+        val cur = s.current ?: return
+        if (s.isMusic || cur.source == SourceId.LOCAL) return
+        if (!stalls.onStall(android.os.SystemClock.elapsedRealtime())) return
+        val lower = QualityLadder.lower(StreamPolicy.capHeight) ?: return
+        StreamPolicy.capHeight = lower
+        resumeAtMs = player.currentPosition
+        playAt(s.queue, s.index)
+        _state.update { it.copy(error = I18n.s.qualityLowered(lower)) }
+        scope.launch {
+            kotlinx.coroutines.delay(5_000)
+            _state.update { if (it.error == I18n.s.qualityLowered(lower)) it.copy(error = null) else it }
+        }
+    }
+
+    /** Resolve the next item's stream while this one plays, so "next" starts almost instantly. */
+    private fun prefetchNext() {
+        val s = _state.value
+        val next = s.queue.getOrNull(s.index + 1) ?: return
+        if (next.id.startsWith(COLLECTION_PREFIX) || next.source == SourceId.LOCAL || next.source == SourceId.LOCAL_MUSIC) return
+        val key = keyOf(next)
+        if (prefetched?.first == key || prefetchJob?.isActive == true) return
+        prefetchJob = scope.launch {
+            val source = sources[next.source] ?: return@launch
+            // Multi-part videos get expanded at play time; only single items are prefetched.
+            if (next.source == SourceId.BILIBILI || next.source == SourceId.BILI_MUSIC) {
+                if (next.part == null) return@launch
+            }
+            val stream = runCatching { withContext(Dispatchers.IO) { source.resolve(next) } }.getOrNull() ?: return@launch
+            prefetched = Triple(key, android.os.SystemClock.elapsedRealtime(), stream)
         }
     }
 
@@ -290,7 +434,7 @@ class PlaybackHub(
             player.pause()
             return
         }
-        if (_state.value.drivingLocked && !_state.value.audioOnly) return
+        if (!playAllowed()) return
         if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
         player.play()
     }
@@ -371,7 +515,7 @@ class PlaybackHub(
     }
 
     /** Play is refused only while driving with audio-only off (the parked-only lock). */
-    fun playAllowed(): Boolean = !_state.value.drivingLocked || _state.value.audioOnly
+    fun playAllowed(): Boolean = _state.value.let { !it.drivingLocked || it.audioOnly || it.isMusic }
 
     fun setInCarDevice(value: Boolean) = _state.update { it.copy(inCarDevice = value) }
 
@@ -398,10 +542,18 @@ class PlaybackHub(
                 }
             )
             .setSubtitleConfigurations(subtitles)
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(item.title).setArtist(item.author).build())
+            .setMediaMetadata(
+                MediaMetadata.Builder().setTitle(item.title).setArtist(item.author)
+                    // Notification / lock screen / car media artwork.
+                    .setArtworkUri(item.thumbnailUrl?.let(Uri::parse))
+                    .setMediaType(if (item.source.music) MediaMetadata.MEDIA_TYPE_MUSIC else MediaMetadata.MEDIA_TYPE_VIDEO)
+                    .build()
+            )
             .build()
         // DefaultMediaSourceFactory handles HLS / DASH / progressive and side-loaded subtitles.
         val factory = DefaultMediaSourceFactory(dataSource)
+            // Retry failed chunk downloads a few times before surfacing an error.
+            .setLoadErrorHandlingPolicy(androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(6))
         val video = factory.createMediaSource(mediaItem)
         val audioUri = stream.audioUri ?: return video
         return MergingMediaSource(true, video, factory.createMediaSource(MediaItem.fromUri(audioUri)))
