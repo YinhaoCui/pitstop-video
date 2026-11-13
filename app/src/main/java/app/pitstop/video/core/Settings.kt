@@ -94,6 +94,8 @@ object Settings {
         _backgroundPlay.value = p.getBoolean("background_play", true)
         _themeMode.value = runCatching { ThemeMode.valueOf(p.getString("theme_mode", null)!!) }.getOrDefault(ThemeMode.LIGHT)
         _background.value = p.getString("background_uri", null)
+        _qualityWifi.value = runCatching { VideoQuality.valueOf(p.getString("quality_wifi", null)!!) }.getOrDefault(VideoQuality.AUTO)
+        _qualityMobile.value = runCatching { VideoQuality.valueOf(p.getString("quality_mobile", null)!!) }.getOrDefault(VideoQuality.AUTO)
     }
 
     fun updateSubtitles(f: (SubtitleStyle) -> SubtitleStyle) {
@@ -108,6 +110,21 @@ object Settings {
             ?.putInt("sub_bg_opacity", s.backgroundOpacity)
             ?.putString("sub_edge", s.edge.name)
             ?.apply()
+    }
+
+    private val _qualityWifi = MutableStateFlow(VideoQuality.AUTO)
+    /** Video quality on unmetered networks (Wi-Fi). */
+    val qualityWifi: StateFlow<VideoQuality> = _qualityWifi.asStateFlow()
+
+    private val _qualityMobile = MutableStateFlow(VideoQuality.AUTO)
+    /** Video quality on metered networks (mobile data, phone hotspot). */
+    val qualityMobile: StateFlow<VideoQuality> = _qualityMobile.asStateFlow()
+
+    fun quality(metered: Boolean): VideoQuality = if (metered) _qualityMobile.value else _qualityWifi.value
+
+    fun setQuality(metered: Boolean, value: VideoQuality) {
+        if (metered) _qualityMobile.value = value else _qualityWifi.value = value
+        prefs?.edit()?.putString(if (metered) "quality_mobile" else "quality_wifi", value.name)?.apply()
     }
 
     fun setAudioOnlyWhileDriving(value: Boolean) {

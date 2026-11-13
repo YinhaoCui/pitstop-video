@@ -87,7 +87,8 @@ class NeteaseApi(private val http: OkHttpClient, private val cookies: NeteaseCoo
 
     /** Stream URL; null url = VIP-only / region-locked / removed. */
     suspend fun songUrl(id: Long): String {
-        val level = if (cookies.signedIn.value) "exhigh" else "standard"
+        // exhigh = 320 kbps (signed in); standard = 128 kbps, also used on mobile data to save data.
+        val level = if (cookies.signedIn.value && !app.pitstop.video.core.StreamPolicy.metered) "exhigh" else "standard"
         val d = weapi(
             "song/enhance/player/url/v1",
             JSONObject().put("ids", "[$id]").put("level", level).put("encodeType", "aac"),

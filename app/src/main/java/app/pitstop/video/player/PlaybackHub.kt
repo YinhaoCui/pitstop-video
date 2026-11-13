@@ -28,7 +28,6 @@ import app.pitstop.video.core.QualityLadder
 import app.pitstop.video.core.StallTracker
 import app.pitstop.video.core.isNetworkErrorCode
 import app.pitstop.video.core.retryDelayMs
-import androidx.media3.exoplayer.DefaultLoadControl
 import kotlinx.coroutines.flow.first
 import app.pitstop.video.core.Settings
 import app.pitstop.video.core.DESKTOP_UA
@@ -36,6 +35,7 @@ import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
+import app.pitstop.video.core.VideoQuality
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,10 +85,15 @@ data class HubState(
     /** Upcoming tracks are in random order; turning it off restores the original order. */
     val shuffle: Boolean = false,
     val repeat: RepeatMode = RepeatMode.OFF,
+    /** Data saver "audio only": the current video was fetched without its picture. */
+    val noPicture: Boolean = false,
 ) {
     val current: VideoItem? get() = queue.getOrNull(index)
-    /** Music has no picture, so the parked-only video lock never pauses it. */
-    val isMusic: Boolean get() = current?.source?.music == true
+    /**
+     * Music (or a video fetched as sound only) has no picture, so the parked-only video lock never
+     * pauses it and the player shows the cover instead.
+     */
+    val isMusic: Boolean get() = current?.source?.music == true || noPicture
     val upNext: List<VideoItem> get() = if (index < 0) emptyList() else queue.drop(index + 1)
 }
 
@@ -114,11 +119,8 @@ class PlaybackHub(
         .setLoadControl(
             // Keep 30-120 s ahead (streaming-app style) so short network dips don't stall; start fast,
             // but after a stall wait for 4 s of data so it doesn't stutter straight away again.
-            DefaultLoadControl.Builder()
-                .setBufferDurationsMs(30_000, 120_000, 1_500, 4_000)
-                .setPrioritizeTimeOverSizeThresholds(true)
-                .setBackBuffer(30_000, true)
-                .build()
+            // On mobile data it stops at StreamPolicy.maxBufferAheadMs, so a skipped video wastes little.
+            MeteredLoadControl()
         )
         .build().apply {
         setAudioAttributes(
@@ -296,7 +298,14 @@ class PlaybackHub(
             stalls.reset()
         }
         player.stop()
-        _state.update { it.copy(queue = queue, index = index, loading = true, error = if (keepError) it.error else null) }
+        resolvedQuality = null
+        val sameItem = _state.value.current?.let(::keyOf) == queue.getOrNull(index)?.let(::keyOf)
+        _state.update {
+            it.copy(
+                queue = queue, index = index, loading = true, error = if (keepError) it.error else null,
+                noPicture = sameItem && it.noPicture,
+            )
+        }
         pokeInfo()
         resolveJob = scope.launch {
             try {
@@ -314,11 +323,12 @@ class PlaybackHub(
                     _state.update { it.copy(queue = q, index = i) }
                 }
                 val item = q[i]
+                applyNetworkPolicy()
                 StreamPolicy.safe = safeNext
                 val useSafe = safeNext
                 safeNext = false
                 val ready = prefetched?.takeIf { (k, at, _) ->
-                    !useSafe && k == keyOf(item) && android.os.SystemClock.elapsedRealtime() - at < 20 * 60_000
+                    !useSafe && k == prefetchKey(item) && android.os.SystemClock.elapsedRealtime() - at < 20 * 60_000
                 }?.third
                 prefetched = null
                 val stream = try {
@@ -326,6 +336,9 @@ class PlaybackHub(
                 } finally {
                     StreamPolicy.safe = false
                 }
+                resolvedQuality = if (item.source.music || item.source == SourceId.LOCAL) null else StreamPolicy.quality
+                _state.update { it.copy(noPicture = stream.audioOnly) }
+                applyVideoTrack()
                 player.setMediaSource(buildMediaSource(stream, item))
                 player.prepare()
                 if (resumeAtMs > 0) player.seekTo(resumeAtMs)
@@ -346,7 +359,19 @@ class PlaybackHub(
         }
     }
 
-    private fun keyOf(item: VideoItem) = "${item.source}:${item.id}:${item.part}:${StreamPolicy.capHeight}"
+    private fun keyOf(item: VideoItem) = "${item.source}:${item.id}:${item.part}"
+
+    /** A prefetched stream is only reused when it was resolved with the same quality rules. */
+    private fun prefetchKey(item: VideoItem) = "${keyOf(item)}:${StreamPolicy.maxHeight}:${StreamPolicy.audioOnly}"
+
+    /** Copies the current network type and the matching quality choice into [StreamPolicy] before resolving. */
+    private fun applyNetworkPolicy() {
+        StreamPolicy.metered = metered.value
+        StreamPolicy.quality = Settings.quality(metered.value)
+    }
+
+    /** Quality the current video was fetched with; null for music / local files (quality doesn't apply). */
+    private var resolvedQuality: VideoQuality? = null
 
     // --- Streaming resilience ------------------------------------------------------------------
 
@@ -360,6 +385,10 @@ class PlaybackHub(
 
     private val connectivity = context.getSystemService(android.net.ConnectivityManager::class.java)
     private val online = MutableStateFlow(true)
+    /** Mobile data / hotspot (pay-per-byte) vs. Wi-Fi: picks which quality setting applies. */
+    private val metered = MutableStateFlow(connectivity?.isActiveNetworkMetered ?: false)
+        .also { StreamPolicy.metered = it.value }
+    val onMeteredNetwork: StateFlow<Boolean> = metered.asStateFlow()
 
     init {
         // Watch the network: wake a pending reconnect as soon as it's back; a new network
@@ -375,10 +404,30 @@ class PlaybackHub(
                     current = network
                     online.value = true
                 }
+                override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) {
+                    metered.value = !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+                    StreamPolicy.metered = metered.value
+                }
                 override fun onLost(network: android.net.Network) {
                     if (network == current) online.value = false
                 }
             })
+        }
+    }
+
+    init {
+        // Quality setting changed, or Wi-Fi <-> mobile data: refetch the current video at the same second.
+        scope.launch {
+            combine(Settings.qualityWifi, Settings.qualityMobile, metered) { wifi, mobile, m -> if (m) mobile else wifi }
+                .distinctUntilChanged()
+                .collect { q ->
+                    val s = _state.value
+                    val was = resolvedQuality ?: return@collect
+                    if (was == q || s.loading || s.current == null) return@collect
+                    prefetched = null
+                    resumeAtMs = player.currentPosition
+                    playAt(s.queue, s.index)
+                }
         }
     }
 
@@ -407,7 +456,8 @@ class PlaybackHub(
         val cur = s.current ?: return
         if (s.isMusic || cur.source == SourceId.LOCAL) return
         if (!stalls.onStall(android.os.SystemClock.elapsedRealtime())) return
-        val lower = QualityLadder.lower(StreamPolicy.capHeight) ?: return
+        applyNetworkPolicy()
+        val lower = QualityLadder.lower(StreamPolicy.maxHeight) ?: return
         StreamPolicy.capHeight = lower
         resumeAtMs = player.currentPosition
         playAt(s.queue, s.index)
@@ -423,7 +473,10 @@ class PlaybackHub(
         val s = _state.value
         val next = s.queue.getOrNull(s.index + 1) ?: return
         if (next.id.startsWith(COLLECTION_PREFIX) || next.source == SourceId.LOCAL || next.source == SourceId.LOCAL_MUSIC) return
-        val key = keyOf(next)
+        applyNetworkPolicy()
+        // Data saver: on mobile data, look the next stream up only when it is actually played.
+        if (StreamPolicy.metered) return
+        val key = prefetchKey(next)
         if (prefetched?.first == key || prefetchJob?.isActive == true) return
         prefetchJob = scope.launch {
             val source = sources[next.source] ?: return@launch
@@ -574,7 +627,8 @@ class PlaybackHub(
 
     private fun applyVideoTrack() {
         val s = _state.value
-        val disabled = s.drivingLocked || (phoneBackground && !s.carActive)
+        // Audio-only data saver: never pick a video track (matters for live HLS, which carries both).
+        val disabled = s.drivingLocked || (phoneBackground && !s.carActive) || resolvedQuality == VideoQuality.AUDIO
         if (player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_VIDEO) == disabled) return
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, disabled).build()

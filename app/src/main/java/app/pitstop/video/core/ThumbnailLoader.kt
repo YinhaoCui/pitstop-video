@@ -60,7 +60,9 @@ class ThumbnailLoader(private val context: Context, private val http: OkHttpClie
                             }
                         }
                     } else {
-                        val url = item.thumbnailUrl ?: return@runCatching null
+                        val original = item.thumbnailUrl ?: return@runCatching null
+                        // Data saver: on mobile data ask the image server for a picture near the size shown.
+                        val url = if (StreamPolicy.metered) ThumbUrls.smaller(original, width) else original
                         http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
                             val bytes = resp.body?.bytes() ?: return@use null
                             val raw = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@use null

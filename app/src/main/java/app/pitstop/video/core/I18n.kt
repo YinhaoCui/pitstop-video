@@ -273,6 +273,14 @@ class Strings(val language: AppLanguage) {
     val audioOnlyDriving get() = t("Audio only while driving", "行驶中，仅播放声音")
     val audioOnlyPark get() = t("The picture returns when you park.", "停车后恢复画面。")
     val audioOnlyPhone get() = t("Audio only while the car moves", "车辆行驶中，仅播放声音")
+    val dataSaver get() = t("Video quality & data", "画质与流量")
+    val dataSaverText get() = t("Lower quality uses less data. \"Audio only\" fetches just the sound of videos, great for music and podcasts. On mobile data the app also streams music at about 128 kbps, buffers less ahead, skips preloading the next track and loads smaller thumbnails.", "画质越低越省流量。“仅音频”只获取视频的声音，适合听歌和播客。使用移动数据时，还会以约 128 kbps 播放音乐、减少预缓冲、不预加载下一首，并加载较小的缩略图。")
+    val onWifi get() = t("On Wi-Fi", "Wi-Fi 下")
+    val onMobileData get() = t("On mobile data", "移动数据下")
+    val qualityAuto get() = t("Auto", "自动")
+    val qualityAudio get() = t("Audio only", "仅音频")
+    val quality get() = t("Quality", "画质")
+    fun qualityFor(metered: Boolean) = if (metered) t("Quality on mobile data", "移动数据画质") else t("Quality on Wi-Fi", "Wi-Fi 画质")
 
     // Errors shown as-is
     val needBiliLogin get() = t("Sign in to Bilibili on the phone first", "请先在手机上登录哔哩哔哩")

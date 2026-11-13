@@ -38,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pitstop.video.core.AppLanguage
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.S
+import app.pitstop.video.core.VideoQuality
 import app.pitstop.video.core.Settings
 import app.pitstop.video.core.ThemeMode
 import app.pitstop.video.core.PlayerStyle
@@ -160,6 +161,37 @@ fun PhonePlaybackSection() {
                 Text(S.backgroundPlayText, style = MaterialTheme.typography.bodySmall)
             }
             Switch(checked = on, onCheckedChange = Settings::setBackgroundPlay)
+        }
+    }
+}
+
+/** Label for a quality choice ("Auto", "720p", "Audio only"). */
+@Composable
+fun qualityLabel(q: VideoQuality): String = when (q) {
+    VideoQuality.AUTO -> S.qualityAuto
+    VideoQuality.AUDIO -> S.qualityAudio
+    else -> "${q.maxHeight}p"
+}
+
+/** Data saver: separate video quality for Wi-Fi and mobile data, down to audio only. */
+@Composable
+fun DataSaverSection() {
+    val wifi by Settings.qualityWifi.collectAsStateWithLifecycle()
+    val mobile by Settings.qualityMobile.collectAsStateWithLifecycle()
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(S.dataSaver, style = MaterialTheme.typography.titleMedium)
+        Text(S.dataSaverText, style = MaterialTheme.typography.bodySmall)
+        listOf(false to wifi, true to mobile).forEach { (metered, current) ->
+            Text(if (metered) S.onMobileData else S.onWifi, style = MaterialTheme.typography.bodyMedium)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                VideoQuality.entries.forEach { q ->
+                    FilterChip(
+                        selected = current == q,
+                        onClick = { Settings.setQuality(metered, q) },
+                        label = { Text(qualityLabel(q)) },
+                    )
+                }
+            }
         }
     }
 }

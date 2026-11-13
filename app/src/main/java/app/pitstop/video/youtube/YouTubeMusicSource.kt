@@ -87,8 +87,9 @@ class YouTubeMusicSource(private val account: YouTubeAccount) : VideoSource {
         val info = StreamInfo.getInfo(ServiceList.YouTube, item.id)
         val audio = info.audioStreams
             .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
-            .map { StreamSelector.AudioTrack(it.content, it.averageBitrate.toLong(), it.codec.orEmpty()) }
-        val a = StreamSelector.pickAudio(audio) ?: throw UserFacingException("No audio stream for this song")
+            // averageBitrate is in kbps; StreamSelector works in bits/s.
+            .map { StreamSelector.AudioTrack(it.content, it.averageBitrate.toLong() * 1000, it.codec.orEmpty()) }
+        val a = StreamSelector.pickAudio(audio, app.pitstop.video.core.StreamPolicy.audioMaxBps) ?: throw UserFacingException("No audio stream for this song")
         PlayableStream(a.url, headers = mapOf("User-Agent" to NewPipeDownloader.USER_AGENT))
     }
 
