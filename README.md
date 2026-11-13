@@ -89,16 +89,20 @@ knob moves between the on-screen buttons (*Browse*, play/pause, *Split/Full*, ne
 The on-screen keyboard for car search is also parked-only — or search on the phone, which plays
 straight onto the car screen.
 
-## YouTube sign-in setup (optional)
+## YouTube / Google Drive sign-in setup (optional)
 
-Google requires an OAuth client registered for the app's signing key:
+Google requires an OAuth client registered for the app's signing key (otherwise sign-in fails with
+`UNREGISTERED_ON_API_CONSOLE`):
 
 1. In [Google Cloud Console](https://console.cloud.google.com/) create a project and enable
-   **YouTube Data API v3**.
+   **YouTube Data API v3** and/or **Google Drive API**.
 2. Configure the OAuth consent screen (External, *Testing*), add your Google account as a test user.
 3. Create credentials → **OAuth client ID → Android**: package `app.pitstop.video`, SHA-1 of the
    signing key (`./gradlew signingReport`).
-4. In the app: *Account → Sign in with Google*.
+4. In the app: *Settings → Sign in with Google* (YouTube), or *Music → Google Drive → Sign in*.
+
+Without this setup, Drive songs can still be added one by one through the system file picker
+(*Music → Google Drive → Add songs*, then ☰ → Google Drive); the Drive app serves those files.
 
 No client ID needs to go into the code; Google matches the package name + SHA-1.
 

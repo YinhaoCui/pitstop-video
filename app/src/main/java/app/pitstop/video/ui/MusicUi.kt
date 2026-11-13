@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -65,6 +68,7 @@ fun MusicTab(graph: AppGraph) {
     val biliLoggedIn by graph.biliCookies.loggedIn.collectAsStateWithLifecycle()
     val neteaseSignedIn by graph.neteaseCookies.signedIn.collectAsStateWithLifecycle()
     val driveSignedIn by graph.driveAccount.signedIn.collectAsStateWithLifecycle()
+    val drivePicked by graph.driveSource.picked.collectAsStateWithLifecycle()
 
     Column(Modifier.fillMaxSize()) {
         SourceChips(sources.map { S.sourceName(it.id) }, sources.indexOf(source)) { selected = sources[it].id }
@@ -76,9 +80,31 @@ fun MusicTab(graph: AppGraph) {
             else -> false
         }
         if (needsLogin) MusicLoginCard(graph, source.id)
-        // Drive lists nothing without an account; other services browse fine signed out.
-        if (source.id != SourceId.GDRIVE || driveSignedIn) {
-            SourceTab(graph, source, refreshKey = "$ytSignedIn/$biliLoggedIn/$neteaseSignedIn/$driveSignedIn")
+        // Without sign-in, Drive songs can still be picked one by one in the system file picker.
+        if (source.id == SourceId.GDRIVE && (!driveSignedIn || drivePicked.isNotEmpty())) {
+            DrivePickerCard(graph, hasFiles = drivePicked.isNotEmpty())
+        }
+        SourceTab(graph, source, refreshKey = "$ytSignedIn/$biliLoggedIn/$neteaseSignedIn/$driveSignedIn/${drivePicked.size}")
+    }
+}
+
+/** Google Drive: songs are picked with the system file picker (Drive appears there), no sign-in. */
+@Composable
+private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean) {
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) graph.driveSource.addPicked(uris)
+    }
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.85f))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (!hasFiles) Text(S.drivePickHint, style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text(S.driveAddSongs) }
+            if (hasFiles) TextButton(onClick = graph.driveSource::clearPicked) { Text(S.driveClear) }
         }
     }
 }

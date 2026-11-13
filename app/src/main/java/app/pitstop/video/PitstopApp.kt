@@ -62,6 +62,7 @@ class AppGraph(app: Application) {
     val http = buildHttpClient(CompositeCookieJar(listOf(biliCookies, neteaseCookies)))
     val neteaseApi = NeteaseApi(http, neteaseCookies)
     val driveAccount = DriveAccount(app)
+    val driveSource = DriveSource(app, driveAccount, http)
     val biliApi = BiliApi(http, biliCookies, app.cacheDir)
     val youTubeAccount = YouTubeAccount(app, http)
     val thumbnails = ThumbnailLoader(app, http)
@@ -76,7 +77,7 @@ class AppGraph(app: Application) {
         BiliMusicSource(biliApi),
         YouTubeMusicSource(youTubeAccount),
         NeteaseSource(neteaseApi, neteaseCookies),
-        DriveSource(driveAccount, http),
+        driveSource,
         LocalMusicSource(app),
     )
 
