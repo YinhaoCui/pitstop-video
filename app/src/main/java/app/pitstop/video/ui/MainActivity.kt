@@ -3,6 +3,7 @@ package app.pitstop.video.ui
 import android.app.PictureInPictureParams
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import android.util.Rational
 import androidx.activity.ComponentActivity
@@ -12,6 +13,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.lifecycleScope
+import app.pitstop.video.core.Settings
+import app.pitstop.video.player.PlaybackService
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.LocalStrings
 import app.pitstop.video.core.Strings
@@ -40,15 +47,35 @@ class MainActivity : ComponentActivity() {
             }
             }
         }
+        // Android 12+: swipe home while a video plays -> smooth automatic picture-in-picture.
+        if (Build.VERSION.SDK_INT >= 31) {
+            lifecycleScope.launch {
+                graph.hub.state.map { it.isPlaying && !it.carActive }.distinctUntilChanged().collect { auto ->
+                    runCatching {
+                        setPictureInPictureParams(
+                            PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9))
+                                .setAutoEnterEnabled(auto).setSeamlessResizeEnabled(true).build()
+                        )
+                    }
+                }
+            }
+        }
     }
 
     override fun onStart() {
         super.onStart()
         if (graph.inCarDevice) graph.driving.startPhoneGps("device")
+        // The media session service gives background playback, notification and lock-screen controls.
+        PlaybackService.start(this)
+        graph.hub.setPhoneBackground(false)
     }
 
     override fun onStop() {
         graph.driving.stopPhoneGps("device")
+        if (!isChangingConfigurations && !graph.hub.state.value.carActive) {
+            // Screen off / another app: keep the sound (picture paused to save data) or pause.
+            if (Settings.backgroundPlay.value) graph.hub.setPhoneBackground(true) else graph.hub.player.pause()
+        }
         super.onStop()
     }
 
@@ -69,7 +96,7 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val s = graph.hub.state.value
-        if (graph.hub.player.isPlaying && !s.carActive) {
+        if (Build.VERSION.SDK_INT < 31 && graph.hub.player.isPlaying && !s.carActive) {
             enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build())
         }
     }

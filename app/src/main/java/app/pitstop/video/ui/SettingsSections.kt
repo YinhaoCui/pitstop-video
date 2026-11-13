@@ -147,6 +147,21 @@ fun SubtitleSettingsSection() {
 
 /** Audio-only mode while driving (default on) vs. pausing completely. */
 @Composable
+fun PhonePlaybackSection() {
+    val on by Settings.backgroundPlay.collectAsStateWithLifecycle()
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(S.phonePlayback, style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(S.backgroundPlay, style = MaterialTheme.typography.bodyLarge)
+                Text(S.backgroundPlayText, style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = on, onCheckedChange = Settings::setBackgroundPlay)
+        }
+    }
+}
+
+@Composable
 fun DrivingAudioSection() {
     val on by Settings.audioOnlyWhileDriving.collectAsStateWithLifecycle()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

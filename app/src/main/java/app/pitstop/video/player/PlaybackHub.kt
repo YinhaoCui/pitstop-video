@@ -159,8 +159,7 @@ class PlaybackHub(
                     val audioOnly = locked && Settings.audioOnlyWhileDriving.value
                     _state.update { it.copy(drivingLocked = locked, audioOnly = audioOnly) }
                     // Audio-only: stop decoding / downloading video, keep the sound. Otherwise pause.
-                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, locked).build()
+                    applyVideoTrack()
                     if (locked && !audioOnly) player.pause()
                 }
         }
@@ -346,7 +345,33 @@ class PlaybackHub(
         player.seekTo((fraction.coerceIn(0f, 1f) * dur).toLong())
     }
 
-    fun setCarActive(active: Boolean) = _state.update { it.copy(carActive = active) }
+    fun setCarActive(active: Boolean) {
+        _state.update { it.copy(carActive = active) }
+        applyVideoTrack()
+    }
+
+    /** The phone app is out of sight (screen off / another app) and no car screen shows the video. */
+    private var phoneBackground = false
+
+    /**
+     * Background playback on the phone: keep the sound, stop downloading and decoding the picture.
+     * The picture comes back (after a short rebuffer) when the app is visible again.
+     */
+    fun setPhoneBackground(background: Boolean) {
+        phoneBackground = background
+        applyVideoTrack()
+    }
+
+    private fun applyVideoTrack() {
+        val s = _state.value
+        val disabled = s.drivingLocked || (phoneBackground && !s.carActive)
+        if (player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_VIDEO) == disabled) return
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, disabled).build()
+    }
+
+    /** Play is refused only while driving with audio-only off (the parked-only lock). */
+    fun playAllowed(): Boolean = !_state.value.drivingLocked || _state.value.audioOnly
 
     fun setInCarDevice(value: Boolean) = _state.update { it.copy(inCarDevice = value) }
 

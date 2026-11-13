@@ -210,6 +210,8 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
             update = { view ->
                 SubtitleStyling.apply(view.subtitleView, subtitleStyle)
                 view.useController = showControls && !s.drivingLocked
+                // Don't let the phone screen time out mid-video.
+                view.keepScreenOn = s.wantsToPlay && !s.carActive
                 val wanted = if (s.carActive) null else graph.hub.player
                 if (view.player !== wanted) view.player = wanted
             },

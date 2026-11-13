@@ -37,6 +37,15 @@ object Settings {
     /** While driving: keep the sound playing with the picture hidden (true) or pause completely (false). */
     val audioOnlyWhileDriving: StateFlow<Boolean> = _audioOnlyWhileDriving.asStateFlow()
 
+    private val _backgroundPlay = MutableStateFlow(true)
+    /** Phone: keep the sound playing when the screen turns off or another app is opened. */
+    val backgroundPlay: StateFlow<Boolean> = _backgroundPlay.asStateFlow()
+
+    fun setBackgroundPlay(value: Boolean) {
+        _backgroundPlay.value = value
+        prefs?.edit()?.putBoolean("background_play", value)?.apply()
+    }
+
     fun init(p: SharedPreferences) {
         prefs = p
         val d = SubtitleStyle()
@@ -50,6 +59,7 @@ object Settings {
             edge = runCatching { SubtitleStyle.Edge.valueOf(p.getString("sub_edge", d.edge.name)!!) }.getOrDefault(d.edge),
         )
         _audioOnlyWhileDriving.value = p.getBoolean("audio_only_driving", true)
+        _backgroundPlay.value = p.getBoolean("background_play", true)
     }
 
     fun updateSubtitles(f: (SubtitleStyle) -> SubtitleStyle) {

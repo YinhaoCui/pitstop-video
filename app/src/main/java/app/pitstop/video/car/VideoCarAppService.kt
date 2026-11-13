@@ -46,6 +46,8 @@ class VideoSession : Session() {
             override fun onCreate(owner: LifecycleOwner) {
                 runCatching { carInfo?.addSpeedListener(ContextCompat.getMainExecutor(carContext), speedListener) }
                 graph.driving.startPhoneGps("car")
+                // Media session: steering-wheel / Bluetooth buttons and keeping the process alive.
+                app.pitstop.video.player.PlaybackService.start(carContext)
             }
 
             // Leaving the app on the car screen (opening Maps, Phone, ...) pauses the video.

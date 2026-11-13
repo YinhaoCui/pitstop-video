@@ -14,8 +14,8 @@ android {
         // Android 8.0+: older phones, tablets and most aftermarket Android head units.
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     buildTypes {
@@ -57,6 +57,7 @@ dependencies {
     implementation(libs.media3.exoplayer.dash)
     implementation(libs.media3.datasource.okhttp)
     implementation(libs.media3.ui)
+    implementation(libs.media3.session)
 
     implementation(libs.car.app)
     implementation(libs.car.app.projected)
