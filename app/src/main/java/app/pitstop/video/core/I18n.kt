@@ -56,7 +56,45 @@ class Strings(val language: AppLanguage) {
         SourceId.NETEASE -> netease
         SourceId.GDRIVE -> googleDrive
         SourceId.LOCAL_MUSIC -> musicOnDevice
+        SourceId.PEERTUBE -> "PeerTube"
+        SourceId.SOUNDCLOUD -> "SoundCloud"
+        SourceId.BANDCAMP -> "Bandcamp"
+        SourceId.PODCASTS -> podcasts
+        SourceId.RADIO -> radio
+        SourceId.BILI_LIVE -> biliLive
+        SourceId.TWITCH -> "Twitch"
+        SourceId.DOUYU -> douyu
     }
+    val podcasts get() = t("Podcasts", "播客")
+    val radio get() = t("Radio", "电台")
+    val biliLive get() = t("Bilibili Live", "B站直播")
+    val douyu get() = t("Douyu", "斗鱼")
+    val live get() = t("Live", "直播")
+    val topCharts get() = t("Top charts", "排行榜")
+    val newReleases get() = t("New releases", "新发布")
+    val featured get() = t("Featured", "精选")
+    val radioTop get() = t("Most popular", "最受欢迎")
+    val radioLocal get() = t("Near you", "本地电台")
+    val radioChinese get() = t("Chinese stations", "中文电台")
+    val streamOffline get() = t("This channel isn't live right now.", "该主播当前未开播。")
+    val liveUnavailable get() = t("Couldn't get this live stream; the site may have changed.", "无法获取直播流，网站可能已更改。")
+    fun viewers(n: Long) = t(if (n >= 1000) "%.1fk watching".format(n / 1000.0) else "$n watching", if (n >= 10000) "%.1f万人观看".format(n / 10000.0) else "${n}人观看")
+
+    // --- Strings for Bilibili Live + Twitch (add new ones here) ---
+
+    // --- Strings for Douyu (add new ones here) ---
+
+    // --- Strings for Podcasts + Radio (add new ones here) ---
+    val podcastNoFeed get() = t("This podcast has no public feed", "该播客没有公开的订阅源")
+    val radioNoStream get() = t("This station has no playable stream", "该电台没有可播放的音频流")
+
+    // --- Strings for SoundCloud / Bandcamp / PeerTube (add new ones here) ---
+    val newAndHot get() = t("New & hot", "新歌热榜")
+    val bandcampRadio get() = t("Bandcamp Radio", "Bandcamp 电台")
+    val mostLiked get() = t("Most liked", "最多点赞")
+    val peertubeLocal get() = t("This instance", "本站")
+    val noAudioStream get() = t("No playable audio for this track.", "这首歌没有可播放的音频。")
+    val noVideoStream get() = t("No playable stream for this video.", "这个视频没有可播放的流。")
 
     // Music
     val video get() = t("Video", "视频")

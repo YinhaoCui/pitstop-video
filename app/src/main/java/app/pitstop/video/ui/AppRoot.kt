@@ -116,6 +116,8 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
     // Top level: Video or Music (each with its sources below), plus Playlists and Settings.
     var page by rememberSaveable { mutableStateOf(Page.VIDEO) }
     var videoSourceId by rememberSaveable { mutableStateOf(videoSources.first().id) }
+    val liveSources = remember(hidden) { graph.shownLiveSources }
+    var liveSourceId by rememberSaveable { mutableStateOf(liveSources.firstOrNull()?.id) }
     val state by graph.hub.state.collectAsStateWithLifecycle()
     // Re-read feed lists after sign-in / sign-out.
     val ytSignedIn by graph.youTubeAccount.signedIn.collectAsStateWithLifecycle()
@@ -129,6 +131,11 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
                     val index = videoSources.indexOfFirst { it.id == videoSourceId }.coerceAtLeast(0)
                     SourceChips(videoSources.map { S.sourceName(it.id) }, index) { videoSourceId = videoSources[it].id }
                     SourceTab(graph, videoSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn")
+                }
+                Page.LIVE -> if (liveSources.isNotEmpty()) {
+                    val index = liveSources.indexOfFirst { it.id == liveSourceId }.coerceAtLeast(0)
+                    SourceChips(liveSources.map { S.sourceName(it.id) }, index) { liveSourceId = liveSources[it].id }
+                    SourceTab(graph, liveSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn")
                 }
                 Page.MUSIC -> MusicTab(graph)
                 Page.PLAYLISTS -> PlaylistsTab(graph)
@@ -186,7 +193,7 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
     }
 }
 
-private enum class Page { VIDEO, MUSIC, PLAYLISTS, SETTINGS }
+private enum class Page { VIDEO, MUSIC, LIVE, PLAYLISTS, SETTINGS }
 
 /** One row: avatar, the Video / Music switch, then Playlists and Settings. */
 @Composable
@@ -198,11 +205,11 @@ private fun AppHeader(page: Page, onPage: (Page) -> Unit) {
         Avatar(36.dp)
         Spacer(Modifier.width(12.dp))
         SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
-            listOf(Page.VIDEO to S.video, Page.MUSIC to S.music).forEachIndexed { i, (p, label) ->
+            listOf(Page.VIDEO to S.video, Page.MUSIC to S.music, Page.LIVE to S.live).forEachIndexed { i, (p, label) ->
                 SegmentedButton(
                     selected = page == p,
                     onClick = { onPage(p) },
-                    shape = SegmentedButtonDefaults.itemShape(i, 2),
+                    shape = SegmentedButtonDefaults.itemShape(i, 3),
                     icon = {},
                 ) { Text(label, maxLines = 1) }
             }
@@ -318,7 +325,7 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
 }
 
 /** Only streamed videos have a quality to choose (music and local files don't). */
-private fun hasQualityChoice(item: VideoItem?) = item?.source == SourceId.YOUTUBE || item?.source == SourceId.BILIBILI
+private fun hasQualityChoice(item: VideoItem?) = item != null && !item.source.music && item.source != SourceId.LOCAL
 
 /** Quick quality / data-saver switch for the network in use (Wi-Fi or mobile data); also in Settings. */
 @Composable

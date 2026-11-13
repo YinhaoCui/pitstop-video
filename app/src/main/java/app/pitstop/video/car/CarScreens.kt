@@ -181,7 +181,7 @@ class BrowseScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
         val t = I18n.s
         val list = ItemList.Builder()
         val graph = carContext.graph
-        (graph.shownVideoSources + graph.shownMusicSources).forEach { src ->
+        (graph.shownVideoSources + graph.shownLiveSources + graph.shownMusicSources).forEach { src ->
             list.addItem(
                 Row.Builder().setTitle(t.sourceName(src.id)).setBrowsable(true)
                     .setImage(carContext.icon(when { src.id.music -> R.drawable.ic_music; src.id == SourceId.LOCAL -> R.drawable.ic_folder; else -> R.drawable.ic_video }))

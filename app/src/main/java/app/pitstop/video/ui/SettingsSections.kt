@@ -172,7 +172,11 @@ fun PhonePlaybackSection() {
 fun PlatformToggles() {
     val hidden by Settings.hiddenSources.collectAsStateWithLifecycle()
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        listOf(S.video to SourceId.entries.filter { !it.music }, S.music to SourceId.entries.filter { it.music })
+        listOf(
+            S.video to SourceId.entries.filter { !it.music && !it.live },
+            S.music to SourceId.entries.filter { it.music },
+            S.live to SourceId.entries.filter { it.live },
+        )
             .forEach { (title, ids) ->
                 Text(title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                 val shownCount = ids.count { it !in hidden }

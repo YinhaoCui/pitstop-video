@@ -1,9 +1,14 @@
 package app.pitstop.video.core
 
-/** Every feed the app can play. [music] sources are audio-only: no picture, so no parked-only lock. */
-enum class SourceId(val music: Boolean = false) {
-    YOUTUBE, BILIBILI, LOCAL,
-    BILI_MUSIC(true), YT_MUSIC(true), NETEASE(true), GDRIVE(true), LOCAL_MUSIC(true),
+/**
+ * Every feed the app can play. [music] sources are audio-only: no picture, so no parked-only lock.
+ * [live] sources are live video (Live tab); the parked-only lock applies to them like any video.
+ */
+enum class SourceId(val music: Boolean = false, val live: Boolean = false) {
+    YOUTUBE, BILIBILI, PEERTUBE, LOCAL,
+    BILI_MUSIC(true), YT_MUSIC(true), NETEASE(true), SOUNDCLOUD(true), BANDCAMP(true),
+    PODCASTS(true), RADIO(true), GDRIVE(true), LOCAL_MUSIC(true),
+    BILI_LIVE(live = true), TWITCH(live = true), DOUYU(live = true),
 }
 
 /**
@@ -57,6 +62,8 @@ data class PlayableStream(
     val subtitles: List<SubtitleTrack> = emptyList(),
     /** Only the sound of a video was fetched (data saver): show the cover like a song. */
     val audioOnly: Boolean = false,
+    /** A live stream or radio station: no seeking back to an old position, no prefetching (links expire). */
+    val live: Boolean = false,
 ) {
     enum class Kind { PROGRESSIVE, HLS, DASH }
 }

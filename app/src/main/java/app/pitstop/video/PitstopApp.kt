@@ -18,6 +18,14 @@ import app.pitstop.video.core.ThumbnailLoader
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.buildHttpClient
 import app.pitstop.video.core.shownSources
+import app.pitstop.video.newpipe.PeerTubeSource
+import app.pitstop.video.newpipe.SoundCloudSource
+import app.pitstop.video.newpipe.BandcampSource
+import app.pitstop.video.podcast.PodcastSource
+import app.pitstop.video.radio.RadioSource
+import app.pitstop.video.bilibili.BiliLiveSource
+import app.pitstop.video.live.TwitchSource
+import app.pitstop.video.live.DouyuSource
 import app.pitstop.video.local.LocalSource
 import app.pitstop.video.local.LocalMusicSource
 import app.pitstop.video.bilibili.BiliMusicSource
@@ -75,15 +83,25 @@ class AppGraph(app: Application) {
     val sources: List<VideoSource> = listOf(
         YouTubeSource(youTubeAccount),
         BiliSource(biliApi, biliCookies),
+        PeerTubeSource(),
         LocalSource(app),
         BiliMusicSource(biliApi),
         YouTubeMusicSource(youTubeAccount),
         NeteaseSource(neteaseApi, neteaseCookies),
+        SoundCloudSource(),
+        BandcampSource(),
+        PodcastSource(http),
+        RadioSource(http),
         driveSource,
         LocalMusicSource(app),
+        BiliLiveSource(http, biliCookies),
+        TwitchSource(http),
+        DouyuSource(app, http),
     )
 
-    val videoSources: List<VideoSource> get() = sources.filter { !it.id.music }
+    val videoSources: List<VideoSource> get() = sources.filter { !it.id.music && !it.id.live }
+    val liveSources: List<VideoSource> get() = sources.filter { it.id.live }
+    val shownLiveSources: List<VideoSource> get() = shownSources(liveSources, Settings.hiddenSources.value) { it.id }
     val musicSources: List<VideoSource> get() = sources.filter { it.id.music }
     /** What the Video / Music bars show: the user's platform choice (Settings → Platforms). */
     val shownVideoSources: List<VideoSource> get() = shownSources(videoSources, Settings.hiddenSources.value) { it.id }
