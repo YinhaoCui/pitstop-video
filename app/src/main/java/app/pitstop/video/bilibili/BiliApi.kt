@@ -1,6 +1,7 @@
 package app.pitstop.video.bilibili
 
 import app.pitstop.video.core.I18n
+import app.pitstop.video.core.FeedPage
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
@@ -110,11 +111,20 @@ class BiliApi(
         }
     }
 
-    /** Video posts from followed uploaders (requires login). */
-    suspend fun following(): List<VideoItem> {
+    /**
+     * Video posts from followed uploaders (requires login), about 20 per page. [offset] is the cursor
+     * Bilibili returned with the previous page; the result carries the next one (null when there are no more).
+     */
+    suspend fun following(offset: String? = null, page: Int = 1): FeedPage {
         if (!cookies.loggedIn.value) throw UserFacingException(I18n.s.needBiliLogin)
-        val items = data("https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?type=video&page=1")
-            .optJSONArray("items")
+        val url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?type=video&page=$page" +
+            (offset?.let { "&offset=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")
+        val d = data(url)
+        val next = d.optString("offset").takeIf { d.optBoolean("has_more") && it.isNotEmpty() && it != offset }
+        return FeedPage(parseFollowing(d.optJSONArray("items")), next)
+    }
+
+    private fun parseFollowing(items: org.json.JSONArray?): List<VideoItem> {
         return items.objects().mapNotNull { post ->
             val modules = post.optJSONObject("modules") ?: return@mapNotNull null
             val archive = modules.optJSONObject("module_dynamic")?.optJSONObject("major")?.optJSONObject("archive")
