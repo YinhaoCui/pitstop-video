@@ -15,6 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.rememberCoroutineScope
+import app.pitstop.video.core.I18n
+import kotlinx.coroutines.launch
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -81,18 +86,32 @@ fun MusicTab(graph: AppGraph) {
         }
         if (needsLogin) MusicLoginCard(graph, source.id)
         // Without sign-in, Drive songs can still be picked one by one in the system file picker.
-        if (source.id == SourceId.GDRIVE && (!driveSignedIn || drivePicked.isNotEmpty())) {
-            DrivePickerCard(graph, hasFiles = drivePicked.isNotEmpty())
+        val googlePicked by graph.driveSource.picker.files.collectAsStateWithLifecycle()
+        if (source.id == SourceId.GDRIVE) {
+            DrivePickerCard(graph, hasFiles = drivePicked.isNotEmpty(), hasGooglePicked = googlePicked.isNotEmpty())
         }
-        SourceTab(graph, source, refreshKey = "$ytSignedIn/$biliLoggedIn/$neteaseSignedIn/$driveSignedIn/${drivePicked.size}")
+        SourceTab(
+            graph, source,
+            refreshKey = "$ytSignedIn/$biliLoggedIn/$neteaseSignedIn/$driveSignedIn/${drivePicked.size}/${googlePicked.size}",
+        )
     }
 }
 
 /** Google Drive: songs are picked with the system file picker (Drive appears there), no sign-in. */
 @Composable
-private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean) {
+private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked: Boolean) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) graph.driveSource.addPicked(uris)
+    }
+    // Experiment (issue #2): Google's Drive picker with the drive.file scope.
+    val drivePicker = graph.driveSource.picker
+    val scope = rememberCoroutineScope()
+    var message by remember { mutableStateOf<String?>(null) }
+    val googleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        scope.launch {
+            message = runCatching { I18n.s.drivePickerAdded(drivePicker.completePick(res.data)) }
+                .getOrElse { I18n.s.drivePickerFailed(it.message) }
+        }
     }
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
@@ -106,6 +125,17 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean) {
             Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text(S.driveAddSongs) }
             if (hasFiles) TextButton(onClick = graph.driveSource::clearPicked) { Text(S.driveClear) }
         }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                scope.launch {
+                    runCatching { drivePicker.beginPick() }
+                        .onSuccess { googleLauncher.launch(IntentSenderRequest.Builder(it.intentSender).build()) }
+                        .onFailure { message = I18n.s.drivePickerFailed(it.message) }
+                }
+            }) { Text(S.driveGooglePick) }
+            if (hasGooglePicked) TextButton(onClick = drivePicker::clear) { Text(S.driveClear) }
+        }
+        message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
 }
 

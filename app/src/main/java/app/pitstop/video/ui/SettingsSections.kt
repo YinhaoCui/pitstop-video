@@ -40,6 +40,7 @@ import app.pitstop.video.core.I18n
 import app.pitstop.video.core.S
 import app.pitstop.video.core.Settings
 import app.pitstop.video.core.ThemeMode
+import app.pitstop.video.core.PlayerStyle
 import androidx.compose.foundation.clickable
 import app.pitstop.video.core.SubtitleStyle
 
@@ -205,6 +206,14 @@ fun AppearanceSection() {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(ThemeMode.LIGHT to S.themeLight, ThemeMode.DARK to S.themeDark, ThemeMode.SYSTEM to S.themeSystem).forEach { (m, label) ->
                 FilterChip(selected = mode == m, onClick = { Settings.setThemeMode(m) }, label = { Text(label) })
+            }
+        }
+        val style by Settings.playerStyle.collectAsStateWithLifecycle()
+        Text(S.playerStyle, style = MaterialTheme.typography.bodyLarge)
+        Text(S.playerStyleText, style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(PlayerStyle.PAGE to S.playerStylePage, PlayerStyle.FLOATING to S.playerStyleFloating).forEach { (m, label) ->
+                FilterChip(selected = style == m, onClick = { Settings.setPlayerStyle(m) }, label = { Text(label) })
             }
         }
         Text(S.backgroundImage, style = MaterialTheme.typography.bodyLarge)

@@ -20,6 +20,13 @@ class PlaylistOpsTest {
         assertEquals(4, PlaylistOps.add(p, a.copy(source = SourceId.LOCAL)).items.size)
     }
 
+    @Test fun addAllKeepsOrderAndSkipsDuplicates() {
+        val d = VideoItem(SourceId.GDRIVE, "d", "D")
+        val e = VideoItem(SourceId.GDRIVE, "e", "E")
+        assertEquals(listOf(a, b, c, d, e), PlaylistOps.addAll(p, listOf(d, a, e, d)).items)
+        assertEquals(p, PlaylistOps.addAll(p, emptyList()))
+    }
+
     @Test fun removeAndMove() {
         assertEquals(listOf(a, c), PlaylistOps.removeAt(p, 1).items)
         assertEquals(p, PlaylistOps.removeAt(p, 9))

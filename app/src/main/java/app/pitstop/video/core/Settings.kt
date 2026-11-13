@@ -29,6 +29,9 @@ data class SubtitleStyle(
 /** Persistent user settings (besides the UI language, see [I18n]). */
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
 
+/** Narrow phones: the player as its own page (mini bar under the library) or a draggable floating window. */
+enum class PlayerStyle { PAGE, FLOATING }
+
 object Settings {
     private var prefs: SharedPreferences? = null
 
@@ -56,6 +59,14 @@ object Settings {
     /** Optional picture from the user's own gallery shown behind the app (content:// URI). */
     val background: StateFlow<String?> = _background.asStateFlow()
 
+    private val _playerStyle = MutableStateFlow(PlayerStyle.PAGE)
+    val playerStyle: StateFlow<PlayerStyle> = _playerStyle.asStateFlow()
+
+    fun setPlayerStyle(value: PlayerStyle) {
+        _playerStyle.value = value
+        prefs?.edit()?.putString("player_style", value.name)?.apply()
+    }
+
     fun setThemeMode(value: ThemeMode) {
         _themeMode.value = value
         prefs?.edit()?.putString("theme_mode", value.name)?.apply()
@@ -68,6 +79,7 @@ object Settings {
 
     fun init(p: SharedPreferences) {
         prefs = p
+        _playerStyle.value = runCatching { PlayerStyle.valueOf(p.getString("player_style", null)!!) }.getOrDefault(PlayerStyle.PAGE)
         val d = SubtitleStyle()
         _subtitles.value = SubtitleStyle(
             showByDefault = p.getBoolean("sub_show", d.showByDefault),

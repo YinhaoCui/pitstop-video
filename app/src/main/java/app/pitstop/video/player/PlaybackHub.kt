@@ -23,6 +23,7 @@ import android.net.Uri
 import app.pitstop.video.core.StreamPolicy
 import app.pitstop.video.core.COLLECTION_PREFIX
 import app.pitstop.video.core.I18n
+import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.QualityLadder
 import app.pitstop.video.core.StallTracker
 import app.pitstop.video.core.isNetworkErrorCode
@@ -53,6 +54,9 @@ import okhttp3.OkHttpClient
 
 enum class DisplayMode { FULL, SPLIT }
 
+/** What happens when a track ends: stop after the queue, loop the queue, or loop the track. */
+enum class RepeatMode { OFF, ALL, ONE }
+
 data class HubState(
     val queue: List<VideoItem> = emptyList(),
     val index: Int = -1,
@@ -78,6 +82,9 @@ data class HubState(
     val audioOnly: Boolean = false,
     /** Position being previewed while the user drags on the car screen; null when not seeking. */
     val scrubMs: Long? = null,
+    /** Upcoming tracks are in random order; turning it off restores the original order. */
+    val shuffle: Boolean = false,
+    val repeat: RepeatMode = RepeatMode.OFF,
 ) {
     val current: VideoItem? get() = queue.getOrNull(index)
     /** Music has no picture, so the parked-only video lock never pauses it. */
@@ -141,7 +148,9 @@ class PlaybackHub(
                     android.os.SystemClock.elapsedRealtime() - lastSeekAt > 3_000
                 ) onStall()
                 lastState = playbackState
-                if (playbackState == Player.STATE_ENDED) next()
+                if (playbackState == Player.STATE_ENDED) {
+                    if (_state.value.repeat == RepeatMode.ONE) { player.seekTo(0); player.play() } else next()
+                }
             }
 
             override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
@@ -218,9 +227,59 @@ class PlaybackHub(
         playAt(q, q.indexOf(item))
     }
 
+    /** The queue in the order it was given, so shuffle can be turned off again. */
+    private var unshuffled: List<VideoItem> = emptyList()
+
     /** Plays [queue] starting at [index]; earlier items stay reachable with previous(). */
     fun playQueue(queue: List<VideoItem>, index: Int = 0) {
-        if (index in queue.indices) playAt(queue, index)
+        if (index !in queue.indices) return
+        unshuffled = queue
+        if (_state.value.shuffle) {
+            val first = queue[index]
+            playAt(listOf(first) + (queue - first).shuffled(), 0)
+        } else playAt(queue, index)
+    }
+
+    /** Jumps to [index] in the current queue (keeps the shuffled order). */
+    fun jumpTo(index: Int) {
+        val s = _state.value
+        if (index in s.queue.indices && index != s.index) playAt(s.queue, index)
+    }
+
+    /** Plays [queue] in random order, with shuffle switched on. */
+    fun playShuffled(queue: List<VideoItem>) {
+        if (queue.isEmpty()) return
+        _state.update { it.copy(shuffle = true) }
+        playQueue(queue, queue.indices.random())
+    }
+
+    /** Shuffles or restores the tracks after the current one, without interrupting it. */
+    fun toggleShuffle() {
+        val s = _state.value
+        val on = !s.shuffle
+        val cur = s.current
+        if (cur == null) { _state.update { it.copy(shuffle = on) }; return }
+        if (on) {
+            unshuffled = s.queue
+            val rest = s.queue.drop(s.index + 1).shuffled()
+            _state.update { it.copy(shuffle = true, queue = s.queue.take(s.index + 1) + rest) }
+        } else {
+            val original = unshuffled.ifEmpty { s.queue }
+            val at = original.indexOf(cur)
+            _state.update {
+                if (at < 0) it.copy(shuffle = false) else it.copy(shuffle = false, queue = original, index = at)
+            }
+        }
+        prefetched = null
+        prefetchNext()
+    }
+
+    /** Off → repeat all → repeat one → off. */
+    fun cycleRepeat() {
+        _state.update {
+            it.copy(repeat = when (it.repeat) { RepeatMode.OFF -> RepeatMode.ALL; RepeatMode.ALL -> RepeatMode.ONE; RepeatMode.ONE -> RepeatMode.OFF })
+        }
+        prefetchNext()
     }
 
     /** Position to resume from after a safe-quality retry. */
@@ -245,7 +304,11 @@ class PlaybackHub(
                 val i = index
                 val source = sources.getValue(q[i].source)
                 // Multi-part video (Bilibili 分P): replace it in the queue by its parts and play part 1.
-                val parts = runCatching { withContext(Dispatchers.IO) { source.expand(q[i]) } }.getOrNull()
+                // A collection (playlist / folder) must expand; never try to play the folder itself.
+                val parts = if (q[i].id.startsWith(COLLECTION_PREFIX)) {
+                    withContext(Dispatchers.IO) { source.expand(q[i]) }
+                        .takeUnless { it.isNullOrEmpty() } ?: throw UserFacingException(I18n.s.noVideos)
+                } else runCatching { withContext(Dispatchers.IO) { source.expand(q[i]) } }.getOrNull()
                 if (!parts.isNullOrEmpty()) {
                     q = q.take(i) + parts + q.drop(i + 1)
                     _state.update { it.copy(queue = q, index = i) }
@@ -420,7 +483,10 @@ class PlaybackHub(
 
     fun next() {
         val s = _state.value
-        if (s.index + 1 < s.queue.size) playAt(s.queue, s.index + 1)
+        when {
+            s.index + 1 < s.queue.size -> playAt(s.queue, s.index + 1)
+            s.repeat == RepeatMode.ALL && s.queue.isNotEmpty() -> playAt(s.queue, 0)
+        }
     }
 
     fun previous() {

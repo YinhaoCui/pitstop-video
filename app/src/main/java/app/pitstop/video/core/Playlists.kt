@@ -26,6 +26,9 @@ object PlaylistOps {
 
     fun add(p: Playlist, item: VideoItem): Playlist = if (contains(p, item)) p else p.copy(items = p.items + item)
 
+    /** Appends [items] in order, skipping ones already in the playlist (or repeated in [items]). */
+    fun addAll(p: Playlist, items: List<VideoItem>): Playlist = items.fold(p, ::add)
+
     fun removeAt(p: Playlist, index: Int): Playlist =
         if (index !in p.items.indices) p else p.copy(items = p.items.filterIndexed { i, _ -> i != index })
 
@@ -106,6 +109,7 @@ class PlaylistStore(private val file: File) {
     fun rename(id: String, name: String) = edit(id) { it.copy(name = name.trim().ifEmpty { it.name }) }
     fun delete(id: String) = mutate { list -> list.filterNot { it.id == id } }
     fun add(id: String, item: VideoItem) = edit(id) { PlaylistOps.add(it, item) }
+    fun addAll(id: String, items: List<VideoItem>) = edit(id) { PlaylistOps.addAll(it, items) }
     fun removeAt(id: String, index: Int) = edit(id) { PlaylistOps.removeAt(it, index) }
     fun move(id: String, from: Int, to: Int) = edit(id) { PlaylistOps.move(it, from, to) }
 

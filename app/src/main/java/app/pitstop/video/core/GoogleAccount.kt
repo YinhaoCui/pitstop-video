@@ -41,7 +41,10 @@ open class GoogleScopedAccount(
         setSignedIn(result.accessToken != null)
     }
 
-    fun signOut() = setSignedIn(false)
+    fun signOut() { cached = null; setSignedIn(false) }
+
+    /** Last token and when it was issued; Google tokens live ~1 h, reused for [TOKEN_TTL_MS]. */
+    @Volatile private var cached: Pair<String, Long>? = null
 
     private fun setSignedIn(value: Boolean) {
         prefs.edit().putBoolean(KEY_SIGNED_IN, value).apply()
@@ -50,12 +53,17 @@ open class GoogleScopedAccount(
 
     /** A fresh access token (Google caches and refreshes it); throws if consent is still needed. */
     suspend fun token(): String {
+        val now = android.os.SystemClock.elapsedRealtime()
+        cached?.let { (t, at) -> if (now - at < TOKEN_TTL_MS) return t }
         val result = client.authorize(request()).await()
         if (result.hasResolution()) throw UserFacingException(finishMessage())
-        return result.accessToken ?: throw UserFacingException("Google sign-in failed")
+        val t = result.accessToken ?: throw UserFacingException("Google sign-in failed")
+        cached = t to now
+        return t
     }
 
     private companion object {
         const val KEY_SIGNED_IN = "signed_in"
+        const val TOKEN_TTL_MS = 40 * 60_000L
     }
 }

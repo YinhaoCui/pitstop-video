@@ -23,6 +23,7 @@ import app.pitstop.video.bilibili.BiliMusicSource
 import app.pitstop.video.core.CompositeCookieJar
 import app.pitstop.video.gdrive.DriveAccount
 import app.pitstop.video.gdrive.DriveSource
+import app.pitstop.video.gdrive.DrivePicker
 import app.pitstop.video.netease.NeteaseApi
 import app.pitstop.video.netease.NeteaseCookieJar
 import app.pitstop.video.netease.NeteaseSource
@@ -62,7 +63,7 @@ class AppGraph(app: Application) {
     val http = buildHttpClient(CompositeCookieJar(listOf(biliCookies, neteaseCookies)))
     val neteaseApi = NeteaseApi(http, neteaseCookies)
     val driveAccount = DriveAccount(app)
-    val driveSource = DriveSource(app, driveAccount, http)
+    val driveSource = DriveSource(app, driveAccount, http, DrivePicker(app, http))
     val biliApi = BiliApi(http, biliCookies, app.cacheDir)
     val youTubeAccount = YouTubeAccount(app, http)
     val thumbnails = ThumbnailLoader(app, http)
