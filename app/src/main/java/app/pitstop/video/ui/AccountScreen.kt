@@ -56,6 +56,8 @@ fun AccountScreen(graph: AppGraph) {
     ) {
         LanguageSection()
         HorizontalDivider()
+        AppearanceSection()
+        HorizontalDivider()
         SubtitleSettingsSection()
         HorizontalDivider()
         Text(S.accounts, style = MaterialTheme.typography.titleLarge)
@@ -72,6 +74,7 @@ fun AccountScreen(graph: AppGraph) {
             if (graph.isAutomotiveOs) S.aaosHelp else S.aaHelp,
             style = MaterialTheme.typography.bodyMedium,
         )
+        VersionFooter()
     }
 }
 

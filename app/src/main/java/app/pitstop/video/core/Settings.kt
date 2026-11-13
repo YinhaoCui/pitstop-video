@@ -27,6 +27,8 @@ data class SubtitleStyle(
 }
 
 /** Persistent user settings (besides the UI language, see [I18n]). */
+enum class ThemeMode { LIGHT, DARK, SYSTEM }
+
 object Settings {
     private var prefs: SharedPreferences? = null
 
@@ -46,6 +48,24 @@ object Settings {
         prefs?.edit()?.putBoolean("background_play", value)?.apply()
     }
 
+    private val _themeMode = MutableStateFlow(ThemeMode.LIGHT)
+    /** Light (pastel) by default; dark "night" look or follow the system on request. */
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    private val _background = MutableStateFlow<String?>(null)
+    /** Optional picture from the user's own gallery shown behind the app (content:// URI). */
+    val background: StateFlow<String?> = _background.asStateFlow()
+
+    fun setThemeMode(value: ThemeMode) {
+        _themeMode.value = value
+        prefs?.edit()?.putString("theme_mode", value.name)?.apply()
+    }
+
+    fun setBackground(uri: String?) {
+        _background.value = uri
+        prefs?.edit()?.putString("background_uri", uri)?.apply()
+    }
+
     fun init(p: SharedPreferences) {
         prefs = p
         val d = SubtitleStyle()
@@ -60,6 +80,8 @@ object Settings {
         )
         _audioOnlyWhileDriving.value = p.getBoolean("audio_only_driving", true)
         _backgroundPlay.value = p.getBoolean("background_play", true)
+        _themeMode.value = runCatching { ThemeMode.valueOf(p.getString("theme_mode", null)!!) }.getOrDefault(ThemeMode.LIGHT)
+        _background.value = p.getString("background_uri", null)
     }
 
     fun updateSubtitles(f: (SubtitleStyle) -> SubtitleStyle) {
