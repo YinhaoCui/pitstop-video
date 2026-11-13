@@ -198,6 +198,9 @@ class BiliApi(
             val audios = dash.optJSONArray("audio").objects().map {
                 StreamSelector.AudioTrack(url(it), it.optLong("bandwidth"))
             }
+            if (StreamPolicy.audioOnly) StreamSelector.pickAudio(audios)?.let {
+                return PlayableStream(it.url, headers = headers, subtitles = subtitles(bvid, cid), audioOnly = true)
+            }
             val v = StreamSelector.pickVideo(videos, StreamPolicy.maxHeight, DeviceCodecs::canPlay)
             if (v != null) return PlayableStream(v.url, StreamSelector.pickAudio(audios)?.url, headers, subtitles = subtitles(bvid, cid))
         }

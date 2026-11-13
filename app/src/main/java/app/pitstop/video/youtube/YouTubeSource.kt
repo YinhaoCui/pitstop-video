@@ -84,8 +84,11 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
             },
             Settings.subtitleLanguage(),
         )
-        val v = StreamSelector.pickVideo(videoOnly, StreamPolicy.maxHeight, DeviceCodecs::canPlay)
         val a = StreamSelector.pickAudio(audio)
+        if (StreamPolicy.audioOnly && a != null) {
+            return@withContext PlayableStream(a.url, headers = headers, subtitles = subs, audioOnly = true)
+        }
+        val v = StreamSelector.pickVideo(videoOnly, StreamPolicy.maxHeight, DeviceCodecs::canPlay)
         if (v != null && a != null) return@withContext PlayableStream(v.url, a.url, headers, subtitles = subs)
 
         val muxed = info.videoStreams

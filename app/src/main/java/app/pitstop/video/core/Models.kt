@@ -45,6 +45,8 @@ data class PlayableStream(
     val headers: Map<String, String> = emptyMap(),
     val kind: Kind = Kind.PROGRESSIVE,
     val subtitles: List<SubtitleTrack> = emptyList(),
+    /** Only the sound of a video was fetched (data saver): show the cover like a song. */
+    val audioOnly: Boolean = false,
 ) {
     enum class Kind { PROGRESSIVE, HLS, DASH }
 }
@@ -102,7 +104,21 @@ object StreamPolicy {
     @Volatile var safe: Boolean = false
     /** Lowered step by step when the connection keeps stalling; reset when the network changes. */
     @Volatile var capHeight: Int = 1080
-    val maxHeight: Int get() = if (safe) minOf(480, capHeight) else capHeight
+    /** The user's choice for the current network (Wi-Fi or mobile data), set before each resolve. */
+    @Volatile var quality: VideoQuality = VideoQuality.AUTO
+    val maxHeight: Int get() = effectiveMaxHeight(quality, capHeight, safe)
+    /** Data saver: fetch only the sound of videos, no picture at all. */
+    val audioOnly: Boolean get() = quality == VideoQuality.AUDIO
+
+    fun effectiveMaxHeight(quality: VideoQuality, capHeight: Int, safe: Boolean): Int {
+        val h = if (quality.maxHeight > 0) minOf(quality.maxHeight, capHeight) else capHeight
+        return if (safe) minOf(480, h) else h
+    }
+}
+
+/** Highest video height the user allows; [AUDIO] streams sound only (biggest data saving). */
+enum class VideoQuality(val maxHeight: Int) {
+    AUTO(1080), P720(720), P480(480), P360(360), AUDIO(0),
 }
 
 /** Thrown for problems the user can fix (sign in, grant permission...). Message is shown as-is. */

@@ -81,6 +81,8 @@ import androidx.media3.ui.PlayerView
 import app.pitstop.video.AppGraph
 import app.pitstop.video.R
 import app.pitstop.video.core.VideoItem
+import app.pitstop.video.core.SourceId
+import app.pitstop.video.core.VideoQuality
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.formatDuration
 import app.pitstop.video.local.PermissionSource
@@ -271,6 +273,10 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
             Text(sub, maxLines = 2, style = MaterialTheme.typography.bodySmall,
                 color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // Videos only (also while fetched as audio only, so the picture can be switched back on).
+        if (s.current?.source == SourceId.YOUTUBE || s.current?.source == SourceId.BILIBILI) {
+            Box(Modifier.padding(horizontal = 4.dp)) { QualityButton(graph) }
+        }
         Spacer(Modifier.height(4.dp))
         Row(
             Modifier.fillMaxWidth(),
@@ -303,6 +309,31 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
                 }
             } else if (!s.isMusic) {
                 IconButton(onClick = onFullscreen) { Icon(painterResource(R.drawable.ic_fullscreen), S.fullScreen) }
+            }
+        }
+    }
+}
+
+/** Quick quality / data-saver switch for the network in use (Wi-Fi or mobile data); also in Settings. */
+@Composable
+private fun QualityButton(graph: AppGraph) {
+    val metered by graph.hub.onMeteredNetwork.collectAsStateWithLifecycle()
+    val wifi by Settings.qualityWifi.collectAsStateWithLifecycle()
+    val mobile by Settings.qualityMobile.collectAsStateWithLifecycle()
+    val current = if (metered) mobile else wifi
+    var open by remember { mutableStateOf(false) }
+    Box {
+        androidx.compose.material3.AssistChip(
+            onClick = { open = true },
+            label = { Text("${S.quality}: ${qualityLabel(current)}") },
+        )
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Text(S.qualityFor(metered), Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
+            VideoQuality.entries.forEach { q ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(qualityLabel(q) + if (q == current) "  ✓" else "") },
+                    onClick = { Settings.setQuality(metered, q); open = false },
+                )
             }
         }
     }
