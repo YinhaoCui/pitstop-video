@@ -198,11 +198,11 @@ class BiliApi(
             val audios = dash.optJSONArray("audio").objects().map {
                 StreamSelector.AudioTrack(url(it), it.optLong("bandwidth"))
             }
-            if (StreamPolicy.audioOnly) StreamSelector.pickAudio(audios)?.let {
+            if (StreamPolicy.audioOnly) StreamSelector.pickAudio(audios, StreamPolicy.audioMaxBps)?.let {
                 return PlayableStream(it.url, headers = headers, subtitles = subtitles(bvid, cid), audioOnly = true)
             }
             val v = StreamSelector.pickVideo(videos, StreamPolicy.maxHeight, DeviceCodecs::canPlay)
-            if (v != null) return PlayableStream(v.url, StreamSelector.pickAudio(audios)?.url, headers, subtitles = subtitles(bvid, cid))
+            if (v != null) return PlayableStream(v.url, StreamSelector.pickAudio(audios, StreamPolicy.audioMaxBps)?.url, headers, subtitles = subtitles(bvid, cid))
         }
         val durl = d.optJSONArray("durl").objects().firstOrNull()?.let { o ->
             val all = listOf(o.optString("url")) + o.optJSONArray("backup_url").strings()
@@ -292,9 +292,15 @@ class BiliApi(
         }
         val dash = d.optJSONObject("dash")
             ?: throw UserFacingException("No audio stream for $bvid (it may need a Bilibili login or be region-locked)")
+        val plain = dash.optJSONArray("audio").objects()
+        if (StreamPolicy.metered) {
+            // Data saver: skip lossless / Dolby and take the best normal track within the mobile cap.
+            val tracks = plain.map { StreamSelector.AudioTrack(url(it), it.optLong("bandwidth")) }
+            StreamSelector.pickAudio(tracks, StreamPolicy.audioMaxBps)?.let { return PlayableStream(it.url, headers = headers) }
+        }
         val flac = dash.optJSONObject("flac")?.optJSONObject("audio")
         val dolby = dash.optJSONObject("dolby")?.optJSONArray("audio").objects().firstOrNull()
-        val best = flac ?: dolby ?: dash.optJSONArray("audio").objects().maxByOrNull { it.optLong("bandwidth") }
+        val best = flac ?: dolby ?: plain.maxByOrNull { it.optLong("bandwidth") }
             ?: throw UserFacingException("No audio stream for $bvid")
         return PlayableStream(url(best), headers = headers)
     }

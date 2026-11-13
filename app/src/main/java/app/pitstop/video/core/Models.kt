@@ -109,6 +109,16 @@ object StreamPolicy {
     val maxHeight: Int get() = effectiveMaxHeight(quality, capHeight, safe)
     /** Data saver: fetch only the sound of videos, no picture at all. */
     val audioOnly: Boolean get() = quality == VideoQuality.AUDIO
+    /** On mobile data / a hotspot (pay-per-byte); set by the player from the system's network info. */
+    @Volatile var metered: Boolean = false
+    /** Audio bitrate ceiling (bits/s): ~128 kbps on mobile data instead of 192-320 kbps / lossless. */
+    val audioMaxBps: Long get() = audioMaxBps(metered)
+    /** How far ahead the player downloads: less on mobile data, so skipping wastes little. */
+    val maxBufferAheadMs: Long get() = maxBufferAheadMs(metered)
+
+    const val MOBILE_AUDIO_MAX_BPS = 140_000L
+    fun audioMaxBps(metered: Boolean): Long = if (metered) MOBILE_AUDIO_MAX_BPS else Long.MAX_VALUE
+    fun maxBufferAheadMs(metered: Boolean): Long = if (metered) 40_000 else 120_000
 
     fun effectiveMaxHeight(quality: VideoQuality, capHeight: Int, safe: Boolean): Int {
         val h = if (quality.maxHeight > 0) minOf(quality.maxHeight, capHeight) else capHeight

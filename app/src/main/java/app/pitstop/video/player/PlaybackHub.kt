@@ -28,7 +28,6 @@ import app.pitstop.video.core.QualityLadder
 import app.pitstop.video.core.StallTracker
 import app.pitstop.video.core.isNetworkErrorCode
 import app.pitstop.video.core.retryDelayMs
-import androidx.media3.exoplayer.DefaultLoadControl
 import kotlinx.coroutines.flow.first
 import app.pitstop.video.core.Settings
 import app.pitstop.video.core.DESKTOP_UA
@@ -120,11 +119,8 @@ class PlaybackHub(
         .setLoadControl(
             // Keep 30-120 s ahead (streaming-app style) so short network dips don't stall; start fast,
             // but after a stall wait for 4 s of data so it doesn't stutter straight away again.
-            DefaultLoadControl.Builder()
-                .setBufferDurationsMs(30_000, 120_000, 1_500, 4_000)
-                .setPrioritizeTimeOverSizeThresholds(true)
-                .setBackBuffer(30_000, true)
-                .build()
+            // On mobile data it stops at StreamPolicy.maxBufferAheadMs, so a skipped video wastes little.
+            MeteredLoadControl()
         )
         .build().apply {
         setAudioAttributes(
@@ -327,7 +323,7 @@ class PlaybackHub(
                     _state.update { it.copy(queue = q, index = i) }
                 }
                 val item = q[i]
-                StreamPolicy.quality = Settings.quality(metered.value)
+                applyNetworkPolicy()
                 StreamPolicy.safe = safeNext
                 val useSafe = safeNext
                 safeNext = false
@@ -368,6 +364,12 @@ class PlaybackHub(
     /** A prefetched stream is only reused when it was resolved with the same quality rules. */
     private fun prefetchKey(item: VideoItem) = "${keyOf(item)}:${StreamPolicy.maxHeight}:${StreamPolicy.audioOnly}"
 
+    /** Copies the current network type and the matching quality choice into [StreamPolicy] before resolving. */
+    private fun applyNetworkPolicy() {
+        StreamPolicy.metered = metered.value
+        StreamPolicy.quality = Settings.quality(metered.value)
+    }
+
     /** Quality the current video was fetched with; null for music / local files (quality doesn't apply). */
     private var resolvedQuality: VideoQuality? = null
 
@@ -385,6 +387,7 @@ class PlaybackHub(
     private val online = MutableStateFlow(true)
     /** Mobile data / hotspot (pay-per-byte) vs. Wi-Fi: picks which quality setting applies. */
     private val metered = MutableStateFlow(connectivity?.isActiveNetworkMetered ?: false)
+        .also { StreamPolicy.metered = it.value }
     val onMeteredNetwork: StateFlow<Boolean> = metered.asStateFlow()
 
     init {
@@ -403,6 +406,7 @@ class PlaybackHub(
                 }
                 override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) {
                     metered.value = !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+                    StreamPolicy.metered = metered.value
                 }
                 override fun onLost(network: android.net.Network) {
                     if (network == current) online.value = false
@@ -452,7 +456,7 @@ class PlaybackHub(
         val cur = s.current ?: return
         if (s.isMusic || cur.source == SourceId.LOCAL) return
         if (!stalls.onStall(android.os.SystemClock.elapsedRealtime())) return
-        StreamPolicy.quality = Settings.quality(metered.value)
+        applyNetworkPolicy()
         val lower = QualityLadder.lower(StreamPolicy.maxHeight) ?: return
         StreamPolicy.capHeight = lower
         resumeAtMs = player.currentPosition
@@ -469,7 +473,9 @@ class PlaybackHub(
         val s = _state.value
         val next = s.queue.getOrNull(s.index + 1) ?: return
         if (next.id.startsWith(COLLECTION_PREFIX) || next.source == SourceId.LOCAL || next.source == SourceId.LOCAL_MUSIC) return
-        StreamPolicy.quality = Settings.quality(metered.value)
+        applyNetworkPolicy()
+        // Data saver: on mobile data, look the next stream up only when it is actually played.
+        if (StreamPolicy.metered) return
         val key = prefetchKey(next)
         if (prefetched?.first == key || prefetchJob?.isActive == true) return
         prefetchJob = scope.launch {

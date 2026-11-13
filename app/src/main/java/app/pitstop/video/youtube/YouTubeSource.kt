@@ -76,7 +76,8 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
             .map { StreamSelector.VideoTrack(it.content, it.height, it.codec.orEmpty(), it.bitrate.toLong(), it.width) }
         val audio = info.audioStreams
             .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP }
-            .map { StreamSelector.AudioTrack(it.content, it.averageBitrate.toLong(), it.codec.orEmpty()) }
+            // averageBitrate is in kbps; StreamSelector works in bits/s.
+            .map { StreamSelector.AudioTrack(it.content, it.averageBitrate.toLong() * 1000, it.codec.orEmpty()) }
 
         val subs = YouTubeSubtitles.pick(
             info.subtitles.filter { it.isUrl && it.format == MediaFormat.VTT }.map {
@@ -84,7 +85,7 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
             },
             Settings.subtitleLanguage(),
         )
-        val a = StreamSelector.pickAudio(audio)
+        val a = StreamSelector.pickAudio(audio, StreamPolicy.audioMaxBps)
         if (StreamPolicy.audioOnly && a != null) {
             return@withContext PlayableStream(a.url, headers = headers, subtitles = subs, audioOnly = true)
         }

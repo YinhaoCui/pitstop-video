@@ -43,12 +43,18 @@ object StreamSelector {
             .first()
     }
 
-    /** Prefer AAC (mp4a) for compatibility, then highest bitrate. */
-    fun pickAudio(tracks: List<AudioTrack>): AudioTrack? =
-        tracks.sortedWith(
+    /**
+     * Prefer AAC (mp4a) for compatibility, then highest bitrate. With [maxBandwidth] (bits/s, data
+     * saver) the best track not above it wins; if every track is above it, the smallest one.
+     */
+    fun pickAudio(tracks: List<AudioTrack>, maxBandwidth: Long = Long.MAX_VALUE): AudioTrack? {
+        val allowed = tracks.filter { it.bandwidth <= maxBandwidth }
+        if (allowed.isEmpty()) return tracks.minByOrNull { it.bandwidth }
+        return allowed.sortedWith(
             compareBy<AudioTrack> { if (it.codec.startsWith("mp4a") || it.codec.isEmpty()) 0 else 1 }
                 .thenByDescending { it.bandwidth }
         ).firstOrNull()
+    }
 
     /** Bilibili quality id -> nominal height. */
     fun biliQnHeight(qn: Int): Int = when (qn) {
