@@ -5,6 +5,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import app.pitstop.video.core.SourceId
+import app.pitstop.video.core.GoogleScopedAccount
+import app.pitstop.video.core.COLLECTION_PREFIX
 import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.getString
@@ -27,39 +29,8 @@ import org.json.JSONObject
  * Optional Google sign-in (scope youtube.readonly) for personal feeds via the YouTube Data API v3.
  * Requires an Android OAuth client for this package + signing SHA-1 in Google Cloud (see README).
  */
-class YouTubeAccount(private val context: Context, private val http: OkHttpClient) {
-    private val prefs = context.getSharedPreferences("youtube", Context.MODE_PRIVATE)
-    private val _signedIn = MutableStateFlow(prefs.getBoolean(KEY_SIGNED_IN, false))
-    val signedIn: StateFlow<Boolean> = _signedIn.asStateFlow()
-
-    private val client get() = Identity.getAuthorizationClient(context)
-    private fun request() = AuthorizationRequest.builder().setRequestedScopes(listOf(Scope(SCOPE))).build()
-
-    /** Returns a PendingIntent to show the consent UI, or null when access was granted silently. */
-    suspend fun beginSignIn(): PendingIntent? {
-        val result = client.authorize(request()).await()
-        if (result.hasResolution()) return result.pendingIntent
-        setSignedIn(result.accessToken != null)
-        return null
-    }
-
-    fun completeSignIn(data: Intent?) {
-        val result = client.getAuthorizationResultFromIntent(data)
-        setSignedIn(result.accessToken != null)
-    }
-
-    fun signOut() = setSignedIn(false)
-
-    private fun setSignedIn(value: Boolean) {
-        prefs.edit().putBoolean(KEY_SIGNED_IN, value).apply()
-        _signedIn.value = value
-    }
-
-    private suspend fun token(): String {
-        val result = client.authorize(request()).await()
-        if (result.hasResolution()) throw UserFacingException(I18n.s.finishYoutubeSignIn)
-        return result.accessToken ?: throw UserFacingException("YouTube sign-in failed")
-    }
+class YouTubeAccount(context: Context, private val http: OkHttpClient) :
+    GoogleScopedAccount(context, "youtube", SCOPE, { I18n.s.finishYoutubeSignIn }) {
 
     private suspend fun api(pathAndQuery: String, token: String): JSONObject {
         val req = Request.Builder()
@@ -94,6 +65,7 @@ class YouTubeAccount(private val context: Context, private val http: OkHttpClien
                             id = YouTubeSource.watchUrl(vid),
                             title = sn.optString("title"),
                             author = sn.optString("videoOwnerChannelTitle").ifEmpty { sn.optString("channelTitle") },
+                            authorId = YouTubeSource.channelUrl(ch),
                             thumbnailUrl = thumb(sn),
                         )
                     }
@@ -115,8 +87,69 @@ class YouTubeAccount(private val context: Context, private val http: OkHttpClien
                 author = sn.optString("channelTitle"),
                 thumbnailUrl = thumb(sn),
                 durationSec = parseIsoDuration(o.optJSONObject("contentDetails")?.optString("duration")),
+                authorId = sn.optString("channelId").ifEmpty { null }?.let(YouTubeSource::channelUrl),
             )
         }
+    }
+
+    /** Liked videos in YouTube's Music category (what YouTube Music shows as liked songs). */
+    suspend fun likedMusic(): List<VideoItem> {
+        val items = api("videos?part=snippet,contentDetails&myRating=like&maxResults=50", token()).optJSONArray("items")
+            ?: return emptyList()
+        return (0 until items.length()).map { items.getJSONObject(it) }
+            .filter { it.optJSONObject("snippet")?.optString("categoryId") == "10" }
+            .map { o ->
+                val sn = o.getJSONObject("snippet")
+                VideoItem(
+                    source = SourceId.YT_MUSIC,
+                    id = YouTubeSource.watchUrl(o.getString("id")),
+                    title = sn.optString("title"),
+                    author = sn.optString("channelTitle").removeSuffix(" - Topic"),
+                    thumbnailUrl = thumb(sn),
+                    durationSec = parseIsoDuration(o.optJSONObject("contentDetails")?.optString("duration")),
+                )
+            }
+    }
+
+    /** The user's own playlists (including ones made in YouTube Music), as collection rows. */
+    suspend fun myPlaylists(source: SourceId): List<VideoItem> {
+        val items = api("playlists?part=snippet,contentDetails&mine=true&maxResults=50", token()).optJSONArray("items")
+            ?: return emptyList()
+        return (0 until items.length()).map { items.getJSONObject(it) }.map { o ->
+            val sn = o.getJSONObject("snippet")
+            VideoItem(
+                source = source,
+                id = COLLECTION_PREFIX + o.getString("id"),
+                title = sn.optString("title"),
+                author = I18n.s.tracks(o.optJSONObject("contentDetails")?.optInt("itemCount") ?: 0),
+                thumbnailUrl = thumb(sn),
+            )
+        }
+    }
+
+    suspend fun playlistItems(playlistId: String, source: SourceId): List<VideoItem> {
+        val token = token()
+        val out = mutableListOf<VideoItem>()
+        var page: String? = null
+        do {
+            val j = api("playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=$playlistId" +
+                (page?.let { "&pageToken=$it" } ?: ""), token)
+            val items = j.optJSONArray("items")
+            for (i in 0 until (items?.length() ?: 0)) {
+                val o = items!!.getJSONObject(i)
+                val sn = o.optJSONObject("snippet") ?: continue
+                val vid = o.optJSONObject("contentDetails")?.optString("videoId").orEmpty().ifEmpty { continue }
+                out += VideoItem(
+                    source = source,
+                    id = YouTubeSource.watchUrl(vid),
+                    title = sn.optString("title"),
+                    author = sn.optString("videoOwnerChannelTitle").removeSuffix(" - Topic").ifEmpty { null },
+                    thumbnailUrl = thumb(sn),
+                )
+            }
+            page = j.optString("nextPageToken").ifEmpty { null }
+        } while (page != null && out.size < 200)
+        return out
     }
 
     private fun thumb(snippet: JSONObject): String? {
@@ -126,6 +159,5 @@ class YouTubeAccount(private val context: Context, private val http: OkHttpClien
 
     companion object {
         private const val SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
-        private const val KEY_SIGNED_IN = "signed_in"
     }
 }

@@ -49,6 +49,10 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
         }
     }
 
+    override val supportsCreators get() = true
+
+    override suspend fun creatorVideos(authorId: String) = channelVideos(authorId, SourceId.YOUTUBE)
+
     override suspend fun search(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
         val extractor = ServiceList.YouTube.getSearchExtractor(
             query, listOf(YoutubeSearchQueryHandlerFactory.VIDEOS), ""
@@ -99,6 +103,7 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
         id = s.url,
         title = s.name,
         author = s.uploaderName,
+        authorId = s.uploaderUrl?.ifEmpty { null },
         thumbnailUrl = bestThumb(s.thumbnails),
         durationSec = s.duration.takeIf { it > 0 },
     )
@@ -111,5 +116,27 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
         const val FEED_SUBSCRIPTIONS = "subscriptions"
         const val FEED_LIKED = "liked"
         fun watchUrl(videoId: String) = "https://www.youtube.com/watch?v=$videoId"
+        fun channelUrl(channelId: String) = "https://www.youtube.com/channel/$channelId"
+
+        /** A channel's Videos tab (newest first), via NewPipeExtractor. */
+        suspend fun channelVideos(channelUrl: String, source: SourceId): List<VideoItem> = withContext(Dispatchers.IO) {
+            val service = ServiceList.YouTube
+            val info = org.schabi.newpipe.extractor.channel.ChannelInfo.getInfo(service, channelUrl)
+            val tab = info.tabs.firstOrNull {
+                it.contentFilters.contains(org.schabi.newpipe.extractor.channel.tabs.ChannelTabs.VIDEOS)
+            } ?: info.tabs.firstOrNull() ?: return@withContext emptyList()
+            val tabInfo = org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo.getInfo(service, tab)
+            tabInfo.relatedItems.filterIsInstance<StreamInfoItem>().map { s ->
+                VideoItem(
+                    source = source,
+                    id = s.url,
+                    title = s.name,
+                    author = (s.uploaderName ?: info.name)?.removeSuffix(" - Topic"),
+                    thumbnailUrl = s.thumbnails.sortedBy { it.width }.firstOrNull { it.width >= 320 }?.url ?: s.thumbnails.lastOrNull()?.url,
+                    durationSec = s.duration.takeIf { it > 0 },
+                    authorId = channelUrl,
+                )
+            }
+        }
     }
 }

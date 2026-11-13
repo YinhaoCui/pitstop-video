@@ -4,6 +4,7 @@ kotlin = "2.2.10"
 composeBom = "2026.02.01"
 activityCompose = "1.10.1"
 coreKtx = "1.15.0"
+splashscreen = "1.0.1"
 lifecycle = "2.9.4"
 media3 = "1.8.0"
 carApp = "1.7.0"
@@ -17,6 +18,7 @@ junit = "4.13.2"
 orgJson = "20240303"
 
 [libraries]
+androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }

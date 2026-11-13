@@ -1,5 +1,8 @@
 package app.pitstop.video.car
 
+import app.pitstop.video.core.feedsWith
+import app.pitstop.video.core.loadFeed
+
 import android.graphics.Bitmap
 import androidx.annotation.DrawableRes
 import androidx.car.app.CarContext
@@ -180,7 +183,7 @@ class BrowseScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
         carContext.graph.sources.forEach { src ->
             list.addItem(
                 Row.Builder().setTitle(t.sourceName(src.id)).setBrowsable(true)
-                    .setImage(carContext.icon(if (src.id == SourceId.LOCAL) R.drawable.ic_folder else R.drawable.ic_video))
+                    .setImage(carContext.icon(when { src.id.music -> R.drawable.ic_music; src.id == SourceId.LOCAL -> R.drawable.ic_folder; else -> R.drawable.ic_video }))
                     .setOnClickListener { screenManager.push(SourceScreen(carContext, hub, src)) }.build()
             )
         }
@@ -225,11 +228,11 @@ class SourceScreen(carContext: CarContext, private val hub: PlaybackHub, private
                     .setOnClickListener { screenManager.push(CarSearchScreen(carContext, hub, source)) }.build()
             )
         }
-        source.feeds().forEach { feed ->
+        source.feedsWith(carContext.graph.creators).forEach { feed ->
             list.addItem(
                 Row.Builder().setTitle(feed.title).setBrowsable(true)
                     .setOnClickListener {
-                        screenManager.push(ResultsScreen(carContext, hub, "$name · ${feed.title}") { source.load(feed) })
+                        screenManager.push(ResultsScreen(carContext, hub, "$name · ${feed.title}") { source.loadFeed(feed) })
                     }.build()
             )
         }

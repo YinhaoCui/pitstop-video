@@ -39,6 +39,8 @@ import app.pitstop.video.core.AppLanguage
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.S
 import app.pitstop.video.core.Settings
+import app.pitstop.video.core.ThemeMode
+import androidx.compose.foundation.clickable
 import app.pitstop.video.core.SubtitleStyle
 
 /** English / 简体中文. Applies immediately to the phone and the car screen. */
@@ -174,4 +176,77 @@ fun DrivingAudioSection() {
             Switch(checked = on, onCheckedChange = Settings::setAudioOnlyWhileDriving)
         }
     }
+}
+
+/** Theme (light by default) and an optional background picture from the user's own gallery. */
+@Composable
+fun AppearanceSection() {
+    val mode by Settings.themeMode.collectAsStateWithLifecycle()
+    val picture by Settings.background.collectAsStateWithLifecycle()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            // Keep access to the picture across restarts; release the previous one.
+            runCatching {
+                ctx.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            picture?.let { old ->
+                runCatching {
+                    ctx.contentResolver.releasePersistableUriPermission(android.net.Uri.parse(old), android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
+            Settings.setBackground(uri.toString())
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(S.appearance, style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(ThemeMode.LIGHT to S.themeLight, ThemeMode.DARK to S.themeDark, ThemeMode.SYSTEM to S.themeSystem).forEach { (m, label) ->
+                FilterChip(selected = mode == m, onClick = { Settings.setThemeMode(m) }, label = { Text(label) })
+            }
+        }
+        Text(S.backgroundImage, style = MaterialTheme.typography.bodyLarge)
+        Text(S.backgroundImageText, style = MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { pick.launch(arrayOf("image/*")) }) { Text(S.choosePicture) }
+            if (picture != null) OutlinedButton(onClick = {
+                picture?.let { old ->
+                    runCatching {
+                        ctx.contentResolver.releasePersistableUriPermission(android.net.Uri.parse(old), android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                }
+                Settings.setBackground(null)
+            }) { Text(S.removePicture) }
+        }
+    }
+}
+
+/** App version line at the bottom of Settings. */
+@Composable
+fun VersionFooter() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val version = remember {
+        runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull().orEmpty()
+    }
+    var taps by remember { mutableStateOf(0) }
+    Text(
+        S.versionLine(version),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {
+                if (++taps >= 7) {
+                    taps = 0
+                    runCatching {
+                        ctx.startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://ichigoproduction.com/"))
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                }
+            },
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
 }

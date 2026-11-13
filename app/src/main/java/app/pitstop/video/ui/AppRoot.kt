@@ -13,6 +13,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -34,6 +40,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -72,7 +82,9 @@ import app.pitstop.video.R
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.formatDuration
-import app.pitstop.video.local.LocalSource
+import app.pitstop.video.local.PermissionSource
+import app.pitstop.video.core.feedsWith
+import app.pitstop.video.core.loadFeed
 import app.pitstop.video.player.DisplayMode
 import kotlinx.coroutines.CancellationException
 
@@ -93,8 +105,10 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
         return
     }
 
-    val tabs = graph.sources.map { S.sourceName(it.id) } + S.playlists + S.account
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val videoSources = graph.videoSources
+    // Top level: Video or Music (each with its sources below), plus Playlists and Settings.
+    var page by rememberSaveable { mutableStateOf(Page.VIDEO) }
+    var videoSource by rememberSaveable { mutableIntStateOf(0) }
     val state by graph.hub.state.collectAsStateWithLifecycle()
     // Re-read feed lists after sign-in / sign-out.
     val ytSignedIn by graph.youTubeAccount.signedIn.collectAsStateWithLifecycle()
@@ -102,21 +116,22 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
 
     val browser: @Composable () -> Unit = {
         Column {
-            PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
-                tabs.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t, maxLines = 1) }) }
-            }
-            if (tab < graph.sources.size) {
-                val source = graph.sources[tab]
-                SourceTab(graph, source, refreshKey = "$ytSignedIn/$biliLoggedIn")
-            } else if (tab == graph.sources.size) {
-                PlaylistsTab(graph)
-            } else {
-                AccountScreen(graph)
+            AppHeader(page, onPage = { page = it })
+            when (page) {
+                Page.VIDEO -> {
+                    val index = videoSource.coerceIn(videoSources.indices)
+                    SourceChips(videoSources.map { S.sourceName(it.id) }, index) { videoSource = it }
+                    SourceTab(graph, videoSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn")
+                }
+                Page.MUSIC -> MusicTab(graph)
+                Page.PLAYLISTS -> PlaylistsTab(graph)
+                Page.SETTINGS -> AccountScreen(graph)
             }
         }
     }
 
-    Surface(Modifier.fillMaxSize()) {
+    AppBackground(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface) {
         BoxWithConstraints(Modifier.safeDrawingPadding()) {
             // Tablets, foldables, landscape phones and in-car / head-unit screens: player and
             // library side by side. Narrow portrait phones: player stacked above the library.
@@ -127,9 +142,7 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
                         if (state.current != null) {
                             NowPlayingCard(graph, onFullscreen = { onFullscreenChange(true) })
                         } else {
-                            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color(0xFF0F172A)), contentAlignment = Alignment.Center) {
-                                Text(S.pickVideo, color = Color.White, style = MaterialTheme.typography.titleMedium)
-                            }
+                            EmptyStage()
                         }
                     }
                     Box(Modifier.weight(0.45f).fillMaxHeight()) { browser() }
@@ -144,6 +157,66 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
             }
         }
     }
+    }
+}
+
+private enum class Page { VIDEO, MUSIC, PLAYLISTS, SETTINGS }
+
+/** One row: avatar, the Video / Music switch, then Playlists and Settings. */
+@Composable
+private fun AppHeader(page: Page, onPage: (Page) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Avatar(36.dp)
+        Spacer(Modifier.width(12.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
+            listOf(Page.VIDEO to S.video, Page.MUSIC to S.music).forEachIndexed { i, (p, label) ->
+                SegmentedButton(
+                    selected = page == p,
+                    onClick = { onPage(p) },
+                    shape = SegmentedButtonDefaults.itemShape(i, 2),
+                    icon = {},
+                ) { Text(label, maxLines = 1) }
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        val on = MaterialTheme.colorScheme.primary
+        val off = MaterialTheme.colorScheme.onSurfaceVariant
+        IconButton(onClick = { onPage(Page.PLAYLISTS) }) {
+            Icon(painterResource(R.drawable.ic_playlist_play), S.playlists, tint = if (page == Page.PLAYLISTS) on else off)
+        }
+        IconButton(onClick = { onPage(Page.SETTINGS) }) {
+            Icon(painterResource(R.drawable.ic_settings), S.account, tint = if (page == Page.SETTINGS) on else off)
+        }
+    }
+}
+
+/** Two-pane layout before anything plays. */
+@Composable
+private fun EmptyStage() {
+    Column(
+        Modifier.padding(16.dp).fillMaxWidth().aspectRatio(16f / 9f)
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(painterResource(R.drawable.ic_play), null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
+        Spacer(Modifier.height(12.dp))
+        Text(S.pickVideo, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+        Text(S.pickVideoHint, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+    }
+}
+
+/** Play / pause: the one filled control on the screen. */
+@Composable
+private fun PlayButton(playing: Boolean, onClick: () -> Unit) {
+    FilledIconButton(onClick = onClick, modifier = Modifier.size(52.dp)) {
+        Icon(painterResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play), S.playPause)
+    }
 }
 
 @Composable
@@ -153,30 +226,38 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
     adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
     var showQueue by remember { mutableStateOf(false) }
     if (showQueue) QueueDialog(graph) { showQueue = false }
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
         if (s.carActive) {
             Box(
-                Modifier.fillMaxWidth().height(96.dp).background(Color(0xFF0F172A)),
+                Modifier.fillMaxWidth().height(96.dp).clip(MaterialTheme.shapes.large)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     if (s.audioOnly) S.audioOnlyPhone else if (s.drivingLocked) S.pausedCarMoving else S.playingOnCar,
-                    color = Color.White, style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleMedium,
                 )
             }
         } else {
-            PhonePlayer(graph, Modifier.fillMaxWidth().aspectRatio(16f / 9f), showControls = true)
+            if (s.isMusic) MusicStage(graph, Modifier.fillMaxWidth())
+            else PhonePlayer(graph, Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(MaterialTheme.shapes.large), showControls = true)
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(s.current?.title.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                val sub = s.error ?: if (s.loading) S.loading else s.current?.author.orEmpty()
-                Text(sub, maxLines = 1, style = MaterialTheme.typography.bodySmall,
-                    color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = graph.hub::togglePause) {
-                Icon(painterResource(if (s.wantsToPlay) R.drawable.ic_pause else R.drawable.ic_play), S.playPause)
-            }
+        Spacer(Modifier.height(if (s.isMusic) 4.dp else 10.dp))
+        // Songs show title + artist inside the music card; only loading / errors appear here.
+        if (!s.isMusic || s.error != null || s.loading) Column(Modifier.padding(horizontal = 4.dp)) {
+            if (!s.isMusic) Text(s.current?.title.orEmpty(), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+            val sub = s.error ?: if (s.loading) S.loading else s.current?.author.orEmpty()
+            Text(sub, maxLines = 2, style = MaterialTheme.typography.bodySmall,
+                color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            IconButton(onClick = graph.hub::previous) { Icon(painterResource(R.drawable.ic_skip_previous), S.previous) }
+            PlayButton(s.wantsToPlay, graph.hub::togglePause)
             IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), S.next) }
             IconButton(onClick = { showQueue = true }) { Icon(painterResource(R.drawable.ic_playlist_play), S.queue) }
             s.current?.let { cur ->
@@ -186,7 +267,7 @@ private fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
                 IconButton(onClick = graph.hub::toggleMode) {
                     Icon(painterResource(if (s.mode == DisplayMode.FULL) R.drawable.ic_split else R.drawable.ic_fullscreen), S.carLayout)
                 }
-            } else {
+            } else if (!s.isMusic) {
                 IconButton(onClick = onFullscreen) { Icon(painterResource(R.drawable.ic_fullscreen), S.fullScreen) }
             }
         }
@@ -221,7 +302,7 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
         if (s.drivingLocked && !s.carActive) {
             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
                 Text(
-                    if (s.audioOnly) "♪  ${S.audioOnlyDriving}\n${S.audioOnlyPark}" else S.pausedMoving,
+                    if (s.audioOnly) "${S.audioOnlyDriving}\n${S.audioOnlyPark}" else S.pausedMoving,
                     color = Color.White, style = MaterialTheme.typography.titleMedium,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
@@ -237,25 +318,34 @@ private sealed interface LoadState {
 }
 
 @Composable
-private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) {
-    if (source is LocalSource) {
+internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) {
+    if (source is PermissionSource) {
         var granted by remember { mutableStateOf(source.hasPermission()) }
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             granted = source.hasPermission()
         }
         if (!granted) {
             Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(S.allowLocalText)
+                Text(if (source.id.music) S.allowMusicText else S.allowLocalText)
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = {
                     launcher.launch(source.requiredPermissions)
-                }) { Text(S.allowVideoAccess) }
+                }) { Text(if (source.id.music) S.allowMusicAccess else S.allowVideoAccess) }
             }
             return
         }
     }
 
-    val feeds = remember(source, refreshKey) { source.feeds() }
+    // A creator's page replaces the list until Back.
+    var creatorId by rememberSaveable(source.id) { mutableStateOf<String?>(null) }
+    var creatorName by rememberSaveable(source.id) { mutableStateOf("") }
+    creatorId?.let { id ->
+        CreatorPage(graph, source, id, creatorName, onBack = { creatorId = null })
+        return
+    }
+
+    val savedCreators by graph.creators.creators.collectAsStateWithLifecycle()
+    val feeds = remember(source, refreshKey, savedCreators) { source.feedsWith(graph.creators) }
     var feedKey by rememberSaveable(source.id) { mutableStateOf(feeds.firstOrNull()?.key) }
     var query by rememberSaveable(source.id) { mutableStateOf("") }
     var activeQuery by rememberSaveable(source.id) { mutableStateOf<String?>(null) }
@@ -267,7 +357,7 @@ private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) 
     val load by produceState<LoadState>(LoadState.Loading, source, feed, activeQuery, reload) {
         value = LoadState.Loading
         value = try {
-            LoadState.Loaded(activeQuery?.let { source.search(it) } ?: feed?.let { source.load(it) } ?: emptyList())
+            LoadState.Loaded(activeQuery?.let { source.search(it) } ?: feed?.let { source.loadFeed(it) } ?: emptyList())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -315,7 +405,10 @@ private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) 
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     itemsIndexed(l.items, key = { i, it -> "$i:${it.id}" }) { i, item ->
-                        VideoRow(graph, item, onClick = { graph.hub.playQueue(l.items, i) }) {
+                        val openCreator = item.authorId?.takeIf { source.supportsCreators }?.let { id ->
+                            { creatorId = id; creatorName = item.author.orEmpty() }
+                        }
+                        VideoRow(graph, item, onClick = { graph.hub.playQueue(l.items, i) }, onAuthor = openCreator) {
                             IconButton(onClick = { adding = item }) {
                                 Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist)
                             }
@@ -328,24 +421,44 @@ private fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) 
 }
 
 @Composable
-fun VideoRow(graph: AppGraph, item: VideoItem, onClick: () -> Unit, trailing: @Composable () -> Unit = {}) {
+fun VideoRow(
+    graph: AppGraph,
+    item: VideoItem,
+    onClick: () -> Unit,
+    onAuthor: (() -> Unit)? = null,
+    trailing: @Composable () -> Unit = {},
+) {
     val thumb by produceState(graph.thumbnails.cached(item), item) { value = graph.thumbnails.load(item) }
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(144.dp).aspectRatio(16f / 9f).background(Color(0xFF1F2937))) {
+        Box(
+            // Songs and playlists get square covers; videos 16:9.
+            Modifier.width(if (item.source.music) 76.dp else 140.dp).aspectRatio(if (item.source.music) 1f else 16f / 9f)
+                .clip(MaterialTheme.shapes.medium)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        ) {
             thumb?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             val d = formatDuration(item.durationSec)
             if (d.isNotEmpty()) Text(
                 d, color = Color.White, style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.align(Alignment.BottomEnd).background(Color(0xAA000000)).padding(horizontal = 4.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp)
+                    .clip(MaterialTheme.shapes.extraSmall).background(Color(0xCC000000)).padding(horizontal = 5.dp, vertical = 1.dp),
             )
         }
         Spacer(Modifier.size(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-            item.author?.let { Text(it, maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+            item.author?.let {
+                Spacer(Modifier.height(2.dp))
+                // Tappable creator name (in the accent colour) opens their videos.
+                Text(
+                    it, maxLines = 1, style = MaterialTheme.typography.bodySmall,
+                    color = if (onAuthor != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = if (onAuthor != null) Modifier.clickable(onClick = onAuthor).padding(vertical = 4.dp) else Modifier,
+                )
+            }
         }
         trailing()
     }

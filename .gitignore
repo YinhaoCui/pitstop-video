@@ -14,3 +14,9 @@
 *.keystore
 *.jks
 .claude/settings.local.json
+
+# Personal header picture (local builds only, never published)
+app/src/main/res/drawable-nodpi/header_avatar.*
+# Personal app icon for local debug builds (never published)
+app/src/debug/res/
+app/src/main/res/drawable-nodpi/opening_picture.*

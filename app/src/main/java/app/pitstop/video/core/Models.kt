@@ -1,6 +1,13 @@
 package app.pitstop.video.core
 
-enum class SourceId { YOUTUBE, BILIBILI, LOCAL }
+/** Every feed the app can play. [music] sources are audio-only: no picture, so no parked-only lock. */
+enum class SourceId(val music: Boolean = false) {
+    YOUTUBE, BILIBILI, LOCAL,
+    BILI_MUSIC(true), YT_MUSIC(true), NETEASE(true), GDRIVE(true), LOCAL_MUSIC(true),
+}
+
+/** Items whose id starts with this are collections (playlist / folder); [VideoSource.expand] turns them into tracks. */
+const val COLLECTION_PREFIX = "list:"
 
 /** One playable video as listed by a source. [id] is whatever the source needs to resolve it. */
 data class VideoItem(
@@ -14,6 +21,8 @@ data class VideoItem(
     val extra: String? = null,
     /** Part number of a multi-part video (Bilibili 分P); null for a whole video. */
     val part: Int? = null,
+    /** The creator's id in this source (YouTube channel URL, Bilibili mid), for "more from this creator". */
+    val authorId: String? = null,
 )
 
 /** A sideloaded subtitle track (WebVTT). */
@@ -53,6 +62,12 @@ interface VideoSource {
 
     /** Splits a multi-part video into its parts (Bilibili 分P); null when it is a single video. */
     suspend fun expand(item: VideoItem): List<VideoItem>? = null
+
+    /** True when [creatorVideos] works (items then carry [VideoItem.authorId]). */
+    val supportsCreators: Boolean get() = false
+
+    /** Latest videos of one creator (channel / uploader). */
+    suspend fun creatorVideos(authorId: String): List<VideoItem> = emptyList()
 }
 
 /**
@@ -61,7 +76,9 @@ interface VideoSource {
  */
 object StreamPolicy {
     @Volatile var safe: Boolean = false
-    val maxHeight: Int get() = if (safe) 480 else 1080
+    /** Lowered step by step when the connection keeps stalling; reset when the network changes. */
+    @Volatile var capHeight: Int = 1080
+    val maxHeight: Int get() = if (safe) minOf(480, capHeight) else capHeight
 }
 
 /** Thrown for problems the user can fix (sign in, grant permission...). Message is shown as-is. */

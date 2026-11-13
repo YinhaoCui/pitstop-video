@@ -52,6 +52,7 @@ object PlaylistOps {
                             v.durationSec?.let { put("duration", it) }
                             v.extra?.let { put("extra", it) }
                             v.part?.let { put("part", it) }
+                            v.authorId?.let { put("authorId", it) }
                         })
                     }
                 })
@@ -79,6 +80,7 @@ object PlaylistOps {
                         durationSec = if (v.has("duration")) v.getLong("duration") else null,
                         extra = v.optString("extra").ifEmpty { null },
                         part = if (v.has("part")) v.getInt("part") else null,
+                        authorId = v.optString("authorId").ifEmpty { null },
                     )
                 },
             )

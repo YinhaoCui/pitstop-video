@@ -5,6 +5,7 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -32,18 +33,23 @@ class MainActivity : ComponentActivity() {
     private val fullscreen = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             val language by I18n.language.collectAsState()
             CompositionLocalProvider(LocalStrings provides Strings(language)) {
             PitstopTheme {
-                AppRoot(
-                    graph = graph,
-                    inPip = inPip.value,
-                    fullscreen = fullscreen.value,
-                    onFullscreenChange = ::setFullscreen,
-                )
+                androidx.compose.foundation.layout.Box {
+                    AppRoot(
+                        graph = graph,
+                        inPip = inPip.value,
+                        fullscreen = fullscreen.value,
+                        onFullscreenChange = ::setFullscreen,
+                    )
+                    // Cold start only (not on rotation / return from background).
+                    if (savedInstanceState == null && !inPip.value) OpeningScreen()
+                }
             }
             }
         }
