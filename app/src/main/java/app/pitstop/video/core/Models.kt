@@ -6,6 +6,13 @@ enum class SourceId(val music: Boolean = false) {
     BILI_MUSIC(true), YT_MUSIC(true), NETEASE(true), GDRIVE(true), LOCAL_MUSIC(true),
 }
 
+/**
+ * The platforms shown in one bar (Video or Music): [all] minus the [hidden] ones. A bar is never left
+ * empty: if every platform in it is hidden, all of them are shown.
+ */
+fun <T> shownSources(all: List<T>, hidden: Set<SourceId>, id: (T) -> SourceId): List<T> =
+    all.filter { id(it) !in hidden }.ifEmpty { all }
+
 /** Items whose id starts with this are collections (playlist / folder); [VideoSource.expand] turns them into tracks. */
 const val COLLECTION_PREFIX = "list:"
 

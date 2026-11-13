@@ -79,18 +79,26 @@ class BiliApi(
         return Profile(loggedIn, d.optString("uname").takeIf { loggedIn && it.isNotEmpty() })
     }
 
-    suspend fun popular(): List<VideoItem> {
+    suspend fun popular(): List<VideoItem> = popularPage(1).items
+
+    /** Popular (热门), 30 per page; the cursor is the next page number until Bilibili says no_more. */
+    suspend fun popularPage(page: Int): FeedPage {
         ensureDeviceId()
-        val list = data("https://api.bilibili.com/x/web-interface/popular?ps=30&pn=1").optJSONArray("list")
-        return list.objects().map(::archiveToItem)
+        val d = data("https://api.bilibili.com/x/web-interface/popular?ps=30&pn=$page")
+        val items = d.optJSONArray("list").objects().map(::archiveToItem)
+        return FeedPage(items, (page + 1).toString().takeIf { items.isNotEmpty() && !d.optBoolean("no_more") })
     }
 
-    suspend fun recommended(): List<VideoItem> {
+    suspend fun recommended(): List<VideoItem> = recommendedPage(1).items
+
+    /** Homepage recommendations: an endless stream, each "refresh" index gives a new batch. */
+    suspend fun recommendedPage(index: Int): FeedPage {
         val items = wbiData(
             "https://api.bilibili.com/x/web-interface/wbi/index/top/feed/rcmd",
-            mapOf("ps" to "30", "fresh_type" to "4", "fresh_idx" to "1"),
+            mapOf("ps" to "30", "fresh_type" to "4", "fresh_idx" to "$index", "fresh_idx_1h" to "$index", "brush" to "$index"),
         ).optJSONArray("item")
-        return items.objects().filter { it.optString("bvid").isNotEmpty() }.map(::archiveToItem)
+        val list = items.objects().filter { it.optString("bvid").isNotEmpty() }.map(::archiveToItem)
+        return FeedPage(list, (index + 1).toString().takeIf { list.isNotEmpty() })
     }
 
     /** Video search; [tids] narrows to a zone (3 = music). */

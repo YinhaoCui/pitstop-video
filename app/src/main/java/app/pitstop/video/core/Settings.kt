@@ -94,6 +94,8 @@ object Settings {
         _backgroundPlay.value = p.getBoolean("background_play", true)
         _themeMode.value = runCatching { ThemeMode.valueOf(p.getString("theme_mode", null)!!) }.getOrDefault(ThemeMode.LIGHT)
         _background.value = p.getString("background_uri", null)
+        _hiddenSources.value = p.getStringSet("hidden_sources", emptySet()).orEmpty()
+            .mapNotNull { n -> SourceId.entries.firstOrNull { it.name == n } }.toSet()
         _qualityWifi.value = runCatching { VideoQuality.valueOf(p.getString("quality_wifi", null)!!) }.getOrDefault(VideoQuality.AUTO)
         _qualityMobile.value = runCatching { VideoQuality.valueOf(p.getString("quality_mobile", null)!!) }.getOrDefault(VideoQuality.AUTO)
     }
@@ -125,6 +127,16 @@ object Settings {
     fun setQuality(metered: Boolean, value: VideoQuality) {
         if (metered) _qualityMobile.value = value else _qualityWifi.value = value
         prefs?.edit()?.putString(if (metered) "quality_mobile" else "quality_wifi", value.name)?.apply()
+    }
+
+    private val _hiddenSources = MutableStateFlow<Set<SourceId>>(emptySet())
+    /** Platforms the user turned off: left out of the Video / Music bars on the phone and the car. */
+    val hiddenSources: StateFlow<Set<SourceId>> = _hiddenSources.asStateFlow()
+
+    fun setSourceShown(id: SourceId, shown: Boolean) {
+        val s = if (shown) _hiddenSources.value - id else _hiddenSources.value + id
+        _hiddenSources.value = s
+        prefs?.edit()?.putStringSet("hidden_sources", s.mapTo(HashSet()) { it.name })?.apply()
     }
 
     fun setAudioOnlyWhileDriving(value: Boolean) {

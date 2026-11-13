@@ -17,6 +17,7 @@ import java.io.File
 import app.pitstop.video.core.ThumbnailLoader
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.buildHttpClient
+import app.pitstop.video.core.shownSources
 import app.pitstop.video.local.LocalSource
 import app.pitstop.video.local.LocalMusicSource
 import app.pitstop.video.bilibili.BiliMusicSource
@@ -84,6 +85,9 @@ class AppGraph(app: Application) {
 
     val videoSources: List<VideoSource> get() = sources.filter { !it.id.music }
     val musicSources: List<VideoSource> get() = sources.filter { it.id.music }
+    /** What the Video / Music bars show: the user's platform choice (Settings → Platforms). */
+    val shownVideoSources: List<VideoSource> get() = shownSources(videoSources, Settings.hiddenSources.value) { it.id }
+    val shownMusicSources: List<VideoSource> get() = shownSources(musicSources, Settings.hiddenSources.value) { it.id }
 
     fun source(id: SourceId): VideoSource = sources.first { it.id == id }
 

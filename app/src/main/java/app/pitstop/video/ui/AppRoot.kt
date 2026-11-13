@@ -110,10 +110,12 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
         return
     }
 
-    val videoSources = graph.videoSources
+    // Only the platforms the user chose to show (Settings → Platforms, or the button after the chips).
+    val hidden by Settings.hiddenSources.collectAsStateWithLifecycle()
+    val videoSources = remember(hidden) { graph.shownVideoSources }
     // Top level: Video or Music (each with its sources below), plus Playlists and Settings.
     var page by rememberSaveable { mutableStateOf(Page.VIDEO) }
-    var videoSource by rememberSaveable { mutableIntStateOf(0) }
+    var videoSourceId by rememberSaveable { mutableStateOf(videoSources.first().id) }
     val state by graph.hub.state.collectAsStateWithLifecycle()
     // Re-read feed lists after sign-in / sign-out.
     val ytSignedIn by graph.youTubeAccount.signedIn.collectAsStateWithLifecycle()
@@ -124,8 +126,8 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
             AppHeader(page, onPage = { page = it })
             when (page) {
                 Page.VIDEO -> {
-                    val index = videoSource.coerceIn(videoSources.indices)
-                    SourceChips(videoSources.map { S.sourceName(it.id) }, index) { videoSource = it }
+                    val index = videoSources.indexOfFirst { it.id == videoSourceId }.coerceAtLeast(0)
+                    SourceChips(videoSources.map { S.sourceName(it.id) }, index) { videoSourceId = videoSources[it].id }
                     SourceTab(graph, videoSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn")
                 }
                 Page.MUSIC -> MusicTab(graph)
@@ -467,11 +469,17 @@ internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String)
         val f = feed ?: return
         val cursor = from.next ?: return
         load = try {
-            val page = source.loadFeedPage(f, cursor)
             val seen = from.items.mapTo(HashSet()) { it.id }
-            val fresh = page.items.filter { it.id !in seen }
-            // A page with nothing new means the feed has run out.
-            LoadState.Loaded(from.items + fresh, page.next.takeIf { fresh.isNotEmpty() })
+            var next: String? = cursor
+            var fresh = emptyList<VideoItem>()
+            // A page with nothing new (an empty chart, only repeats) is skipped; three in a row means the end.
+            var tries = 0
+            while (next != null && fresh.isEmpty() && tries++ < 3) {
+                val page = source.loadFeedPage(f, next)
+                fresh = page.items.filter { seen.add(it.id) }
+                next = page.next
+            }
+            LoadState.Loaded(from.items + fresh, next.takeIf { fresh.isNotEmpty() })
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

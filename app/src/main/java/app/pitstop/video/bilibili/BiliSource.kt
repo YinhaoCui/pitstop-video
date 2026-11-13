@@ -26,7 +26,13 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
 
     /** Following scrolls endlessly; the cursor is Bilibili's offset plus our page number ("offset|page"). */
     override suspend fun loadPage(feed: Feed, cursor: String?): FeedPage {
-        if (feed.key != FEED_FOLLOWING) return super.loadPage(feed, cursor)
+        val n = cursor?.toIntOrNull() ?: 1
+        when (feed.key) {
+            FEED_POPULAR -> return api.popularPage(n)
+            FEED_RECOMMENDED -> return api.recommendedPage(n)
+            FEED_FOLLOWING -> {}
+            else -> return super.loadPage(feed, cursor)
+        }
         val (offset, page) = cursor?.split('|', limit = 2)?.let { it[0] to (it.getOrNull(1)?.toIntOrNull() ?: 2) } ?: (null to 1)
         val p = api.following(offset, page)
         return p.copy(next = p.next?.let { "$it|${page + 1}" })

@@ -73,6 +73,7 @@ fun AccountScreen(graph: AppGraph) {
         SafetySection(graph)
         PhonePlaybackSection()
         DataSaverSection()
+        PlatformsSection()
         DrivingAudioSection()
         HorizontalDivider()
         Text(S.usingInCar, style = MaterialTheme.typography.titleMedium)

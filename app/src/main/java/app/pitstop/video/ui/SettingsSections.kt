@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -39,6 +40,7 @@ import app.pitstop.video.core.AppLanguage
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.S
 import app.pitstop.video.core.VideoQuality
+import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.Settings
 import app.pitstop.video.core.ThemeMode
 import app.pitstop.video.core.PlayerStyle
@@ -163,6 +165,55 @@ fun PhonePlaybackSection() {
             Switch(checked = on, onCheckedChange = Settings::setBackgroundPlay)
         }
     }
+}
+
+/** Platform switches for the Video and Music bars; a bar's last shown platform can't be turned off. */
+@Composable
+fun PlatformToggles() {
+    val hidden by Settings.hiddenSources.collectAsStateWithLifecycle()
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        listOf(S.video to SourceId.entries.filter { !it.music }, S.music to SourceId.entries.filter { it.music })
+            .forEach { (title, ids) ->
+                Text(title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                val shownCount = ids.count { it !in hidden }
+                ids.forEach { id ->
+                    val shown = id !in hidden
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(S.sourceName(id), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                        Switch(
+                            checked = shown,
+                            enabled = !shown || shownCount > 1,
+                            onCheckedChange = { Settings.setSourceShown(id, it) },
+                        )
+                    }
+                }
+            }
+    }
+}
+
+@Composable
+fun PlatformsSection() {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(S.platforms, style = MaterialTheme.typography.titleMedium)
+        Text(S.platformsText, style = MaterialTheme.typography.bodySmall)
+        PlatformToggles()
+    }
+}
+
+/** The same switches as a dialog, opened from the button at the end of a platform bar. */
+@Composable
+fun PlatformPickerDialog(onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(S.choosePlatforms) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(S.platformsText, style = MaterialTheme.typography.bodySmall)
+                PlatformToggles()
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(S.done) } },
+    )
 }
 
 /** Label for a quality choice ("Auto", "720p", "Audio only"). */

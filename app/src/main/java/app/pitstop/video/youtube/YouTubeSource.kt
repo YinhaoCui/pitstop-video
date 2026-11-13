@@ -2,6 +2,7 @@ package app.pitstop.video.youtube
 
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.Feed
+import app.pitstop.video.core.FeedPage
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.StreamPolicy
@@ -42,11 +43,42 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
     override suspend fun load(feed: Feed): List<VideoItem> = when (feed.key) {
         FEED_SUBSCRIPTIONS -> account.subscriptionFeed()
         FEED_LIKED -> account.likedVideos()
-        else -> withContext(Dispatchers.IO) {
-            val kiosk = ServiceList.YouTube.kioskList.defaultKioskExtractor
-            kiosk.fetchPage()
-            kiosk.initialPage.items.filterIsInstance<StreamInfoItem>().map(::toItem)
+        else -> loadPage(feed, null).items
+    }
+
+    /**
+     * Trending, endlessly: YouTube's trending lists are short charts, so when one runs out the feed
+     * continues with the next trending kiosk (music, gaming, podcasts, live ...). NewPipe's next-page
+     * handles aren't strings, so they are kept here and the cursor is a key into this map.
+     */
+    private val pages = java.util.concurrent.ConcurrentHashMap<String, Pair<String, org.schabi.newpipe.extractor.Page?>>()
+
+    override suspend fun loadPage(feed: Feed, cursor: String?): FeedPage {
+        if (feed.key != FEED_POPULAR) return super.loadPage(feed, cursor)
+        return withContext(Dispatchers.IO) {
+            val list = ServiceList.YouTube.kioskList
+            val default = list.defaultKioskId
+            val kiosks = listOf(default) + list.availableKiosks.filter { it != default }.sorted()
+            // cursor -> (kiosk id, its next page or null to start that kiosk from the top)
+            val (kioskId, next) = if (cursor == null) default to null
+                else pages.remove(cursor) ?: return@withContext FeedPage(emptyList())
+            val page = runCatching {
+                val kiosk = list.getExtractorById(kioskId, null)
+                if (next == null) { kiosk.fetchPage(); kiosk.initialPage } else kiosk.getPage(next)
+            }.getOrNull()
+            val items = page?.items.orEmpty().filterIsInstance<StreamInfoItem>().map(::toItem)
+            val following = when {
+                page?.nextPage != null -> kioskId to page.nextPage
+                else -> kiosks.getOrNull(kiosks.indexOf(kioskId) + 1)?.let { it to null }
+            }
+            FeedPage(items, following?.let(::keep))
         }
+    }
+
+    private fun keep(next: Pair<String, org.schabi.newpipe.extractor.Page?>): String {
+        val key = java.util.UUID.randomUUID().toString()
+        pages[key] = next
+        return key
     }
 
     override val supportsCreators get() = true
