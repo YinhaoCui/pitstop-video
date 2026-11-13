@@ -273,8 +273,8 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
             Text(sub, maxLines = 2, style = MaterialTheme.typography.bodySmall,
                 color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        // Videos only (also while fetched as audio only, so the picture can be switched back on).
-        if (s.current?.source == SourceId.YOUTUBE || s.current?.source == SourceId.BILIBILI) {
+        // While a video plays as audio only there is no video view (and no button on it): offer the switch here.
+        if (s.noPicture && hasQualityChoice(s.current)) {
             Box(Modifier.padding(horizontal = 4.dp)) { QualityButton(graph) }
         }
         Spacer(Modifier.height(4.dp))
@@ -314,16 +314,30 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
     }
 }
 
+/** Only streamed videos have a quality to choose (music and local files don't). */
+private fun hasQualityChoice(item: VideoItem?) = item?.source == SourceId.YOUTUBE || item?.source == SourceId.BILIBILI
+
 /** Quick quality / data-saver switch for the network in use (Wi-Fi or mobile data); also in Settings. */
 @Composable
-private fun QualityButton(graph: AppGraph) {
+private fun QualityButton(graph: AppGraph, onVideo: Boolean = false) {
     val metered by graph.hub.onMeteredNetwork.collectAsStateWithLifecycle()
     val wifi by Settings.qualityWifi.collectAsStateWithLifecycle()
     val mobile by Settings.qualityMobile.collectAsStateWithLifecycle()
     val current = if (metered) mobile else wifi
     var open by remember { mutableStateOf(false) }
     Box {
-        androidx.compose.material3.AssistChip(
+        if (onVideo) {
+            // On the picture, next to the player's own controls: gear + current choice, YouTube style.
+            Row(
+                Modifier.clip(MaterialTheme.shapes.small).background(Color.Black.copy(alpha = 0.55f))
+                    .clickable { open = true }.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(painterResource(R.drawable.ic_settings), S.quality, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(6.dp))
+                Text(qualityLabel(current), color = Color.White, style = MaterialTheme.typography.labelLarge)
+            }
+        } else androidx.compose.material3.AssistChip(
             onClick = { open = true },
             label = { Text("${S.quality}: ${qualityLabel(current)}") },
         )
@@ -345,12 +359,15 @@ private fun QualityButton(graph: AppGraph) {
 fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
     val s by graph.hub.state.collectAsStateWithLifecycle()
     val subtitleStyle by Settings.subtitles.collectAsStateWithLifecycle()
+    // The quality button shows and hides together with the player's own controls.
+    var controlsShown by remember { mutableStateOf(false) }
     Box(modifier.background(Color.Black)) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     setShowNextButton(false); setShowPreviousButton(false); setShowSubtitleButton(true)
+                    setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v -> controlsShown = v == android.view.View.VISIBLE })
                 }
             },
             update = { view ->
@@ -363,6 +380,9 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
             },
             onRelease = { it.player = null },
         )
+        if (showControls && controlsShown && !s.drivingLocked && !s.carActive && hasQualityChoice(s.current)) {
+            Box(Modifier.align(Alignment.TopStart).padding(10.dp)) { QualityButton(graph, onVideo = true) }
+        }
         // On a car screen (Automotive OS / head unit) video is hidden while moving.
         if (s.drivingLocked && !s.carActive) {
             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
