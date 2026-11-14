@@ -105,6 +105,10 @@ or NetEase instead.
 
 ### Car screen
 
+On a real car Pitstop runs as a parked app: the video alone, or the whole phone app, with the phone
+as the remote (see [Put it on the car screen](#put-it-on-the-car-screen)). The template screen below
+is what developer head units show.
+
 - **Full screen**: video fills the visible area, with title and author beside Android Auto's
   buttons. **Split**: video beside (or, on portrait screens, above) title, progress and up next.
   Toggle with *Split / Full*.
@@ -199,6 +203,8 @@ Off by default, and off in the public release. Turn them on for your own build i
 |---|---|
 | `pitstop.youtubeDownloads=true` | Allows saving YouTube / YouTube Music videos to the device. |
 | `pitstop.driveFullAccess=true` | Browse all of Google Drive after signing in (restricted `drive.readonly` scope, see *Google Drive*). |
+| `pitstop.carRoute=navigation` | Registers with Android Auto as a navigation template app only, without the parked app. For comparing routes; real cars refuse it for sideloaded builds. |
+| `pitstop.idSuffix=.dev`, `pitstop.appLabel=Name` | Builds a test copy with its own package name and label, to install beside the release. |
 
 ## Put it on the car screen
 
@@ -207,16 +213,32 @@ Android Auto only shows apps that are not from the Play Store when developer mod
 1. On the phone: **Settings → Connected devices → Connection preferences → Android Auto**.
 2. Scroll down, tap **Version** ~10 times → accept developer mode.
 3. ⋮ menu → **Developer settings** → enable **Unknown sources**.
-4. Plug into the CX-5 (or connect wirelessly) and open *Pitstop Video* from the Android Auto launcher.
+4. **Customize launcher** → make sure *Pitstop Video* is ticked.
+5. Plug into the CX-5 (or connect wirelessly) and open *Pitstop Video* from the Android Auto launcher.
 
-*Customize launcher* in the phone's Android Auto settings lists Pitstop Video only **while the phone
-is connected to a car**. With no car connected, Android Auto can't verify an app that isn't from the
-Play Store and leaves it out of that list (its log says `CAR.VALIDATOR: Package DENIED; failed all
-other checks` and `CarInfo is null`). The app still appears in the car's app grid. To reorder or
-hide it, open *Customize launcher* while connected.
+Pitstop reaches the car screen in two ways, and Android Auto picks what it allows:
+
+- **Parked app (real cars).** Android Auto shows Pitstop's own screen on the car display while the
+  car is parked. By default it shows **only the video**, as large as it fits; tap it for pause,
+  skip, seek and quality. The phone app stays usable at the same time and works as the remote:
+  pick a video on the phone and it plays on the car screen, while the phone shows *Playing on the
+  car display* with the controls and the queue. *Settings → Car screen: video only* (or the button
+  at the top right of the car screen) switches the car screen to the whole app instead.
+  When the car moves, Android Auto closes it (*Not available while driving*). This is the only
+  route Android Auto accepts for an app that isn't from the Play Store. Parked apps need Android 15
+  or newer and a category Android Auto has enabled; the video category isn't yet, so the app
+  declares itself a game (the phone may list it under games).
+- **Car App Library screen (developer head units).** The template screen with *Browse*, *Queue* and
+  *Split / Full* described under [Car screen](#car-screen). Android Auto refuses this for sideloaded
+  apps on real cars (log: `CAR.VALIDATOR: Package DENIED; failed all other checks`), whatever the
+  *Unknown sources* setting, the app category or the installer. It shows on the Desktop Head Unit
+  and other developer head units, and would on a Play Store build.
+
+The first launch right after installing or updating can show *This can't be accessed on your
+Android Auto at this time*; open it again.
 
 When Pitstop opens on the car screen, it shows a reminder to keep your eyes on the road; if the
-phone app is open at that moment, the phone shows it too.
+phone app is open when the template screen connects, the phone shows it too.
 
 Pitstop Video is listed in the Android Auto app grid (A–Z, after *Phone*). It draws its video on
 Android Auto's map surface; use *Browse → Exit* to pause and close it. Switching to another car app pauses
