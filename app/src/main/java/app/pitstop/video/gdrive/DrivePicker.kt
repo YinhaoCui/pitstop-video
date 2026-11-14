@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import app.pitstop.video.core.AudioFiles
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.getString
@@ -40,14 +41,19 @@ class DrivePicker(private val context: Context, private val http: OkHttpClient) 
     private val client get() = Identity.getAuthorizationClient(context)
     private val scope = Scope(SCOPE)
 
-    /** Request that opens the picker: drive.file only, consent + account choice, any file (audio is kept) or folders. */
-    private fun pickRequest() = AuthorizationRequest.builder()
+    /**
+     * Request that opens the picker: drive.file only, consent + account choice, several files at once.
+     * [folders] lets folders be picked too; only the downloads-folder choice uses it. Picking a folder
+     * for music is not offered: drive.file grants the folder, not the files inside it, so such a
+     * folder showed only songs the app could already reach (often just one). Songs are picked instead.
+     */
+    private fun pickRequest(folders: Boolean) = AuthorizationRequest.builder()
         .setRequestedScopes(listOf(scope))
         .setOptOutIncludingGrantedScopes(true)
         .setPrompt(AuthorizationRequest.Prompt.CONSENT or AuthorizationRequest.Prompt.SELECT_ACCOUNT)
         .addResourceParameter(ResourceParameter.PICKER_OAUTH_TRIGGER, "true")
         .addResourceParameter(ResourceParameter.PICKER_ALLOW_MULTIPLE, "true")
-        .addResourceParameter(ResourceParameter.PICKER_ALLOW_FOLDER_SELECTION, "true")
+        .apply { if (folders) addResourceParameter(ResourceParameter.PICKER_ALLOW_FOLDER_SELECTION, "true") }
         // No PICKER_MIMETYPES filter: "audio/*" hid every file in the picker. Non-audio picks are dropped below.
         .build()
 
@@ -58,8 +64,8 @@ class DrivePicker(private val context: Context, private val http: OkHttpClient) 
         .build()
 
     /** The picker always needs UI; returns its PendingIntent. */
-    suspend fun beginPick(): PendingIntent {
-        val result = client.authorize(pickRequest()).await()
+    suspend fun beginPick(folders: Boolean = false): PendingIntent {
+        val result = client.authorize(pickRequest(folders)).await()
         Log.i(TAG, "authorize: resolution=${result.hasResolution()} params=${result.tokenResponseParams?.keySet()}")
         return result.pendingIntent ?: throw UserFacingException(I18n.s.drivePickerFailed("no picker UI"))
     }
@@ -72,7 +78,7 @@ class DrivePicker(private val context: Context, private val http: OkHttpClient) 
         val ids = params?.getString(PICKED_IDS).orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
         val token = result.accessToken ?: throw UserFacingException(I18n.s.drivePickerFailed("no access token"))
         cached = token to android.os.SystemClock.elapsedRealtime()
-        val picked = ids.map { id -> metadata(id, token) }.filter { it.isFolder || it.mimeType.startsWith("audio/") }
+        val picked = ids.map { id -> metadata(id, token) }.filter { it.isFolder || AudioFiles.isAudio(it.name, it.mimeType) }
         save(picked + _files.value.filter { old -> picked.none { it.id == old.id } })
         return picked.size
     }
@@ -111,9 +117,13 @@ class DrivePicker(private val context: Context, private val http: OkHttpClient) 
         return t
     }
 
-    /** Subfolders and audio files directly inside a picked folder (drive.file covers a picked folder's contents). */
+    /**
+     * Subfolders and songs directly inside a folder, as far as drive.file lets the app see them:
+     * files picked or created by the app (e.g. the downloads folder), not everything in it.
+     * Every child is fetched and songs are recognised by MIME type or extension ([AudioFiles]).
+     */
     suspend fun children(folderId: String): List<PickedDriveFile> {
-        val q = "'$folderId' in parents and (mimeType contains 'audio/' or mimeType = '$FOLDER_MIME') and trashed = false"
+        val q = "'$folderId' in parents and trashed = false"
         val out = mutableListOf<PickedDriveFile>()
         var pageToken: String? = null
         val token = token()
@@ -128,7 +138,9 @@ class DrivePicker(private val context: Context, private val http: OkHttpClient) 
             }
             pageToken = json.optString("nextPageToken").ifEmpty { null }
         } while (pageToken != null && out.size < DriveSource.MAX_ITEMS)
-        return out.sortedBy { !it.isFolder }
+        val kept = out.filter { it.isFolder || AudioFiles.isAudio(it.name, it.mimeType) }
+        Log.i(TAG, "children: ${out.size} visible, ${kept.size} folders/songs")
+        return kept.sortedBy { !it.isFolder }
     }
 
     fun mediaUrl(id: String) = "$API/files/$id?alt=media&acknowledgeAbuse=true"

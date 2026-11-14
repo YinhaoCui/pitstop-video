@@ -3,6 +3,8 @@ package app.pitstop.video.car
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import androidx.car.app.CarAppService
+import androidx.car.app.CarToast
+import app.pitstop.video.core.I18n
 import androidx.car.app.Screen
 import androidx.car.app.Session
 import androidx.car.app.AppManager
@@ -29,6 +31,11 @@ class VideoCarAppService : CarAppService() {
     override fun onCreateSession(): Session = VideoSession()
 }
 
+/** Counts car sessions (one per connection to the car), so the phone can show its safety reminder once each time. */
+object CarConnections {
+    val count = kotlinx.coroutines.flow.MutableStateFlow(0)
+}
+
 class VideoSession : Session() {
     override fun onCreateScreen(intent: Intent): Screen {
         val graph = carContext.graph
@@ -48,6 +55,9 @@ class VideoSession : Session() {
                 graph.driving.startPhoneGps("car")
                 // Media session: steering-wheel / Bluetooth buttons and keeping the process alive.
                 app.pitstop.video.player.PlaybackService.start(carContext)
+                // Safety reminder on connecting: on the car screen here, and on the phone if the app is open.
+                CarToast.makeText(carContext, I18n.s.driveSafely, CarToast.LENGTH_LONG).show()
+                CarConnections.count.value++
             }
 
             // Leaving the app on the car screen (opening Maps, Phone, ...) pauses the video.

@@ -41,7 +41,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import app.pitstop.video.car.CarConnections
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -100,6 +103,22 @@ import app.pitstop.video.player.DisplayMode
 import app.pitstop.video.player.RepeatMode
 import kotlinx.coroutines.CancellationException
 
+/** Each time the car connects while this screen is open: a reminder not to look at the phone while driving. */
+@Composable
+private fun DriveSafelyReminder() {
+    val connections by CarConnections.count.collectAsStateWithLifecycle()
+    // Connections that happened before this screen appeared were already shown on the car screen.
+    var seen by rememberSaveable { mutableStateOf(connections) }
+    if (connections > seen) {
+        AlertDialog(
+            onDismissRequest = { seen = connections },
+            title = { Text(S.driveSafelyTitle) },
+            text = { Text(S.driveSafely) },
+            confirmButton = { TextButton(onClick = { seen = connections }) { Text(S.ok) } },
+        )
+    }
+}
+
 @Composable
 fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenChange: (Boolean) -> Unit) {
     if (inPip) {
@@ -117,6 +136,7 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
         return
     }
 
+    DriveSafelyReminder()
     // Only the platforms the user chose to show (Settings → Platforms, or the button after the chips).
     val hidden by Settings.hiddenSources.collectAsStateWithLifecycle()
     val videoSources = remember(hidden) { graph.shownVideoSources }

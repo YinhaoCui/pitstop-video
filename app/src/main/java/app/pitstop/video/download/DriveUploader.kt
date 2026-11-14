@@ -43,7 +43,7 @@ class DriveUploader(context: Context, private val http: OkHttpClient, private va
     val chosenFolder: StateFlow<DownloadFolder?> = _chosen.asStateFlow()
 
     /** Opens Google's Drive picker; the user picks the folder downloads should go to. */
-    suspend fun beginPickFolder(): PendingIntent = picker.beginPick()
+    suspend fun beginPickFolder(): PendingIntent = picker.beginPick(folders = true)
 
     /** Saves the folder picked in [beginPickFolder]'s picker; false when no folder was picked. */
     suspend fun completePickFolder(data: Intent?): Boolean {
