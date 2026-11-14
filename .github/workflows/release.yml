@@ -1,5 +1,5 @@
 # Builds the public APK when a version tag (v1.2.3) is pushed and attaches it to a GitHub release.
-# Public builds keep the opt-in features off (pitstop.youtubeDownloads, pitstop.googleCloud).
+# Public builds keep the opt-in features off (pitstop.youtubeDownloads, pitstop.driveFullAccess).
 #
 # Repository secrets (Settings → Secrets and variables → Actions):
 #   KEYSTORE_BASE64    base64 of the release keystore (.jks)

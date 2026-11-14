@@ -71,8 +71,8 @@ fun AccountScreen(graph: AppGraph) {
         HorizontalDivider()
         NeteaseSection(graph)
         HorizontalDivider()
-        // Drive sign-in needs the developer's own Google Cloud OAuth client: personal builds only.
-        if (BuildConfig.GOOGLE_CLOUD) {
+        // Whole-Drive sign-in uses the restricted drive.readonly scope: personal builds only.
+        if (BuildConfig.DRIVE_FULL_ACCESS) {
             DriveSection(graph)
             HorizontalDivider()
         }

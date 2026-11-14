@@ -94,7 +94,7 @@ Off by default, and off in the public release. Turn them on for your own build i
 | Property | Effect |
 |---|---|
 | `pitstop.youtubeDownloads=true` | Allows saving YouTube / YouTube Music videos to the device. |
-| `pitstop.googleCloud=true` | Google Drive sign-in, Drive picker and uploads (needs your own OAuth client, see *Google Drive*). |
+| `pitstop.driveFullAccess=true` | Browse all of Google Drive after signing in (restricted `drive.readonly` scope, see *Google Drive*). |
 
 ## Put it on the car screen
 
@@ -128,19 +128,31 @@ remembered channels while signed out.
 
 ## Google Drive
 
-Public builds: *Music → Google Drive → Add songs* uses the system file picker; the Drive app
-serves the picked files, with no sign-in.
+*Music → Google Drive → Pick from Google Drive* opens Google's own Drive picker: users pick songs or
+whole folders, and the app can see only what they picked (the non-sensitive `drive.file` scope).
+It does not need the Google Drive app. Downloads can also be saved to Drive the same way.
+*Add from files* (the phone's file picker) stays as an alternative; it lists Drive only when the
+Drive app is installed.
 
-Personal builds can also browse Drive folders, use Google's Drive picker and upload downloads to
-Drive. These need your own OAuth client, so they are off unless you build with
-`pitstop.googleCloud=true` (see *Build options*):
+The picker needs an OAuth client for the app's signing key. Whoever publishes the APK sets this up
+once in their own Google Cloud project; people installing the release need nothing:
 
 1. In [Google Cloud Console](https://console.cloud.google.com/) create a project and enable the **Google Drive API**.
-2. Configure the OAuth consent screen (External, *Testing*) and add your Google account as a test user.
-3. Create credentials → **OAuth client ID → Android**: package `app.pitstop.video`, SHA-1 of the
-   signing key (`./gradlew signingReport`).
+2. *OAuth consent screen*: user type **External**, add only the `.../auth/drive.file` scope, then
+   **Publish app** (status *In production*). Non-sensitive scopes like this one don't go through
+   Google's verification review and have no test-user limit; check the console's verification
+   status after publishing.
+3. *Credentials → Create credentials → OAuth client ID → Android*, package `app.pitstop.video`, one
+   client per signing key: the release key (`keytool -list -v -keystore pitstop-release.jks`) and,
+   for your own debug builds, the debug key (`./gradlew signingReport`).
 
-No client ID goes into the code; Google matches the package name + SHA-1.
+No client ID goes into the code; Google matches the package name + SHA-1. Someone who builds the
+app with their own key needs their own client, or uses *Add from files*.
+
+Personal builds can also browse the whole Drive after signing in, with
+`pitstop.driveFullAccess=true` (see *Build options*). That uses the restricted `drive.readonly`
+scope, which Google only allows for test users unless the app passes a paid security assessment,
+so it is never on in the public release.
 
 ## Bilibili sign-in
 

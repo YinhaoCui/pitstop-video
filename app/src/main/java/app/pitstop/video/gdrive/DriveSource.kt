@@ -46,12 +46,12 @@ class DriveSource(
     private val _picked = MutableStateFlow(readPicked())
     val picked: StateFlow<List<VideoItem>> = _picked
 
-    /** Drive API access: only in builds with a Google Cloud OAuth client, and once signed in. */
-    private val apiSignedIn get() = BuildConfig.GOOGLE_CLOUD && account.signedIn.value
+    /** Whole-Drive access (restricted drive.readonly scope): personal builds only, once signed in. */
+    private val apiSignedIn get() = BuildConfig.DRIVE_FULL_ACCESS && account.signedIn.value
 
     override fun feeds(): List<Feed> = buildList {
         if (apiSignedIn) { add(Feed(FEED_ALL, I18n.s.allMusic)); add(Feed(FEED_FOLDERS, I18n.s.folders)) }
-        if (BuildConfig.GOOGLE_CLOUD && picker.files.value.isNotEmpty()) add(Feed(FEED_GPICKER, I18n.s.driveGooglePicked))
+        if (picker.files.value.isNotEmpty()) add(Feed(FEED_GPICKER, I18n.s.driveGooglePicked))
         if (!apiSignedIn || _picked.value.isNotEmpty()) add(Feed(FEED_PICKED, I18n.s.drivePicked))
     }
 

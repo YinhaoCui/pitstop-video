@@ -9,7 +9,7 @@ plugins {
  * Opt-in features for personal builds, off in the public release: set them in local.properties or
  * with -P (e.g. `pitstop.youtubeDownloads=true`).
  * - pitstop.youtubeDownloads: allow saving YouTube / YouTube Music videos to the device.
- * - pitstop.googleCloud: Google Drive features that need your own Google Cloud OAuth client (see README).
+ * - pitstop.driveFullAccess: browse all of Google Drive (restricted drive.readonly scope, see README).
  */
 val localProps = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
@@ -30,7 +30,7 @@ android {
         versionCode = 5
         versionName = "0.5.0"
         buildConfigField("boolean", "YOUTUBE_DOWNLOADS", optIn("pitstop.youtubeDownloads").toString())
-        buildConfigField("boolean", "GOOGLE_CLOUD", optIn("pitstop.googleCloud").toString())
+        buildConfigField("boolean", "DRIVE_FULL_ACCESS", optIn("pitstop.driveFullAccess").toString())
     }
 
     // Public releases are signed with a fixed key from the environment (CI secrets), so updates install

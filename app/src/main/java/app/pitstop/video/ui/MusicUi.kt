@@ -86,7 +86,7 @@ fun MusicTab(graph: AppGraph) {
             SourceId.YT_MUSIC -> !ytSignedIn
             SourceId.BILI_MUSIC -> !biliLoggedIn
             SourceId.NETEASE -> !neteaseSignedIn
-            SourceId.GDRIVE -> BuildConfig.GOOGLE_CLOUD && !driveSignedIn
+            SourceId.GDRIVE -> BuildConfig.DRIVE_FULL_ACCESS && !driveSignedIn
             else -> false
         }
         if (needsLogin) MusicLoginCard(graph, source.id)
@@ -104,20 +104,23 @@ fun MusicTab(graph: AppGraph) {
     }
 }
 
-/** Google Drive: songs are picked with the system file picker (Drive appears there), no sign-in. */
+/**
+ * Google Drive without the Drive app: Google's own Drive picker (drive.file, the app sees only what
+ * the user picks) is the main way; the system file picker, which lists Drive only when the Drive app
+ * is installed, stays as the alternative.
+ */
 @Composable
 private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked: Boolean) {
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) graph.driveSource.addPicked(uris)
     }
-    // Experiment (issue #2): Google's Drive picker with the drive.file scope.
     val drivePicker = graph.driveSource.picker
     val scope = rememberCoroutineScope()
-    var message by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val googleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
         scope.launch {
-            message = runCatching { I18n.s.drivePickerAdded(drivePicker.completePick(res.data)) }
-                .getOrElse { I18n.s.drivePickerFailed(it.message) }
+            message = runCatching { I18n.s.drivePickerAdded(drivePicker.completePick(res.data)) to false }
+                .getOrElse { I18n.s.drivePickerFailed(it.message) to true }
         }
     }
     Column(
@@ -127,25 +130,27 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (!hasFiles) Text(S.drivePickHint, style = MaterialTheme.typography.bodySmall)
+        if (!hasFiles && !hasGooglePicked) Text(S.drivePickHint, style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text(S.driveAddSongs) }
+            Button(onClick = {
+                scope.launch {
+                    runCatching { drivePicker.beginPick() }
+                        .onSuccess { googleLauncher.launch(IntentSenderRequest.Builder(it.intentSender).build()) }
+                        .onFailure { message = I18n.s.drivePickerFailed(it.message) to true }
+                }
+            }) { Text(S.driveGooglePick) }
+            if (hasGooglePicked) TextButton(onClick = drivePicker::clear) { Text(S.driveClear) }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { files.launch(arrayOf("audio/*")) }) { Text(S.driveAddSongs) }
             if (hasFiles) TextButton(onClick = graph.driveSource::clearPicked) { Text(S.driveClear) }
         }
-        // Google's own Drive picker uses an OAuth client: personal builds only.
-        if (BuildConfig.GOOGLE_CLOUD) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    scope.launch {
-                        runCatching { drivePicker.beginPick() }
-                            .onSuccess { googleLauncher.launch(IntentSenderRequest.Builder(it.intentSender).build()) }
-                            .onFailure { message = I18n.s.drivePickerFailed(it.message) }
-                    }
-                }) { Text(S.driveGooglePick) }
-                if (hasGooglePicked) TextButton(onClick = drivePicker::clear) { Text(S.driveClear) }
-            }
+        message?.let { (text, error) ->
+            Text(
+                text, style = MaterialTheme.typography.bodySmall,
+                color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
 }
 
