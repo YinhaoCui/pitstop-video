@@ -198,15 +198,14 @@ fun personalPictureId(): Int {
     return id
 }
 
-/** Round avatar: the personal picture when present, else the mascot. */
+/** Round avatar: the personal picture when present (local builds), else the app's default picture. */
 @Composable
 fun Avatar(size: Dp, modifier: Modifier = Modifier) {
     val personal = personalPictureId()
     Box(modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer)) {
-        if (personal != 0) {
-            Image(painterResource(personal), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        } else {
-            Image(painterResource(R.drawable.ill_mascot), null, Modifier.fillMaxSize().padding(top = 2.dp))
-        }
+        Image(
+            painterResource(if (personal != 0) personal else R.drawable.default_avatar), null,
+            Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+        )
     }
 }

@@ -43,7 +43,7 @@ import org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamInf
 
 /**
  * YouTube without an API key: listing/search/stream URLs come from NewPipeExtractor.
- * When signed in, [YouTubeAccount] adds personal feeds through the official Data API.
+ * With a linked Google account, [YouTubeAccount] adds personal feeds from YouTube's web API.
  */
 class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
     override val id = SourceId.YOUTUBE
@@ -51,9 +51,11 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
 
     override fun feeds(): List<Feed> = buildList {
         add(Feed(FEED_POPULAR, I18n.s.popular))
+        if (account.hasSubscriptions) add(Feed(FEED_SUBSCRIPTIONS, I18n.s.subscriptions))
         if (account.signedIn.value) {
-            add(Feed(FEED_SUBSCRIPTIONS, I18n.s.subscriptions))
             add(Feed(FEED_LIKED, I18n.s.liked))
+            add(Feed(FEED_WATCH_LATER, I18n.s.watchLater))
+            add(Feed(FEED_HISTORY, I18n.s.history))
         }
     }
 
@@ -68,10 +70,12 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
     }
 
     override suspend fun loadPage(feed: Feed, cursor: String?): FeedPage {
-        // Data API feeds: the cursor is the API's own pageToken.
+        // Account feeds: the cursor is YouTube's own continuation token.
         when (feed.key) {
             FEED_SUBSCRIPTIONS -> return account.subscriptionPage(cursor)
             FEED_LIKED -> return account.likedPage(cursor)
+            FEED_WATCH_LATER -> return account.watchLaterPage(cursor)
+            FEED_HISTORY -> return account.historyPage(cursor)
         }
         val category = feed.categoryKey()
         if (category == null && feed.key != FEED_POPULAR) return FeedPage(emptyList())
@@ -259,6 +263,8 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
         const val FEED_POPULAR = "popular"
         const val FEED_SUBSCRIPTIONS = "subscriptions"
         const val FEED_LIKED = "liked"
+        const val FEED_WATCH_LATER = "watch_later"
+        const val FEED_HISTORY = "history"
         fun watchUrl(videoId: String) = "https://www.youtube.com/watch?v=$videoId"
         fun channelUrl(channelId: String) = "https://www.youtube.com/channel/$channelId"
 

@@ -1,5 +1,6 @@
 package app.pitstop.video.ui
 
+import androidx.compose.foundation.lazy.rememberLazyListState
 import app.pitstop.video.core.S
 import app.pitstop.video.core.I18n
 import androidx.compose.ui.platform.LocalContext
@@ -166,7 +167,11 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         if (p.items.isEmpty()) Text(S.playlistEmpty, Modifier.padding(24.dp))
-        LazyColumn(Modifier.fillMaxSize()) {
+        val listState = rememberLazyListState()
+        val reorder = rememberReorderState(listState)
+        // Dragging works in the playlist's own order only (no sort / filter), so rows map 1:1 to places.
+        reorder.bind(first = 0, count = p.items.size) { from, to -> graph.playlists.move(p.id, from, to) }
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
             if (shownItems.size < p.items.size) item(key = "hidden") {
                 Text(
                     S.hiddenByFilters(p.items.size - shownItems.size), Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -176,18 +181,14 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
             itemsIndexed(shown, key = { _, it -> "${it.index}:${it.value.source}:${it.value.id}" }) { pos, entry ->
                 val i = entry.index
                 val item = entry.value
-                VideoRow(graph, item, onClick = { graph.hub.playQueue(shownItems, pos) }, onLongClick = { menuFor = item }) {
+                VideoRow(
+                    graph, item, onClick = { graph.hub.playQueue(shownItems, pos) }, onLongClick = { menuFor = item },
+                    modifier = if (view.isDefault) Modifier.reorderable(reorder, i, MaterialTheme.colorScheme.surfaceContainerHigh) else Modifier,
+                    // Moving only makes sense in the playlist's own order.
+                    leading = if (view.isDefault) { { DragHandle(reorder, i, p.items.size) } } else null,
+                ) {
                     // Playlists mix platforms: show where each item comes from.
                     PlatformBadge(S.sourceName(item.source))
-                    // Moving only makes sense in the playlist's own order.
-                    if (view.isDefault) Column {
-                        IconButton(onClick = { graph.playlists.move(p.id, i, i - 1) }, enabled = i > 0, modifier = Modifier.size(32.dp)) {
-                            Icon(painterResource(R.drawable.ic_arrow_up), S.moveUp)
-                        }
-                        IconButton(onClick = { graph.playlists.move(p.id, i, i + 1) }, enabled = i < p.items.lastIndex, modifier = Modifier.size(32.dp)) {
-                            Icon(painterResource(R.drawable.ic_arrow_down), S.moveDown)
-                        }
-                    }
                     IconButton(onClick = { graph.playlists.removeAt(p.id, i) }) {
                         Icon(painterResource(R.drawable.ic_delete), S.removeFromPlaylist)
                     }
@@ -219,10 +220,13 @@ fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
             if (s.queue.isEmpty()) {
                 Text(S.nothingQueuedPhone)
             } else {
-                LazyColumn(Modifier.heightIn(max = 480.dp)) {
+                val listState = rememberLazyListState()
+                val reorder = rememberReorderState(listState)
+                reorder.bind(first = 1, count = s.queue.size, onMove = graph.hub::moveInQueue)
+                LazyColumn(Modifier.heightIn(max = 480.dp), state = listState) {
                     item(key = "head") { QueueHeader(graph, s.index, s.queue.size) }
                     itemsIndexed(s.queue, key = { i, it -> "$i:${it.id}:${it.part}" }) { i, item ->
-                        QueueRow(graph, item, i, s.index, s.queue.size, onPlay = { graph.hub.jumpTo(i); onDismiss() })
+                        QueueRow(graph, item, i, s.index, s.queue.size, reorder, onPlay = { graph.hub.jumpTo(i); onDismiss() })
                     }
                 }
             }

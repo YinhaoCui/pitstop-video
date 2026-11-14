@@ -228,6 +228,7 @@ class BiliApi(
             "https://api.bilibili.com/x/player/wbi/playurl",
             mapOf("bvid" to bvid, "cid" to cid.toString(), "qn" to "0", "fnval" to "4048", "fnver" to "0", "fourk" to "1"),
         )
+        if (BiliPaid.isPreview(d)) throw UserFacingException(I18n.s.paidContent)
         val headers = mapOf("Referer" to "https://www.bilibili.com/", "User-Agent" to DESKTOP_UA)
         val overseas = isOverseas()
         fun url(o: JSONObject): String {
@@ -386,6 +387,7 @@ class BiliApi(
             "https://api.bilibili.com/x/player/wbi/playurl",
             mapOf("bvid" to bvid, "cid" to cid.toString(), "qn" to "0", "fnval" to "4048", "fnver" to "0", "fourk" to "1"),
         )
+        if (BiliPaid.isPreview(d)) throw UserFacingException(I18n.s.paidContent)
         val headers = mapOf("Referer" to "https://www.bilibili.com/", "User-Agent" to DESKTOP_UA)
         val overseas = isOverseas()
         fun url(o: JSONObject): String {

@@ -1,239 +1,235 @@
 package app.pitstop.video.youtube
 
-import app.pitstop.video.core.I18n
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import app.pitstop.video.core.SourceId
-import app.pitstop.video.core.GoogleScopedAccount
-import app.pitstop.video.core.COLLECTION_PREFIX
+import android.util.Log
+import android.webkit.CookieManager
+import app.pitstop.video.core.DESKTOP_UA
+import app.pitstop.video.core.AppLanguage
 import app.pitstop.video.core.FeedPage
+import app.pitstop.video.core.I18n
+import app.pitstop.video.core.SiteCookieJar
+import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.VideoItem
-import app.pitstop.video.core.getString
-import app.pitstop.video.core.parseIsoDuration
-import com.google.android.gms.auth.api.identity.AuthorizationRequest
-import com.google.android.gms.auth.api.identity.Identity
-import com.google.android.gms.common.api.Scope
-import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
+import java.io.IOException
+import java.util.Locale
 
 /**
- * Optional Google sign-in (scope youtube.readonly) for personal feeds via the YouTube Data API v3.
- * Requires an Android OAuth client for this package + signing SHA-1 in Google Cloud (see README).
+ * Optional Google account link for YouTube's personal feeds, with no Google Cloud project, API key
+ * or quota: the user signs in on Google's own page in a WebView ([app.pitstop.video.ui.YouTubeLoginActivity]),
+ * and the session cookies sign requests to YouTube's web API the way youtube.com does.
+ *
+ * Only feed listings use the account. Playback stays anonymous (NewPipe on the shared client, which
+ * never gets these cookies).
+ *
+ * Subscriptions keep working when the web API changes or the session ends: the subscribed channels
+ * are remembered and their public RSS feeds are merged instead.
  */
-class YouTubeAccount(context: Context, private val http: OkHttpClient) :
-    GoogleScopedAccount(context, "youtube", SCOPE, { I18n.s.finishYoutubeSignIn }) {
+class YouTubeAccount(context: Context, private val http: OkHttpClient) {
+    private val jar = SiteCookieJar(context.getSharedPreferences("yt_cookies", Context.MODE_PRIVATE), "youtube.com", "SAPISID")
+    private val prefs = context.getSharedPreferences("youtube", Context.MODE_PRIVATE)
 
-    /**
-     * One Data API call. On an auth error (401, or 403 insufficient scope) the cached token is thrown
-     * away and the call is retried once with a fresh one; other errors show Google's own reason.
-     */
-    private suspend fun api(pathAndQuery: String, token: String): JSONObject {
-        val first = call(pathAndQuery, token)
-        if (first.ok) return first.json!!
-        if (first.authError) {
-            invalidateToken(token)
-            val again = call(pathAndQuery, token())
-            if (again.ok) return again.json!!
-            if (again.authError) { signOut(); throw UserFacingException(I18n.s.youtubeSignInAgain) }
-            throw again.exception()
+    /** Own client: the account cookies (and their rotation) only ever go to youtube.com API calls. */
+    private val client: OkHttpClient = http.newBuilder().cookieJar(jar).build()
+
+    val signedIn: StateFlow<Boolean> = jar.signedIn
+
+    /** Channels remembered from the last sync, for the RSS fallback (id to name). */
+    @Volatile private var channels: List<Pair<String, String>> = readChannels()
+
+    /** How many subscribed channels are remembered for the RSS fallback. */
+    val rememberedChannels: Int get() = channels.size
+
+    /** True when Subscriptions can show something: signed in, or channels remembered from before. */
+    val hasSubscriptions get() = signedIn.value || channels.isNotEmpty()
+
+    /** Called by the login page with the WebView's cookie header for youtube.com. */
+    fun completeWebSignIn(cookieHeader: String) {
+        jar.importCookieHeader(cookieHeader)
+        lastSync = 0
+    }
+
+    /** Signs out here and in the WebView, so the next sign-in starts clean. Keeps remembered channels. */
+    fun signOut() {
+        jar.clear()
+        runCatching { CookieManager.getInstance().removeAllCookies(null) }
+    }
+
+    /** Forgets the remembered subscription list too. */
+    fun forgetChannels() {
+        channels = emptyList()
+        prefs.edit().remove(KEY_CHANNELS).remove(KEY_SYNCED).apply()
+    }
+
+    // ---- feeds (the cursor is YouTube's continuation token, or "rss:<offset>" for the fallback) ----
+
+    suspend fun subscriptionPage(cursor: String?): FeedPage {
+        cursor?.removePrefix(RSS)?.takeIf { it != cursor }?.let { return rssPage(it.toIntOrNull() ?: 0) }
+        if (!signedIn.value) return rssPage(0)
+        return try {
+            val page = browsePage("FEsubscriptions", cursor, SourceId.YOUTUBE)
+            if (cursor == null) syncChannelsIfDue()
+            page
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Web API changed or the session ended: fall back to the channels' public feeds.
+            Log.w(TAG, "subscriptions via web API failed, using RSS", e)
+            if (cursor == null && channels.isNotEmpty()) rssPage(0) else throw e
         }
-        throw first.exception()
     }
 
-    private class ApiResult(val code: Int, val json: JSONObject?, val reason: String, val message: String) {
-        val ok get() = code in 200..299
-        val authError get() = code == 401 || reason in AUTH_REASONS
-        fun exception(): Exception = when (reason) {
-            "quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded" -> UserFacingException(I18n.s.youtubeQuota)
-            "accessNotConfigured", "SERVICE_DISABLED" -> UserFacingException(I18n.s.youtubeApiDisabled)
-            else -> java.io.IOException("YouTube HTTP $code: ${message.ifEmpty { reason }}")
-        }
+    suspend fun likedPage(cursor: String?) = browsePage("VLLL", cursor, SourceId.YOUTUBE)
+    suspend fun watchLaterPage(cursor: String?) = browsePage("VLWL", cursor, SourceId.YOUTUBE)
+    suspend fun historyPage(cursor: String?) = browsePage("FEhistory", cursor, SourceId.YOUTUBE)
+
+    /** YouTube Music's "Liked music" (the LM auto playlist). */
+    suspend fun likedMusicPage(cursor: String?) = browsePage("VLLM", cursor, SourceId.YT_MUSIC)
+
+    /** The user's playlists (made on YouTube or YouTube Music), as collection rows. */
+    suspend fun playlistsPage(source: SourceId, cursor: String?): FeedPage {
+        val j = browse("FEplaylist_aggregation", cursor)
+        return FeedPage(InnertubeParse.playlists(j, source, I18n.s::tracks), InnertubeParse.continuation(j))
     }
 
-    private suspend fun call(pathAndQuery: String, token: String): ApiResult = withContext(Dispatchers.IO) {
-        val req = Request.Builder()
-            .url("https://www.googleapis.com/youtube/v3/$pathAndQuery")
-            .header("Authorization", "Bearer $token")
-            .build()
-        http.newCall(req).execute().use { resp ->
-            val body = resp.body?.string().orEmpty()
-            if (resp.isSuccessful) return@use ApiResult(resp.code, JSONObject(body), "", "")
-            Log.w(TAG, "HTTP ${resp.code} for ${pathAndQuery.substringBefore('?')}: ${body.take(600)}")
-            val err = runCatching { JSONObject(body).getJSONObject("error") }.getOrNull()
-            val reason = err?.optJSONArray("errors")?.optJSONObject(0)?.optString("reason").orEmpty()
-                .ifEmpty { err?.optJSONArray("details")?.optJSONObject(0)?.optString("reason").orEmpty() }
-            ApiResult(resp.code, null, reason, err?.optString("message").orEmpty())
-        }
-    }
-
-    /** `&pageToken=...` for a Data API cursor (cursors are the API's own page tokens). */
-    private fun pageParam(pageToken: String?) =
-        pageToken?.let { "&pageToken=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
-
-    /** Latest uploads from the user's subscribed channels. */
-    suspend fun subscriptionFeed(): List<VideoItem> = subscriptionPage(null).items
-
-    /**
-     * Latest uploads from 25 subscribed channels per page (newest first within the page); the next
-     * page covers the next 25 subscriptions. ~26 quota units per page, as before.
-     */
-    suspend fun subscriptionPage(pageToken: String?): FeedPage = coroutineScope {
-        val token = token()
-        val page = api("subscriptions?part=snippet&mine=true&maxResults=25&order=relevance" + pageParam(pageToken), token)
-        val subs = page.optJSONArray("items") ?: return@coroutineScope FeedPage(emptyList())
-        val channelIds = (0 until subs.length()).mapNotNull {
-            subs.getJSONObject(it).optJSONObject("snippet")?.optJSONObject("resourceId")?.optString("channelId")
-        }.filter { it.startsWith("UC") }
-
-        val items = channelIds.map { ch ->
-            async {
-                runCatching {
-                    val uploads = "UU" + ch.substring(2)
-                    val items = api("playlistItems?part=snippet,contentDetails&maxResults=4&playlistId=$uploads", token)
-                        .optJSONArray("items")
-                    (0 until (items?.length() ?: 0)).mapNotNull { i ->
-                        val o = items!!.getJSONObject(i)
-                        val sn = o.optJSONObject("snippet") ?: return@mapNotNull null
-                        val cd = o.optJSONObject("contentDetails") ?: return@mapNotNull null
-                        val vid = cd.optString("videoId").ifEmpty { return@mapNotNull null }
-                        cd.optString("videoPublishedAt") to VideoItem(
-                            source = SourceId.YOUTUBE,
-                            id = YouTubeSource.watchUrl(vid),
-                            title = sn.optString("title"),
-                            author = sn.optString("videoOwnerChannelTitle").ifEmpty { sn.optString("channelTitle") },
-                            authorId = YouTubeSource.channelUrl(ch),
-                            thumbnailUrl = thumb(sn),
-                        )
-                    }
-                }.getOrDefault(emptyList())
-            }
-        }.awaitAll().flatten().sortedByDescending { it.first }.map { it.second }.take(60)
-        FeedPage(items, page.optString("nextPageToken").ifEmpty { null })
-    }
-
-    suspend fun likedVideos(): List<VideoItem> = likedPage(null).items
-
-    /** Liked videos, 50 per page (1 quota unit each). */
-    suspend fun likedPage(pageToken: String?): FeedPage {
-        val j = api("videos?part=snippet,contentDetails&myRating=like&maxResults=50" + pageParam(pageToken), token())
-        val items = j.optJSONArray("items")
-        val list = (0 until (items?.length() ?: 0)).map { i ->
-            val o = items!!.getJSONObject(i)
-            val sn = o.getJSONObject("snippet")
-            VideoItem(
-                source = SourceId.YOUTUBE,
-                id = YouTubeSource.watchUrl(o.getString("id")),
-                title = sn.optString("title"),
-                author = sn.optString("channelTitle"),
-                thumbnailUrl = thumb(sn),
-                durationSec = parseIsoDuration(o.optJSONObject("contentDetails")?.optString("duration")),
-                authorId = sn.optString("channelId").ifEmpty { null }?.let(YouTubeSource::channelUrl),
-            )
-        }
-        return FeedPage(list, j.optString("nextPageToken").ifEmpty { null })
-    }
-
-    /** Liked videos in YouTube's Music category (what YouTube Music shows as liked songs). */
-    suspend fun likedMusic(): List<VideoItem> = likedMusicPage(null).items
-
-    /**
-     * Liked music, endlessly. Most liked videos may be non-music, so one page reads up to 4 API pages
-     * (50 each) until it has at least 10 songs, so the UI doesn't see a run of empty pages.
-     */
-    suspend fun likedMusicPage(pageToken: String?): FeedPage {
-        val token = token()
-        val out = mutableListOf<VideoItem>()
-        var next = pageToken
-        var reads = 0
-        do {
-            val j = api("videos?part=snippet,contentDetails&myRating=like&maxResults=50" + pageParam(next), token)
-            val items = j.optJSONArray("items")
-            out += (0 until (items?.length() ?: 0)).map { items!!.getJSONObject(it) }
-                .filter { it.optJSONObject("snippet")?.optString("categoryId") == "10" }
-                .map { o ->
-                    val sn = o.getJSONObject("snippet")
-                    VideoItem(
-                        source = SourceId.YT_MUSIC,
-                        id = YouTubeSource.watchUrl(o.getString("id")),
-                        title = sn.optString("title"),
-                        author = sn.optString("channelTitle").removeSuffix(" - Topic"),
-                        thumbnailUrl = thumb(sn),
-                        durationSec = parseIsoDuration(o.optJSONObject("contentDetails")?.optString("duration")),
-                    )
-                }
-            next = j.optString("nextPageToken").ifEmpty { null }
-            reads++
-        } while (next != null && out.size < 10 && reads < 4)
-        return FeedPage(out, next)
-    }
-
-    /** The user's own playlists (including ones made in YouTube Music), as collection rows. */
-    suspend fun myPlaylists(source: SourceId): List<VideoItem> = playlistsPage(source, null).items
-
-    suspend fun playlistsPage(source: SourceId, pageToken: String?): FeedPage {
-        val j = api("playlists?part=snippet,contentDetails&mine=true&maxResults=50" + pageParam(pageToken), token())
-        val items = j.optJSONArray("items")
-        val list = (0 until (items?.length() ?: 0)).map { items!!.getJSONObject(it) }.map { o ->
-            val sn = o.getJSONObject("snippet")
-            VideoItem(
-                source = source,
-                id = COLLECTION_PREFIX + o.getString("id"),
-                title = sn.optString("title"),
-                author = I18n.s.tracks(o.optJSONObject("contentDetails")?.optInt("itemCount") ?: 0),
-                thumbnailUrl = thumb(sn),
-            )
-        }
-        return FeedPage(list, j.optString("nextPageToken").ifEmpty { null })
-    }
-
+    /** Every video in one playlist (up to [MAX_PLAYLIST]), for playing / adding a whole playlist. */
     suspend fun playlistItems(playlistId: String, source: SourceId): List<VideoItem> {
-        val token = token()
-        val out = mutableListOf<VideoItem>()
-        var page: String? = null
+        val out = LinkedHashMap<String, VideoItem>()
+        var cursor: String? = null
         do {
-            val j = api("playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=$playlistId" +
-                (page?.let { "&pageToken=$it" } ?: ""), token)
-            val items = j.optJSONArray("items")
-            for (i in 0 until (items?.length() ?: 0)) {
-                val o = items!!.getJSONObject(i)
-                val sn = o.optJSONObject("snippet") ?: continue
-                val vid = o.optJSONObject("contentDetails")?.optString("videoId").orEmpty().ifEmpty { continue }
-                out += VideoItem(
-                    source = source,
-                    id = YouTubeSource.watchUrl(vid),
-                    title = sn.optString("title"),
-                    author = sn.optString("videoOwnerChannelTitle").removeSuffix(" - Topic").ifEmpty { null },
-                    thumbnailUrl = thumb(sn),
-                )
+            val page = browsePage("VL$playlistId", cursor, source)
+            page.items.forEach { out.putIfAbsent(it.id, it) }
+            cursor = page.next
+        } while (cursor != null && out.size < MAX_PLAYLIST && page.items.isNotEmpty())
+        return out.values.toList()
+    }
+
+    private suspend fun browsePage(browseId: String, cursor: String?, source: SourceId): FeedPage {
+        val j = browse(browseId, cursor)
+        return FeedPage(InnertubeParse.videos(j, source), InnertubeParse.continuation(j))
+    }
+
+    // ---- web API ----
+
+    /** One `youtubei/v1/browse` call: a page by [browseId], or the page after [continuation]. */
+    private suspend fun browse(browseId: String, continuation: String?): JSONObject = withContext(Dispatchers.IO) {
+        val sapisid = jar.get("SAPISID") ?: jar.get("__Secure-3PAPISID")
+            ?: throw UserFacingException(I18n.s.youtubeSignInAgain)
+        val version = clientVersion()
+        val lang = if (I18n.language.value == AppLanguage.ZH) "zh-CN" else "en"
+        val body = JSONObject()
+            .put("context", JSONObject().put("client", JSONObject()
+                .put("clientName", "WEB").put("clientVersion", version)
+                .put("hl", lang).put("gl", Locale.getDefault().country.ifEmpty { "US" })))
+            .apply { if (continuation != null) put("continuation", continuation) else put("browseId", browseId) }
+        val req = Request.Builder()
+            .url("$ORIGIN/youtubei/v1/browse?prettyPrint=false")
+            .header("Authorization", InnertubeParse.sapisidHash(sapisid, ORIGIN, System.currentTimeMillis() / 1000))
+            .header("Origin", ORIGIN)
+            .header("X-Origin", ORIGIN)
+            .header("Referer", "$ORIGIN/")
+            .header("X-Goog-AuthUser", "0")
+            .header("X-Youtube-Client-Name", "1")
+            .header("X-Youtube-Client-Version", version)
+            .header("User-Agent", DESKTOP_UA)
+            .post(body.toString().toRequestBody(JSON))
+            .build()
+        val json = client.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (resp.code == 401) { signOut(); throw UserFacingException(I18n.s.youtubeSignInAgain) }
+            if (!resp.isSuccessful) throw IOException("YouTube HTTP ${resp.code} for $browseId")
+            JSONObject(text)
+        }
+        if (InnertubeParse.loggedOut(json)) { signOut(); throw UserFacingException(I18n.s.youtubeSignInAgain) }
+        json
+    }
+
+    private fun clientVersion(): String =
+        runCatching { YoutubeParsingHelper.getClientVersion() }.getOrNull() ?: FALLBACK_CLIENT_VERSION
+
+    // ---- subscriptions fallback: remembered channels + public RSS ----
+
+    private var lastSync: Long
+        get() = prefs.getLong(KEY_SYNCED, 0)
+        set(v) { prefs.edit().putLong(KEY_SYNCED, v).apply() }
+
+    /** Re-reads the subscribed channels at most once a day (a few web API pages). */
+    private suspend fun syncChannelsIfDue() {
+        if (System.currentTimeMillis() - lastSync < SYNC_MS) return
+        runCatching {
+            val all = LinkedHashMap<String, String>()
+            var cursor: String? = null
+            var pages = 0
+            do {
+                val j = browse("FEchannels", cursor)
+                InnertubeParse.channels(j).forEach { (id, name) -> all.putIfAbsent(id, name) }
+                cursor = InnertubeParse.continuation(j)
+            } while (cursor != null && ++pages < 20)
+            if (all.isNotEmpty()) saveChannels(all.map { it.key to it.value })
+            lastSync = System.currentTimeMillis()
+        }.onFailure { if (it is CancellationException) throw it; Log.w(TAG, "channel sync failed", it) }
+    }
+
+    /** Newest uploads of [RSS_PAGE] remembered channels from [offset], merged newest first. */
+    private suspend fun rssPage(offset: Int): FeedPage = coroutineScope {
+        val list = channels
+        if (list.isEmpty()) throw UserFacingException(I18n.s.youtubeSignInAgain)
+        val slice = list.drop(offset).take(RSS_PAGE)
+        val gate = Semaphore(6)
+        val entries = slice.map { (id, _) ->
+            async(Dispatchers.IO) {
+                gate.withPermit {
+                    runCatching {
+                        val req = Request.Builder().url("$ORIGIN/feeds/videos.xml?channel_id=$id").header("User-Agent", DESKTOP_UA).build()
+                        http.newCall(req).execute().use { r -> if (r.isSuccessful) r.body?.string().orEmpty() else "" }
+                    }.getOrDefault("").let { InnertubeParse.rss(it, SourceId.YOUTUBE).take(4) }
+                }
             }
-            page = j.optString("nextPageToken").ifEmpty { null }
-        } while (page != null && out.size < 200)
-        return out
+        }.awaitAll().flatten()
+        val items = entries.sortedByDescending { it.published }.map { it.item }
+        FeedPage(items, (offset + RSS_PAGE).takeIf { it < list.size }?.let { "$RSS$it" })
     }
 
-    private fun thumb(snippet: JSONObject): String? {
-        val t = snippet.optJSONObject("thumbnails") ?: return null
-        return (t.optJSONObject("medium") ?: t.optJSONObject("high") ?: t.optJSONObject("default"))?.optString("url")
+    private fun saveChannels(list: List<Pair<String, String>>) {
+        channels = list
+        val arr = JSONArray()
+        list.forEach { (id, name) -> arr.put(JSONObject().put("id", id).put("name", name)) }
+        prefs.edit().putString(KEY_CHANNELS, arr.toString()).apply()
     }
 
-    companion object {
-        private const val SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
-        private const val TAG = "YouTubeAccount"
-        private val AUTH_REASONS = setOf(
-            "insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "authError",
-        )
+    private fun readChannels(): List<Pair<String, String>> {
+        val arr = runCatching { JSONArray(prefs.getString(KEY_CHANNELS, "[]")) }.getOrElse { JSONArray() }
+        return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.map { it.optString("id") to it.optString("name") }
+            .filter { it.first.startsWith("UC") }
+    }
+
+    private companion object {
+        const val TAG = "YouTubeAccount"
+        const val ORIGIN = "https://www.youtube.com"
+        /** Used only if NewPipe can't read the current web client version. */
+        const val FALLBACK_CLIENT_VERSION = "2.20251110.01.00"
+        const val RSS = "rss:"
+        const val RSS_PAGE = 25
+        const val MAX_PLAYLIST = 500
+        const val SYNC_MS = 24 * 60 * 60_000L
+        const val KEY_CHANNELS = "channels"
+        const val KEY_SYNCED = "channels_synced"
+        val JSON = "application/json".toMediaType()
     }
 }

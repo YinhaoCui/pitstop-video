@@ -18,7 +18,7 @@ Not supported: Apple CarPlay / iOS (CarPlay does not allow third-party video app
 
 | | |
 |---|---|
-| **YouTube** | Popular + search without an account. Optional Google sign-in adds *Subscriptions* and *Liked videos*. |
+| **YouTube** | Popular + search without an account. Optional Google sign-in (nothing to set up) adds *Subscriptions*, *Liked videos*, *Watch later* and *History*; YouTube Music gets *Liked music* and your playlists. |
 | **Bilibili** | Recommended / Popular / search without an account (≤ 480–720p). Sign in (web page or QR code) for 1080p and the *Following* feed. Multi-part videos (分P) expand into one queue entry per part. |
 | **Offline** | Every video in the device's MediaStore (Camera, Downloads, Movies…). No network needed. |
 | **Subtitles** | YouTube: uploaded tracks, auto-generated in your language, and auto-translation into your language. Bilibili: uploaded and AI subtitles (AI ones usually need login). *CC* on the phone player; *Queue → CC* on the car screen cycles Off → languages. |
@@ -41,14 +41,17 @@ when Android Auto is connected the video goes to the car display.
   private `VirtualDisplay` on it and shows `CarPresentation` (a normal Android view tree with a
   Media3 `PlayerView`) there.
 - Playback is one Media3 ExoPlayer in `PlaybackHub`, shared by phone and car.
-- YouTube streams are resolved with [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor);
-  personal feeds use the official YouTube Data API v3.
+- YouTube streams are resolved with [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor).
+  Personal feeds come from YouTube's web API with the session of a Google sign-in done on Google's
+  own page (`youtube/YouTubeAccount.kt`); no API key, Cloud project or quota. Playback never uses
+  that session. Subscribed channels are remembered, and *Subscriptions* falls back to their public
+  RSS feeds if the web API changes or the session ends.
 - Bilibili uses its public web API (WBI-signed), DASH video + audio merged by ExoPlayer.
 
 ```
 app/src/main/java/app/pitstop/video/
   core/       models, VideoSource interface, HTTP, thumbnails
-  youtube/    NewPipe downloader, YouTubeSource, YouTubeAccount (Data API sign-in)
+  youtube/    NewPipe downloader, YouTubeSource, YouTubeAccount (web sign-in, feeds, RSS fallback)
   bilibili/   BiliApi, BiliSource, cookie jar, WBI signer
   local/      LocalSource (MediaStore)
   player/     PlaybackHub, StreamSelector, DrivingMonitor (parked-only lock)
@@ -70,6 +73,29 @@ Requirements: JDK 17+ (21 used), Android SDK platform 37. The app itself runs on
 
 Install on the phone: `adb install -r app/build/outputs/apk/debug/app-debug.apk`
 
+### Releases
+
+Pushing a version tag (`git tag v0.6.0 && git push origin v0.6.0`) runs
+`.github/workflows/release.yml`: it runs the unit tests, builds a release APK signed with your own
+key and attaches it to a GitHub release. One-time setup:
+
+1. Create a key (keep it safe; every future update must be signed with it):
+   `keytool -genkeypair -v -keystore pitstop-release.jks -keyalg RSA -keysize 4096 -validity 10000 -alias pitstop`
+2. In the repository: *Settings → Secrets and variables → Actions*, add `KEYSTORE_BASE64`
+   (`base64 -w0 pitstop-release.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`.
+
+Installing the release over a debug build fails (different key): uninstall the debug build first.
+
+### Build options
+
+Off by default, and off in the public release. Turn them on for your own build in
+`local.properties` (or with `-P` on the Gradle command line):
+
+| Property | Effect |
+|---|---|
+| `pitstop.youtubeDownloads=true` | Allows saving YouTube / YouTube Music videos to the device. |
+| `pitstop.driveFullAccess=true` | Browse all of Google Drive after signing in (restricted `drive.readonly` scope, see *Google Drive*). |
+
 ## Put it on the car screen
 
 Android Auto only shows apps that are not from the Play Store when developer mode allows it:
@@ -90,22 +116,43 @@ knob moves between the on-screen buttons (*Browse*, play/pause, *Split/Full*, ne
 The on-screen keyboard for car search is also parked-only — or search on the phone, which plays
 straight onto the car screen.
 
-## YouTube / Google Drive sign-in setup (optional)
+## YouTube sign-in
 
-Google requires an OAuth client registered for the app's signing key (otherwise sign-in fails with
-`UNREGISTERED_ON_API_CONSOLE`):
+*Settings → YouTube → Sign in with Google* opens Google's own sign-in page. When it returns to
+YouTube, the app keeps the youtube.com session cookies in its private storage and uses them only
+to list your feeds. Nothing needs to be registered with Google, so this works in any build.
 
-1. In [Google Cloud Console](https://console.cloud.google.com/) create a project and enable
-   **YouTube Data API v3** and/or **Google Drive API**.
-2. Configure the OAuth consent screen (External, *Testing*), add your Google account as a test user.
-3. Create credentials → **OAuth client ID → Android**: package `app.pitstop.video`, SHA-1 of the
-   signing key (`./gradlew signingReport`).
-4. In the app: *Settings → Sign in with Google* (YouTube), or *Music → Google Drive → Sign in*.
+If Google says *"This browser or app may not be secure"*, try again later or from another network;
+Google sometimes blocks sign-in pages it thinks are embedded. *Subscriptions* keeps working from the
+remembered channels while signed out.
 
-Without this setup, Drive songs can still be added one by one through the system file picker
-(*Music → Google Drive → Add songs*, then ☰ → Google Drive); the Drive app serves those files.
+## Google Drive
 
-No client ID needs to go into the code; Google matches the package name + SHA-1.
+*Music → Google Drive → Pick from Google Drive* opens Google's own Drive picker: users pick songs or
+whole folders, and the app can see only what they picked (the non-sensitive `drive.file` scope).
+It does not need the Google Drive app. Downloads can also be saved to Drive the same way.
+*Add from files* (the phone's file picker) stays as an alternative; it lists Drive only when the
+Drive app is installed.
+
+The picker needs an OAuth client for the app's signing key. Whoever publishes the APK sets this up
+once in their own Google Cloud project; people installing the release need nothing:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) create a project and enable the **Google Drive API**.
+2. *OAuth consent screen*: user type **External**, add only the `.../auth/drive.file` scope, then
+   **Publish app** (status *In production*). Non-sensitive scopes like this one don't go through
+   Google's verification review and have no test-user limit; check the console's verification
+   status after publishing.
+3. *Credentials → Create credentials → OAuth client ID → Android*, package `app.pitstop.video`, one
+   client per signing key: the release key (`keytool -list -v -keystore pitstop-release.jks`) and,
+   for your own debug builds, the debug key (`./gradlew signingReport`).
+
+No client ID goes into the code; Google matches the package name + SHA-1. Someone who builds the
+app with their own key needs their own client, or uses *Add from files*.
+
+Personal builds can also browse the whole Drive after signing in, with
+`pitstop.driveFullAccess=true` (see *Build options*). That uses the restricted `drive.readonly`
+scope, which Google only allows for test users unless the app passes a paid security assessment,
+so it is never on in the public release.
 
 ## Bilibili sign-in
 
@@ -119,10 +166,37 @@ Outside mainland China the app prefers Bilibili's Akamai servers and avoids its 
 
 ## Caveats
 
-- Personal, sideloaded use only. Extracting YouTube streams outside the official player is against
-  YouTube's Terms of Service, and YouTube changes often; if YouTube playback breaks, update
-  `newpipe` in `gradle/libs.versions.toml` to the latest NewPipeExtractor release.
-- Google Play would not accept a video app in the navigation category; this app is meant to be
-  installed directly.
+- YouTube changes often; if YouTube playback breaks, update `newpipe` in
+  `gradle/libs.versions.toml` to the latest NewPipeExtractor release.
+- Google Play would not accept this app; it is meant to be installed directly.
 - Watching video while driving is unsafe and illegal. The parked-only lock is on by design and
   cannot be turned off.
+
+## Legal
+
+- Pitstop Video is an independent project. It is not affiliated with, endorsed by or sponsored by
+  Google, YouTube, Bilibili, NetEase, Twitch, Douyu or any other service it can open. Their names
+  are used only to say which service a feature works with; the app uses no logos or other brand
+  assets of theirs.
+- The app hosts no content. It plays what each service serves to a normal visitor or to your own
+  account, and you are responsible for following each service's terms.
+- Paid content is never unlocked: songs and videos that need a purchase or membership you don't
+  have are refused (NetEase VIP songs, Bilibili paid trial clips), not played as previews.
+- Public builds do not save YouTube or YouTube Music videos to the device.
+- Rights holders with a concern can open an issue on this repository.
+
+## License
+
+Copyright (C) 2026 Yinhao Cui
+
+Pitstop Video is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+
+In short: anyone may use, study, change and share the app. Anyone who distributes it, changed or
+not, must do so under the same license and make the complete source code available.
+
+It includes [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) (GPL-3.0) and
+other open-source libraries under their own compatible licenses.

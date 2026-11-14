@@ -1,5 +1,6 @@
 package app.pitstop.video.gdrive
 
+import app.pitstop.video.BuildConfig
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -45,10 +46,13 @@ class DriveSource(
     private val _picked = MutableStateFlow(readPicked())
     val picked: StateFlow<List<VideoItem>> = _picked
 
+    /** Whole-Drive access (restricted drive.readonly scope): personal builds only, once signed in. */
+    private val apiSignedIn get() = BuildConfig.DRIVE_FULL_ACCESS && account.signedIn.value
+
     override fun feeds(): List<Feed> = buildList {
-        if (account.signedIn.value) { add(Feed(FEED_ALL, I18n.s.allMusic)); add(Feed(FEED_FOLDERS, I18n.s.folders)) }
+        if (apiSignedIn) { add(Feed(FEED_ALL, I18n.s.allMusic)); add(Feed(FEED_FOLDERS, I18n.s.folders)) }
         if (picker.files.value.isNotEmpty()) add(Feed(FEED_GPICKER, I18n.s.driveGooglePicked))
-        if (!account.signedIn.value || _picked.value.isNotEmpty()) add(Feed(FEED_PICKED, I18n.s.drivePicked))
+        if (!apiSignedIn || _picked.value.isNotEmpty()) add(Feed(FEED_PICKED, I18n.s.drivePicked))
     }
 
     override suspend fun load(feed: Feed): List<VideoItem> = when (feed.key) {
@@ -64,7 +68,7 @@ class DriveSource(
     override suspend fun search(query: String): List<VideoItem> {
         val local = (_picked.value + picker.files.value.filter { !it.isFolder }.map(::gpItem))
             .filter { it.title.contains(query, ignoreCase = true) }
-        if (!account.signedIn.value) return local
+        if (!apiSignedIn) return local
         return audio("name contains '${query.replace("\\", "\\\\").replace("'", "\\'")}'") + local
     }
 
@@ -155,7 +159,7 @@ class DriveSource(
     }
 
     private suspend fun token(): String {
-        if (!account.signedIn.value) throw UserFacingException(I18n.s.needDriveLogin)
+        if (!apiSignedIn) throw UserFacingException(I18n.s.needDriveLogin)
         return account.token()
     }
 

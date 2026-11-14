@@ -1,5 +1,6 @@
 package app.pitstop.video.ui
 
+import app.pitstop.video.BuildConfig
 import app.pitstop.video.core.S
 import app.pitstop.video.core.I18n
 import android.Manifest
@@ -70,8 +71,11 @@ fun AccountScreen(graph: AppGraph) {
         HorizontalDivider()
         NeteaseSection(graph)
         HorizontalDivider()
-        DriveSection(graph)
-        HorizontalDivider()
+        // Whole-Drive sign-in uses the restricted drive.readonly scope: personal builds only.
+        if (BuildConfig.DRIVE_FULL_ACCESS) {
+            DriveSection(graph)
+            HorizontalDivider()
+        }
         SafetySection(graph)
         PhonePlaybackSection()
         DataSaverSection()
@@ -89,13 +93,11 @@ fun AccountScreen(graph: AppGraph) {
 
 @Composable
 internal fun YouTubeSection(graph: AppGraph) {
+    val context = LocalContext.current
     val account = graph.youTubeAccount
     val signedIn by account.signedIn.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
-    var message by remember { mutableStateOf<String?>(null) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
-        runCatching { account.completeSignIn(res.data) }.onFailure { message = it.message }
-    }
+    var remembered by remember(signedIn) { mutableStateOf(account.rememberedChannels) }
+    val webLogin = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
 
     Text(S.youtube, style = MaterialTheme.typography.titleMedium)
     Text(
@@ -105,15 +107,15 @@ internal fun YouTubeSection(graph: AppGraph) {
     if (signedIn) {
         OutlinedButton(onClick = account::signOut) { Text(S.signOutYoutube) }
     } else {
-        Button(onClick = {
-            scope.launch {
-                runCatching { account.beginSignIn() }
-                    .onSuccess { pi -> pi?.let { launcher.launch(IntentSenderRequest.Builder(it.intentSender).build()) } }
-                    .onFailure { message = I18n.s.googleFailed(it.message) }
+        Text(S.youtubeLoginNote, style = MaterialTheme.typography.bodySmall)
+        Button(onClick = { webLogin.launch(Intent(context, YouTubeLoginActivity::class.java)) }) { Text(S.signInGoogle) }
+        if (remembered > 0) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(S.youtubeRemembered(remembered), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = { account.forgetChannels(); remembered = 0 }) { Text(S.forgetChannels) }
             }
-        }) { Text(S.signInGoogle) }
+        }
     }
-    message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 }
 
 @Composable
