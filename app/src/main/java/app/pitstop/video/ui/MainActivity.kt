@@ -28,7 +28,14 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import app.pitstop.video.graph
 
-class MainActivity : ComponentActivity() {
+/**
+ * The app's screen. The phone opens [MainActivity]; Android Auto opens [CarDisplayActivity] on the car
+ * screen (parked app). Both can be open at once: they share the player, queue and playlists, the car
+ * one shows the video and the phone one acts as a remote.
+ */
+open class MainActivity : ComponentActivity() {
+    /** True for the instance Android Auto shows on the car display. */
+    protected open val carInstance = false
     private val inPip = mutableStateOf(false)
     private val fullscreen = mutableStateOf(false)
 
@@ -38,7 +45,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val language by I18n.language.collectAsState()
-            CompositionLocalProvider(LocalStrings provides Strings(language)) {
+            CompositionLocalProvider(LocalStrings provides Strings(language), LocalCarInstance provides carInstance) {
             PitstopTheme {
                 androidx.compose.foundation.layout.Box {
                     AppRoot(
@@ -56,7 +63,7 @@ class MainActivity : ComponentActivity() {
         // Android 12+: swipe home while a video plays -> smooth automatic picture-in-picture.
         if (Build.VERSION.SDK_INT >= 31) {
             lifecycleScope.launch {
-                graph.hub.state.map { it.isPlaying && !it.carActive }.distinctUntilChanged().collect { auto ->
+                graph.hub.state.map { it.isPlaying && !it.carActive && !it.onCarDisplay && !carInstance }.distinctUntilChanged().collect { auto ->
                     runCatching {
                         setPictureInPictureParams(
                             PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9))
@@ -71,6 +78,11 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         if (graph.inCarDevice) graph.driving.startPhoneGps("device")
+        if (carInstance) {
+            // The parked-only lock applies here too, on top of Android Auto's own block while driving.
+            graph.hub.setOnCarDisplay(true)
+            graph.driving.startPhoneGps("parked")
+        } else phoneStarted = true
         // The media session service gives background playback, notification and lock-screen controls.
         PlaybackService.start(this)
         graph.hub.setPhoneBackground(false)
@@ -78,7 +90,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         graph.driving.stopPhoneGps("device")
-        if (!isChangingConfigurations && !graph.hub.state.value.carActive) {
+        if (carInstance) {
+            graph.driving.stopPhoneGps("parked")
+            graph.hub.setOnCarDisplay(false)
+        } else phoneStarted = false
+        // The other screen (car or phone) is still showing the app: leave playback alone.
+        val otherVisible = if (carInstance) phoneStarted else graph.hub.state.value.onCarDisplay
+        if (!isChangingConfigurations && !graph.hub.state.value.carActive && !otherVisible) {
             // Screen off / another app: keep the sound (picture paused to save data) or pause.
             if (Settings.backgroundPlay.value) graph.hub.setPhoneBackground(true) else graph.hub.player.pause()
         }
@@ -102,7 +120,7 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val s = graph.hub.state.value
-        if (Build.VERSION.SDK_INT < 31 && graph.hub.player.isPlaying && !s.carActive) {
+        if (Build.VERSION.SDK_INT < 31 && graph.hub.player.isPlaying && !s.carActive && !s.onCarDisplay && !carInstance) {
             enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build())
         }
     }
@@ -111,4 +129,14 @@ class MainActivity : ComponentActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip.value = isInPictureInPictureMode
     }
+
+    private companion object {
+        /** The phone instance is visible (between onStart and onStop). */
+        var phoneStarted = false
+    }
+}
+
+/** The instance Android Auto shows on the car screen while parked (see the manifest). */
+class CarDisplayActivity : MainActivity() {
+    override val carInstance = true
 }

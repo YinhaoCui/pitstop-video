@@ -51,6 +51,15 @@ object Settings {
         prefs?.edit()?.putBoolean("background_play", value)?.apply()
     }
 
+    private val _carVideoOnly = MutableStateFlow(true)
+    /** Car screen (parked app): show only the video, or the whole app. The phone works as the remote either way. */
+    val carVideoOnly: StateFlow<Boolean> = _carVideoOnly.asStateFlow()
+
+    fun setCarVideoOnly(value: Boolean) {
+        _carVideoOnly.value = value
+        prefs?.edit()?.putBoolean("car_video_only", value)?.apply()
+    }
+
     private val _themeMode = MutableStateFlow(ThemeMode.LIGHT)
     /** Light (pastel) by default; dark "night" look or follow the system on request. */
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
@@ -92,6 +101,7 @@ object Settings {
         )
         _audioOnlyWhileDriving.value = p.getBoolean("audio_only_driving", true)
         _backgroundPlay.value = p.getBoolean("background_play", true)
+        _carVideoOnly.value = p.getBoolean("car_video_only", true)
         _themeMode.value = runCatching { ThemeMode.valueOf(p.getString("theme_mode", null)!!) }.getOrDefault(ThemeMode.LIGHT)
         _background.value = p.getString("background_uri", null)
         _searchHistory.value = p.getString("search_history", null).orEmpty().split('\n').filter { it.isNotBlank() }

@@ -31,6 +31,17 @@ android {
         versionName = "0.6.2"
         buildConfigField("boolean", "YOUTUBE_DOWNLOADS", optIn("pitstop.youtubeDownloads").toString())
         buildConfigField("boolean", "DRIVE_FULL_ACCESS", optIn("pitstop.driveFullAccess").toString())
+        // -Ppitstop.idSuffix=.dev installs a test copy next to the release (different signing key, own data);
+        // -Ppitstop.appLabel=... names it.
+        findProperty("pitstop.idSuffix")?.let { applicationIdSuffix = it.toString() }
+        manifestPlaceholders["appLabel"] = (findProperty("pitstop.appLabel") ?: "@string/app_name").toString()
+        // How the app reaches Android Auto. Default: a parked app (the phone UI on the car screen) plus the
+        // POI template screen. -Ppitstop.carRoute=navigation: a navigation template app only, for comparing.
+        val navigation = findProperty("pitstop.carRoute") == "navigation"
+        manifestPlaceholders["carCategory"] = if (navigation) "NAVIGATION" else "POI"
+        manifestPlaceholders["carPermission"] = if (navigation) "NAVIGATION_TEMPLATES" else "MAP_TEMPLATES"
+        manifestPlaceholders["parkedCategory"] = if (navigation) "app.pitstop.video.category.NOT_PARKED" else "android.intent.category.CAR_LAUNCHER"
+        manifestPlaceholders["appCategory"] = if (navigation) "video" else "game"
     }
 
     // Public releases are signed with a fixed key from the environment (CI secrets), so updates install

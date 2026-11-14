@@ -205,7 +205,7 @@ fun BoxWithConstraintsScope.FloatingPlayer(graph: AppGraph, onOpen: () -> Unit) 
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(if (s.isMusic) 1.6f else 16f / 9f).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
-            if (!s.isMusic && !s.carActive && !s.drivingLocked) {
+            if (!s.isMusic && !s.shownElsewhere() && !s.drivingLocked) {
                 PhonePlayer(graph, Modifier.fillMaxSize(), showControls = false)
             } else {
                 art?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
