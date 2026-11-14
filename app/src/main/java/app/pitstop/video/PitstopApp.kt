@@ -19,6 +19,11 @@ import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.buildHttpClient
 import app.pitstop.video.core.shownSources
 import app.pitstop.video.importer.PlaylistImport
+import app.pitstop.video.importer.TrackMeta
+import app.pitstop.video.core.PlayableStream
+import app.pitstop.video.core.VideoItem
+import app.pitstop.video.download.Downloads
+import app.pitstop.video.download.DriveUploader
 import app.pitstop.video.newpipe.PeerTubeSource
 import app.pitstop.video.newpipe.SoundCloudSource
 import app.pitstop.video.newpipe.BandcampSource
@@ -73,7 +78,8 @@ class AppGraph(app: Application) {
     val http = buildHttpClient(CompositeCookieJar(listOf(biliCookies, neteaseCookies)))
     val neteaseApi = NeteaseApi(http, neteaseCookies)
     val driveAccount = DriveAccount(app)
-    val driveSource = DriveSource(app, driveAccount, http, DrivePicker(app, http))
+    val drivePicker = DrivePicker(app, http)
+    val driveSource = DriveSource(app, driveAccount, http, drivePicker)
     val biliApi = BiliApi(http, biliCookies, app.cacheDir)
     val youTubeAccount = YouTubeAccount(app, http)
     val thumbnails = ThumbnailLoader(app, http)
@@ -86,7 +92,7 @@ class AppGraph(app: Application) {
         BiliSource(biliApi, biliCookies),
         PeerTubeSource(),
         LocalSource(app),
-        BiliMusicSource(biliApi),
+        BiliMusicSource(biliApi) { song -> playElsewhere(song) },
         YouTubeMusicSource(youTubeAccount),
         NeteaseSource(neteaseApi, neteaseCookies),
         SoundCloudSource(),
@@ -112,6 +118,24 @@ class AppGraph(app: Application) {
 
     /** Playlist import from links (NetEase, QQ, Kugou, Spotify, Apple Music, YouTube, Bilibili), text and files. */
     val importer by lazy { PlaylistImport(http, biliApi, neteaseApi, ::source) }
+
+    /** A song one platform can't play here (e.g. Bilibili's mainland-only licensed songs), from YouTube Music or NetEase. */
+    private suspend fun playElsewhere(song: VideoItem): PlayableStream? {
+        val track = TrackMeta(song.title, listOfNotNull(song.author), durationSec = song.durationSec)
+        // One platform at a time: a match that can't be played here either (NetEase is often
+        // mainland-only too) moves on to the next platform.
+        for (platform in listOf(SourceId.YT_MUSIC, SourceId.NETEASE)) {
+            val match = importer.match(track, listOf(platform)).item ?: continue
+            val stream = runCatching { source(platform).resolve(match) }
+                .onFailure { android.util.Log.i("PlayElsewhere", "$platform can't play ${match.title}: ${it.message}") }
+                .getOrNull()
+            if (stream != null) return stream
+        }
+        return null
+    }
+
+    /** Downloads to the phone (Download/Pitstop) and / or Google Drive. */
+    val downloads by lazy { Downloads(app, http, ::source, DriveUploader(app, http, drivePicker)) }
 
     private val devicePrefs = app.getSharedPreferences("device", Context.MODE_PRIVATE)
 

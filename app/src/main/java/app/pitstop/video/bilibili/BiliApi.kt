@@ -106,9 +106,17 @@ class BiliApi(
         searchPage(keyword, 1, tids, source).items
 
     /** One page (20 videos) of a video search; the cursor is the next page number until `numPages`. */
-    suspend fun searchPage(keyword: String, page: Int, tids: String? = null, source: SourceId = SourceId.BILIBILI): FeedPage {
+    suspend fun searchPage(
+        keyword: String, page: Int, tids: String? = null, source: SourceId = SourceId.BILIBILI,
+        /** totalrank (default), click, pubdate, dm, stow. */
+        order: String? = null,
+        /** 0 any, 1 under 10 min, 2 10-30 min, 3 30-60 min, 4 over 60 min. */
+        duration: String? = null,
+    ): FeedPage {
         val params = mapOf("search_type" to "video", "keyword" to keyword, "page" to "$page") +
-            (tids?.let { mapOf("tids" to it) } ?: emptyMap())
+            (tids?.let { mapOf("tids" to it) } ?: emptyMap()) +
+            (order?.let { mapOf("order" to it) } ?: emptyMap()) +
+            (duration?.let { mapOf("duration" to it) } ?: emptyMap())
         return BiliZones.searchPage(wbiData("https://api.bilibili.com/x/web-interface/wbi/search/type", params), page, source)
     }
 
@@ -295,11 +303,11 @@ class BiliApi(
      * One page (30, newest first) of an uploader's videos; the cursor is the next page number while
      * `page.count` says there are more. The dm_* fields are what the web page sends; without them Bilibili answers -352.
      */
-    suspend fun uploaderPage(mid: String, page: Int, source: SourceId): FeedPage {
+    suspend fun uploaderPage(mid: String, page: Int, source: SourceId, order: String = "pubdate"): FeedPage {
         val d = wbiData(
             "https://api.bilibili.com/x/space/wbi/arc/search",
             mapOf(
-                "mid" to mid, "ps" to "$UPLOADER_PAGE_SIZE", "pn" to "$page", "order" to "pubdate", "platform" to "web",
+                "mid" to mid, "ps" to "$UPLOADER_PAGE_SIZE", "pn" to "$page", "order" to order, "platform" to "web",
                 "dm_img_list" to "[]", "dm_img_str" to "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
                 "dm_cover_img_str" to "QU5HTEUgKEdvb2dsZSwgVnVsa2FuIDEuMy4wIChTd2lmdFNoYWRlciBEZXZpY2UgKFN1Ymdhem9yb2...",
             ),

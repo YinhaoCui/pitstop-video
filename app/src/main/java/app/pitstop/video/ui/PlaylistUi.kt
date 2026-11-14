@@ -1,6 +1,8 @@
 package app.pitstop.video.ui
 
 import app.pitstop.video.core.S
+import app.pitstop.video.core.I18n
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -43,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pitstop.video.AppGraph
 import app.pitstop.video.R
+import app.pitstop.video.core.ListSort
+import app.pitstop.video.core.ListView
 import app.pitstop.video.core.Playlist
 import app.pitstop.video.core.PlaylistOps
 import app.pitstop.video.core.VideoItem
@@ -114,6 +119,22 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
     var renaming by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
+    var view by remember(p.id) { mutableStateOf(ListView()) }
+    var menuFor by remember { mutableStateOf<VideoItem?>(null) }
+    menuFor?.let { AddToPlaylistDialog(graph, it) { menuFor = null } }
+    var showSortFilter by remember { mutableStateOf(false) }
+    if (showSortFilter) SortFilterDialog(
+        null, emptyList(), emptyMap(), view, platforms = p.items.map { it.source }.distinct(),
+        onApply = { _, v -> view = v }, onDismiss = { showSortFilter = false },
+    )
+    // Shown items with their place in the playlist (move / remove act on that place).
+    val shown = remember(p.items, view) {
+        val indexed = p.items.withIndex().toList()
+        val order = view.apply(p.items)
+        val used = BooleanArray(indexed.size)
+        order.map { item -> indexed.first { (i, it) -> !used[i] && it == item }.also { used[it.index] = true } }
+    }
+    val shownItems = shown.map { it.value }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -129,21 +150,37 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
             IconButton(onClick = { confirmDelete = true }) { Icon(painterResource(R.drawable.ic_delete), S.deletePlaylist) }
         }
         Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { graph.hub.playQueue(p.items) }, enabled = p.items.isNotEmpty()) {
+            Button(onClick = { graph.hub.playQueue(shownItems) }, enabled = shownItems.isNotEmpty()) {
                 Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.size(6.dp)); Text(S.playAll)
             }
-            OutlinedButton(onClick = { graph.hub.playShuffled(p.items) }, enabled = p.items.size > 1) {
+            OutlinedButton(onClick = { graph.hub.playShuffled(shownItems) }, enabled = shownItems.size > 1) {
                 Icon(painterResource(R.drawable.ic_shuffle), null); Spacer(Modifier.size(6.dp)); Text(S.shuffle)
+            }
+        }
+        Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            SortFilterChip(active = !view.isDefault) { showSortFilter = true }
+            // Sorted but nothing filtered out: the new order can be kept.
+            if (view.sort != ListSort.DEFAULT && shownItems.size == p.items.size) {
+                TextButton(onClick = { graph.playlists.reorder(p.id, shownItems); view = view.copy(sort = ListSort.DEFAULT) }) { Text(S.keepThisOrder) }
             }
         }
         Spacer(Modifier.height(8.dp))
         if (p.items.isEmpty()) Text(S.playlistEmpty, Modifier.padding(24.dp))
         LazyColumn(Modifier.fillMaxSize()) {
-            itemsIndexed(p.items, key = { i, it -> "$i:${it.source}:${it.id}" }) { i, item ->
-                VideoRow(graph, item, onClick = { graph.hub.playQueue(p.items, i) }) {
+            if (shownItems.size < p.items.size) item(key = "hidden") {
+                Text(
+                    S.hiddenByFilters(p.items.size - shownItems.size), Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            itemsIndexed(shown, key = { _, it -> "${it.index}:${it.value.source}:${it.value.id}" }) { pos, entry ->
+                val i = entry.index
+                val item = entry.value
+                VideoRow(graph, item, onClick = { graph.hub.playQueue(shownItems, pos) }, onLongClick = { menuFor = item }) {
                     // Playlists mix platforms: show where each item comes from.
                     PlatformBadge(S.sourceName(item.source))
-                    Column {
+                    // Moving only makes sense in the playlist's own order.
+                    if (view.isDefault) Column {
                         IconButton(onClick = { graph.playlists.move(p.id, i, i - 1) }, enabled = i > 0, modifier = Modifier.size(32.dp)) {
                             Icon(painterResource(R.drawable.ic_arrow_up), S.moveUp)
                         }
@@ -182,22 +219,10 @@ fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
             if (s.queue.isEmpty()) {
                 Text(S.nothingQueuedPhone)
             } else {
-                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                LazyColumn(Modifier.heightIn(max = 480.dp)) {
+                    item(key = "head") { QueueHeader(graph, s.index, s.queue.size) }
                     itemsIndexed(s.queue, key = { i, it -> "$i:${it.id}:${it.part}" }) { i, item ->
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clickable { graph.hub.jumpTo(i); onDismiss() }
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (i == s.index) Icon(painterResource(R.drawable.ic_play), S.nowPlaying, Modifier.size(20.dp))
-                            else Spacer(Modifier.size(20.dp))
-                            Spacer(Modifier.size(8.dp))
-                            Text(
-                                item.title, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                style = if (i == s.index) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
-                            )
-                        }
+                        QueueRow(graph, item, i, s.index, s.queue.size, onPlay = { graph.hub.jumpTo(i); onDismiss() })
                     }
                 }
             }
@@ -222,6 +247,11 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
     }
     val songs = tracks?.getOrNull().orEmpty()
     val ready = songs.isNotEmpty()
+    var downloading by remember { mutableStateOf(false) }
+    if (downloading) {
+        DownloadDialog(graph, item, onDismiss = onDismiss)
+        return
+    }
 
     if (creating) {
         NameDialog(S.newPlaylist, if (isFolder) item.title else "", onDismiss = onDismiss) {
@@ -232,10 +262,11 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(S.addToPlaylist) },
+        // The item's menu: queue, download, then the playlists to add it to.
+        title = { Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium) },
         text = {
             Column {
-                Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                item.author?.let { Text(it, maxLines = 1, style = MaterialTheme.typography.bodySmall) }
                 if (isFolder) {
                     val t = tracks
                     Text(
@@ -249,7 +280,38 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
                         color = if (t?.isFailure == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     )
                 }
+                // Queue: a folder queues the songs inside it.
+                val context = LocalContext.current
+                listOf(
+                    Triple(R.drawable.ic_skip_next, S.playNext) { graph.hub.playNext(songs) },
+                    Triple(R.drawable.ic_playlist_play, S.addToQueue) { graph.hub.addToQueue(songs) },
+                ).forEach { (icon, label, action) ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable(enabled = ready) {
+                            action()
+                            android.widget.Toast.makeText(context, I18n.s.addedToQueue(songs.size), android.widget.Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        }.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(painterResource(icon), null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Text(label, color = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                if (!isFolder && graph.downloads.canDownload(item)) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { downloading = true }.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(painterResource(R.drawable.ic_download), null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Text(S.download, color = MaterialTheme.colorScheme.primary)
+                    }
+                    HorizontalDivider()
+                }
                 Spacer(Modifier.height(8.dp))
+                Text(S.addToPlaylist, style = MaterialTheme.typography.titleSmall)
                 playlists.forEach { p ->
                     val already = ready && songs.all { PlaylistOps.contains(p, it) }
                     Row(

@@ -40,6 +40,8 @@ okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhtt
 coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutines" }
 newpipe-extractor = { group = "com.github.TeamNewPipe", name = "NewPipeExtractor", version.ref = "newpipe" }
+# NewPipe's JSON library (runtime-only in its POM); the same commit, for YouTube search with sort / filters.
+nanojson = { group = "com.github.TeamNewPipe", name = "nanojson", version = "e9d656ddb49a412a5a0a5d5ef20ca7ef09549996" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 desugar-jdk-libs-nio = { group = "com.android.tools", name = "desugar_jdk_libs_nio", version.ref = "desugar" }

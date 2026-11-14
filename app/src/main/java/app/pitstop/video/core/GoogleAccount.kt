@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.ClearTokenRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +51,12 @@ open class GoogleScopedAccount(
     }
 
     fun signOut() { cached = null; setSignedIn(false) }
+
+    /** Drops a token Google rejected, here and in Play services' cache, so [token] fetches a new one. */
+    suspend fun invalidateToken(token: String) {
+        cached = null
+        runCatching { client.clearToken(ClearTokenRequest.builder().setToken(token).build()).await() }
+    }
 
     /** Last token and when it was issued; Google tokens live ~1 h, reused for [TOKEN_TTL_MS]. */
     @Volatile private var cached: Pair<String, Long>? = null

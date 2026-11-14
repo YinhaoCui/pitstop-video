@@ -15,6 +15,9 @@ import app.pitstop.video.core.parseIsoDuration
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -33,12 +36,47 @@ import org.json.JSONObject
 class YouTubeAccount(context: Context, private val http: OkHttpClient) :
     GoogleScopedAccount(context, "youtube", SCOPE, { I18n.s.finishYoutubeSignIn }) {
 
+    /**
+     * One Data API call. On an auth error (401, or 403 insufficient scope) the cached token is thrown
+     * away and the call is retried once with a fresh one; other errors show Google's own reason.
+     */
     private suspend fun api(pathAndQuery: String, token: String): JSONObject {
+        val first = call(pathAndQuery, token)
+        if (first.ok) return first.json!!
+        if (first.authError) {
+            invalidateToken(token)
+            val again = call(pathAndQuery, token())
+            if (again.ok) return again.json!!
+            if (again.authError) { signOut(); throw UserFacingException(I18n.s.youtubeSignInAgain) }
+            throw again.exception()
+        }
+        throw first.exception()
+    }
+
+    private class ApiResult(val code: Int, val json: JSONObject?, val reason: String, val message: String) {
+        val ok get() = code in 200..299
+        val authError get() = code == 401 || reason in AUTH_REASONS
+        fun exception(): Exception = when (reason) {
+            "quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded" -> UserFacingException(I18n.s.youtubeQuota)
+            "accessNotConfigured", "SERVICE_DISABLED" -> UserFacingException(I18n.s.youtubeApiDisabled)
+            else -> java.io.IOException("YouTube HTTP $code: ${message.ifEmpty { reason }}")
+        }
+    }
+
+    private suspend fun call(pathAndQuery: String, token: String): ApiResult = withContext(Dispatchers.IO) {
         val req = Request.Builder()
             .url("https://www.googleapis.com/youtube/v3/$pathAndQuery")
             .header("Authorization", "Bearer $token")
             .build()
-        return JSONObject(http.getString(req))
+        http.newCall(req).execute().use { resp ->
+            val body = resp.body?.string().orEmpty()
+            if (resp.isSuccessful) return@use ApiResult(resp.code, JSONObject(body), "", "")
+            Log.w(TAG, "HTTP ${resp.code} for ${pathAndQuery.substringBefore('?')}: ${body.take(600)}")
+            val err = runCatching { JSONObject(body).getJSONObject("error") }.getOrNull()
+            val reason = err?.optJSONArray("errors")?.optJSONObject(0)?.optString("reason").orEmpty()
+                .ifEmpty { err?.optJSONArray("details")?.optJSONObject(0)?.optString("reason").orEmpty() }
+            ApiResult(resp.code, null, reason, err?.optString("message").orEmpty())
+        }
     }
 
     /** `&pageToken=...` for a Data API cursor (cursors are the API's own page tokens). */
@@ -193,5 +231,9 @@ class YouTubeAccount(context: Context, private val http: OkHttpClient) :
 
     companion object {
         private const val SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+        private const val TAG = "YouTubeAccount"
+        private val AUTH_REASONS = setOf(
+            "insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "authError",
+        )
     }
 }

@@ -3,15 +3,24 @@ package app.pitstop.video.bilibili
 import app.pitstop.video.core.Category
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
+import app.pitstop.video.core.Picked
+import app.pitstop.video.core.pick
 import app.pitstop.video.core.I18n
+import app.pitstop.video.core.Option
+import app.pitstop.video.core.OptionGroup
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
+import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.categoryKey
 
 /** Bilibili's music zone, played audio-only (best stream: Hi-Res / Dolby when the account allows). */
-class BiliMusicSource(private val api: BiliApi) : VideoSource {
+class BiliMusicSource(
+    private val api: BiliApi,
+    /** The same song on another platform, for songs Bilibili won't play here; null when none matches. */
+    private val elsewhere: suspend (VideoItem) -> PlayableStream? = { null },
+) : VideoSource {
     override val id = SourceId.BILI_MUSIC
     override val displayName get() = I18n.s.biliMusic
 
@@ -51,9 +60,21 @@ class BiliMusicSource(private val api: BiliApi) : VideoSource {
     override suspend fun searchPage(query: String, cursor: String?): FeedPage =
         api.searchPage(query, cursor?.toIntOrNull() ?: 1, tids = "3", source = SourceId.BILI_MUSIC)
 
+    override fun searchOptions() = BiliOptions.search()
+
+    override suspend fun searchPage(query: String, cursor: String?, picked: Picked): FeedPage = api.searchPage(
+        query, cursor?.toIntOrNull() ?: 1, tids = "3", source = SourceId.BILI_MUSIC,
+        order = picked[BiliOptions.SORT], duration = picked[BiliOptions.LENGTH],
+    )
+
     override suspend fun suggestions(query: String): List<String> = api.suggestions(query)
 
     override val supportsCreators get() = true
+
+    override fun creatorOptions() = BiliOptions.creator()
+
+    override suspend fun creatorPage(authorId: String, cursor: String?, picked: Picked): FeedPage =
+        api.uploaderPage(authorId, cursor?.toIntOrNull() ?: 1, SourceId.BILI_MUSIC, picked.pick(BiliOptions.SORT, "pubdate"))
 
     override suspend fun creatorVideos(authorId: String) = api.uploaderVideos(authorId, SourceId.BILI_MUSIC)
 
@@ -79,14 +100,24 @@ class BiliMusicSource(private val api: BiliApi) : VideoSource {
         }
     }
 
-    override suspend fun resolve(item: VideoItem): PlayableStream {
+    /**
+     * Licensed songs in the music center are often mainland-China only: from abroad Bilibili answers
+     * "-404 啥都木有" even for the video's info. Then the same song is played from another platform
+     * ([elsewhere]: matched by title, artist and length).
+     */
+    override suspend fun resolve(item: VideoItem): PlayableStream = try {
         val cid = item.extra?.toLongOrNull() ?: api.cidOf(item.id)
-        return api.audioUrl(item.id, cid)
+        api.audioUrl(item.id, cid)
+    } catch (e: BiliException) {
+        if (e.code !in UNAVAILABLE) throw e
+        elsewhere(item) ?: throw UserFacingException(I18n.s.biliSongUnavailable)
     }
 
     companion object {
         const val FEED_RANKING = "ranking"
         const val FEED_RECOMMENDED = "recommended"
+        /** Not found / region-locked / copyright-blocked here. */
+        private val UNAVAILABLE = setOf(-404, -403, -10403, 62002, 62004, 62012)
     }
 }
 
@@ -135,5 +166,32 @@ object BiliMusicKeys {
             }
             else -> null
         }
+    }
+}
+
+/** Bilibili's own sort orders and length filter (search and uploader pages). */
+object BiliOptions {
+    const val SORT = "order"
+    const val LENGTH = "duration"
+
+    fun search(): List<OptionGroup> {
+        val s = I18n.s
+        return listOf(
+            OptionGroup(SORT, s.optSort, listOf(
+                Option("totalrank", s.optRelevance), Option("click", s.optMostPlayed), Option("pubdate", s.optNewest),
+                Option("dm", s.optMostDanmaku), Option("stow", s.optMostFavourited),
+            )),
+            OptionGroup(LENGTH, s.optLength, listOf(
+                Option("0", s.optAny), Option("1", s.optUnderMin(10)), Option("2", s.optMinRange(10, 30)),
+                Option("3", s.optMinRange(30, 60)), Option("4", s.optOverMin(60)),
+            )),
+        )
+    }
+
+    fun creator(): List<OptionGroup> {
+        val s = I18n.s
+        return listOf(OptionGroup(SORT, s.optSort, listOf(
+            Option("pubdate", s.optNewest), Option("click", s.optMostPlayed), Option("stow", s.optMostFavourited),
+        )))
     }
 }

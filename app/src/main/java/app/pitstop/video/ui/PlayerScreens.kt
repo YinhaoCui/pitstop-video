@@ -123,11 +123,9 @@ fun PlayerScreen(graph: AppGraph, onClose: () -> Unit, onFullscreen: () -> Unit)
                 }
             }
             if (tab == 0) {
+                item(key = "qhead") { QueueHeader(graph, s.index, s.queue.size) }
                 itemsIndexed(s.queue, key = { i, it -> "q$i:${it.id}:${it.part}" }) { i, item ->
-                    PickRow(
-                        title = item.title, subtitle = item.author, current = i == s.index,
-                        onClick = { graph.hub.jumpTo(i) },
-                    )
+                    QueueRow(graph, item, i, s.index, s.queue.size, onPlay = { graph.hub.jumpTo(i) })
                 }
             } else if (playlists.isEmpty()) {
                 item(key = "none") { Text(S.noPlaylists, Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium) }

@@ -5,6 +5,10 @@ import app.pitstop.video.core.Category
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
 import app.pitstop.video.core.I18n
+import app.pitstop.video.core.Option
+import app.pitstop.video.core.OptionGroup
+import app.pitstop.video.core.Picked
+import app.pitstop.video.core.pick
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.UserFacingException
@@ -50,10 +54,11 @@ class RadioSource(private val http: OkHttpClient) : VideoSource {
         return page(filter, cursor)
     }
 
-    /** Stations matching [filter], most voted first, [PAGE] at a time (cursor = offset). */
-    private suspend fun page(filter: List<Pair<String, String>>, cursor: String?): FeedPage {
+    /** Stations matching [filter], most voted first (or by [order]), [PAGE] at a time (cursor = offset). */
+    private suspend fun page(filter: List<Pair<String, String>>, cursor: String?, order: String = "votes"): FeedPage {
         val offset = cursor?.toIntOrNull() ?: 0
-        val json = search(filter + listOf("order" to "votes", "offset" to "$offset", "limit" to "$PAGE"))
+        // Names read A-Z; every other order is "most first".
+        val json = search(filter + listOf("order" to order, "reverse" to "${order != "name"}", "offset" to "$offset", "limit" to "$PAGE"))
         val count = JSONArray(json).length()
         return FeedPage(RadioParser.stations(json), next = if (count >= PAGE) "${offset + PAGE}" else null)
     }
@@ -61,6 +66,17 @@ class RadioSource(private val http: OkHttpClient) : VideoSource {
     override suspend fun search(query: String): List<VideoItem> = searchPage(query, null).items
 
     override suspend fun searchPage(query: String, cursor: String?): FeedPage = page(listOf("name" to query), cursor)
+
+    override fun searchOptions(): List<OptionGroup> {
+        val s = I18n.s
+        return listOf(OptionGroup(SORT, s.optSort, listOf(
+            Option("votes", s.optTopVoted), Option("clickcount", s.optMostPlayed),
+            Option("name", s.optName), Option("lastchangetime", s.optRecentlyUpdated),
+        )))
+    }
+
+    override suspend fun searchPage(query: String, cursor: String?, picked: Picked): FeedPage =
+        page(listOf("name" to query), cursor, picked.pick(SORT, "votes"))
 
     /**
      * Genres (tags), countries and languages, each with enough working stations to be worth a list;
@@ -98,7 +114,7 @@ class RadioSource(private val http: OkHttpClient) : VideoSource {
 
     private suspend fun search(params: List<Pair<String, String>>) = api(
         "/json/stations/search",
-        params + listOf("reverse" to "true", "hidebroken" to "true", "is_https" to "true"),
+        params + listOfNotNull(("reverse" to "true").takeIf { params.none { it.first == "reverse" } }, "hidebroken" to "true", "is_https" to "true"),
     )
 
     /** Calls one API server; on failure picks another from the server list and retries once. */
@@ -132,6 +148,7 @@ class RadioSource(private val http: OkHttpClient) : VideoSource {
 
     companion object {
         const val FEED_TOP = "top"
+        private const val SORT = "order"
         const val FEED_LOCAL = "local"
         const val FEED_CHINESE = "chinese"
         const val PAGE = 50

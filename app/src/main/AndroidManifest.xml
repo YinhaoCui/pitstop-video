@@ -7,6 +7,9 @@
     <!-- Background playback: media notification + foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Downloads keep running in the background, with a progress notification -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Offline videos stored on the phone -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission
@@ -68,6 +71,11 @@
         <activity
             android:name=".ui.NeteaseLoginActivity"
             android:exported="false" />
+
+        <service
+            android:name=".download.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <service
             android:name=".player.PlaybackService"

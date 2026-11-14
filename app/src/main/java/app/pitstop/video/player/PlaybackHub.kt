@@ -248,6 +248,71 @@ class PlaybackHub(
         if (index in s.queue.indices && index != s.index) playAt(s.queue, index)
     }
 
+    // --- Queue editing (queue screen long-press menu, item menus) ---------------------------------
+
+    /** Removes queue entry [at]; removing the playing one plays the next (or stops at the end). */
+    fun removeFromQueue(at: Int) {
+        val s = _state.value
+        val item = s.queue.getOrNull(at) ?: return
+        val r = QueueOps.remove(s.queue, s.index, at)
+        unshuffled = unshuffled - item
+        when {
+            r.queue.isEmpty() -> stopAll()
+            r.currentRemoved -> playAt(r.queue, r.index)
+            else -> applyQueue(r)
+        }
+    }
+
+    fun moveInQueue(from: Int, to: Int) = applyQueue(QueueOps.move(_state.value.queue, _state.value.index, from, to))
+
+    /** Plays [items] right after the current one; starts them when nothing is playing. */
+    fun playNext(items: List<VideoItem>) {
+        if (items.isEmpty()) return
+        val s = _state.value
+        if (s.current == null) { playQueue(items); return }
+        // One item that's already queued is moved up rather than copied.
+        val single = items.singleOrNull()
+        val at = single?.let { item -> s.queue.indices.firstOrNull { it != s.index && s.queue[it] == item } }
+        if (at != null) {
+            moveInQueue(at, if (at < s.index) s.index else s.index + 1)
+            return
+        }
+        unshuffled = unshuffled + items
+        applyQueue(QueueOps.playNext(s.queue, s.index, items))
+    }
+
+    /** Adds [items] at the end of the queue; starts them when nothing is playing. */
+    fun addToQueue(items: List<VideoItem>) {
+        if (items.isEmpty()) return
+        val s = _state.value
+        if (s.current == null) { playQueue(items); return }
+        unshuffled = unshuffled + items
+        applyQueue(QueueOps.Result(s.queue + items, s.index))
+    }
+
+    /** Drops everything after the playing item. */
+    fun clearUpcoming() {
+        val s = _state.value
+        unshuffled = unshuffled.filter { it in s.queue.take(s.index + 1) }
+        applyQueue(QueueOps.clearUpcoming(s.queue, s.index))
+    }
+
+    private fun applyQueue(r: QueueOps.Result) {
+        _state.update { it.copy(queue = r.queue, index = r.index) }
+        // What plays next may have changed.
+        prefetched = null
+        prefetchNext()
+    }
+
+    private fun stopAll() {
+        resolveJob?.cancel()
+        player.stop()
+        player.clearMediaItems()
+        unshuffled = emptyList()
+        prefetched = null
+        _state.update { it.copy(queue = emptyList(), index = -1, loading = false, error = null) }
+    }
+
     /** Plays [queue] in random order, with shuffle switched on. */
     fun playShuffled(queue: List<VideoItem>) {
         if (queue.isEmpty()) return

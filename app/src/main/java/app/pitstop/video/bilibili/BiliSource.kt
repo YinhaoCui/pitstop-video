@@ -4,6 +4,8 @@ import app.pitstop.video.core.Category
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
+import app.pitstop.video.core.Picked
+import app.pitstop.video.core.pick
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.VideoItem
@@ -53,9 +55,19 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
     override suspend fun searchPage(query: String, cursor: String?): FeedPage =
         api.searchPage(query, cursor?.toIntOrNull() ?: 1)
 
+    override fun searchOptions() = BiliOptions.search()
+
+    override suspend fun searchPage(query: String, cursor: String?, picked: Picked): FeedPage =
+        api.searchPage(query, cursor?.toIntOrNull() ?: 1, order = picked[BiliOptions.SORT], duration = picked[BiliOptions.LENGTH])
+
     override suspend fun suggestions(query: String): List<String> = api.suggestions(query)
 
     override val supportsCreators get() = true
+
+    override fun creatorOptions() = BiliOptions.creator()
+
+    override suspend fun creatorPage(authorId: String, cursor: String?, picked: Picked): FeedPage =
+        api.uploaderPage(authorId, cursor?.toIntOrNull() ?: 1, SourceId.BILIBILI, picked.pick(BiliOptions.SORT, "pubdate"))
 
     override suspend fun creatorVideos(authorId: String) = api.uploaderVideos(authorId, SourceId.BILIBILI)
 

@@ -46,6 +46,29 @@ class PlaylistImportTest {
         assertNull(TrackMatcher.match(TrackMeta("Nothing like it", listOf("Nobody")), listOf(SourceId.NETEASE)) { _, _ -> listOf(song("Yellow", "Coldplay", 267)) })
     }
 
+    @Test fun bracketedExtrasDontBlockAMatch() {
+        // Bilibili's "久石譲" is "Joe Hisaishi" on YouTube Music: the title has to carry the match.
+        val t = TrackMeta("Ask me why (疎開)", listOf("久石譲"))
+        val yt = song("Ask me why", "Joe Hisaishi", 120, SourceId.YT_MUSIC)
+        assertTrue(TrackMatcher.score(t, yt) >= TrackMatcher.MIN_SCORE)
+        assertTrue(TrackMatcher.score(t, song("Ask Me Anything", "Joe Hisaishi", 120)) < TrackMatcher.MIN_SCORE)
+        assertEquals("Ask me why", TrackMatcher.coreTitle("Ask me why (疎開)"))
+    }
+
+    @Test fun artistUnderAnotherNameBeatsACover() = runBlocking {
+        // What YouTube Music returns for "久石譲 Ask me why (疎開)".
+        val results = listOf(
+            song("Ask Me Why (Evacuation) (Piano Version)", "Piano Echoes", 81, SourceId.YT_MUSIC),
+            song("Ask Me Why", "David Pasqualini", 206, SourceId.YT_MUSIC),
+            song("Ask me why (II)", "Joe Hisaishi", 208, SourceId.YT_MUSIC),
+            song("Ask me why (I)", "Joe Hisaishi", 73, SourceId.YT_MUSIC),
+        )
+        val t = TrackMeta("Ask me why (疎開)", listOf("久石譲"))
+        assertEquals(setOf("joehisaishi"), TrackMatcher.inferredArtists(t, results))
+        val best = TrackMatcher.match(t, listOf(SourceId.YT_MUSIC)) { _, _ -> results }
+        assertEquals("Joe Hisaishi", best?.item?.author)
+    }
+
     @Test fun normalizeFoldsWidthCaseAndPunctuation() {
         assertEquals(TrackMatcher.normalize("ＡＢＣ，d-e"), TrackMatcher.normalize("abc d e"))
         assertEquals("Song", TrackMatcher.cleanTitle("Song (feat. Someone)").trim())

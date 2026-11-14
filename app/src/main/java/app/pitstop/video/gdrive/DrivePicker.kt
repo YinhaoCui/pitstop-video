@@ -77,7 +77,26 @@ class DrivePicker(private val context: Context, private val http: OkHttpClient) 
         return picked.size
     }
 
+    /**
+     * Result of the picker opened to choose where downloads go: the first picked folder (remembered,
+     * so its songs also show in Music → Google Drive), or null when only files were picked.
+     */
+    suspend fun completeFolderPick(data: Intent?): PickedDriveFile? {
+        val result = client.getAuthorizationResultFromIntent(data)
+        val ids = result.tokenResponseParams?.getString(PICKED_IDS).orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        val token = result.accessToken ?: throw UserFacingException(I18n.s.drivePickerFailed("no access token"))
+        cached = token to android.os.SystemClock.elapsedRealtime()
+        val folder = ids.map { metadata(it, token) }.firstOrNull { it.isFolder } ?: return null
+        remember(folder)
+        return folder
+    }
+
     fun clear() = save(emptyList())
+
+    /** Adds a file or folder the app made itself (drive.file covers it), e.g. the downloads folder. */
+    fun remember(file: PickedDriveFile) {
+        if (_files.value.none { it.id == file.id }) save(_files.value + file)
+    }
 
     /** Last token and when it was issued; reused for 40 minutes (Google tokens live ~1 h). */
     @Volatile private var cached: Pair<String, Long>? = null
