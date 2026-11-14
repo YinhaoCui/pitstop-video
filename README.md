@@ -1,7 +1,9 @@
 # Pitstop Video
 
-A video player for watching videos on a car's screen **while parked**:
-YouTube, Bilibili (signed in or not), and offline videos stored on the device.
+A video and music player for the car's screen. Video plays **only while parked**; music and
+audio-only playback keep going while driving. It covers YouTube, Bilibili, PeerTube and videos on
+the device, plus YouTube Music, NetEase Cloud Music, SoundCloud, Bandcamp, podcasts, radio,
+Google Drive and live streams, with or without accounts.
 
 Developed on a Pixel 9 Pro · Android 17 · Mazda CX-5 (Android Auto), and built to run on:
 
@@ -16,21 +18,112 @@ Not supported: Apple CarPlay / iOS (CarPlay does not allow third-party video app
 
 ## Features
 
-| | |
-|---|---|
-| **YouTube** | Popular + search without an account. Optional Google sign-in (nothing to set up) adds *Subscriptions*, *Liked videos*, *Watch later* and *History*; YouTube Music gets *Liked music* and your playlists. |
-| **Bilibili** | Recommended / Popular / search without an account (≤ 480–720p). Sign in (web page or QR code) for 1080p and the *Following* feed. Multi-part videos (分P) expand into one queue entry per part. |
-| **Offline** | Every video in the device's MediaStore (Camera, Downloads, Movies…). No network needed. |
-| **Subtitles** | YouTube: uploaded tracks, auto-generated in your language, and auto-translation into your language. Bilibili: uploaded and AI subtitles (AI ones usually need login). *CC* on the phone player; *Queue → CC* on the car screen cycles Off → languages. |
-| **Queue** | Car: *Queue* opens a side panel over the playing video; tap any entry (or Bilibili part) to jump to it. Phone: queue button in the now-playing bar. |
-| **Playlists** | Mix YouTube, Bilibili and offline videos; play or shuffle from the phone or the car. |
-| **Car: full screen** | Video fills the visible screen; title and author show with Android Auto's buttons. |
-| **Car: split screen** | Video beside (or, on portrait screens, above) title / progress / up-next. Toggle with *Split / Full*. |
-| **Parked-only lock** | When the car moves, car-screen video pauses and is hidden. Speed comes from the car, or GPS as a fallback. |
-| **Device-aware quality** | Picks only streams the device can decode; on a decoder failure it retries once at 480p AVC. |
+The app has three tabs, **Video**, **Music** and **Live**, each with a row of platforms. A button
+at the end of the row (or *Settings → Platforms*) hides the ones you don't use; the car's browse
+list follows the same choice.
 
-Pick a video on the car screen (*Browse*) or on the phone — the same player is shared, and
-when Android Auto is connected the video goes to the car display.
+### Platforms
+
+| Tab | Platform | Without an account | With sign-in |
+|---|---|---|---|
+| Video | **YouTube** | Popular / Trending (endless, through every trending chart), categories, search | Google sign-in on Google's own page (nothing to set up): *Subscriptions*, *Liked videos*, *Watch later*, *History* |
+| Video | **Bilibili** | Recommended, Popular, video zones, search (≤ 480–720p); multi-part videos (分P) become one entry per part | Web page or QR code: 1080p and the *Following* feed |
+| Video | **PeerTube** | Instance feeds and categories, search, channels | – |
+| Video | **On this device** | Every video in the device's MediaStore (Camera, Downloads, Movies…), offline | – |
+| Music | **Bilibili Music** | Music charts and sub-zones, search | Higher audio quality |
+| Music | **YouTube Music** | Charts, genres and moods, search | Same Google sign-in: *Liked music* and your playlists |
+| Music | **NetEase Cloud Music** | Official charts, playlist tags, artist pages, search; big playlists play in full | Web page or QR code: *Daily picks* and your playlists |
+| Music | **SoundCloud**, **Bandcamp** | Charts / discover tags, search, albums and playlists as folders | – |
+| Music | **Podcasts** | Apple top charts and genres, search; shows open as folders of episodes | – |
+| Music | **Radio** | radio-browser.info: popular, near you, genres, countries, languages | – |
+| Music | **Google Drive** | *Pick from Google Drive* (Google's own picker) or *Add from files*; see [Google Drive](#google-drive) | Personal builds only: browse the whole Drive |
+| Music | **On this phone** | Songs stored on the device | – |
+| Live | **Bilibili Live** | Recommended, popular, live areas, search | *Following* |
+| Live | **Twitch** | Top streams, top 100 categories, search; audio-only renditions | – |
+| Live | **Douyu** | Popular, all categories, search | – |
+
+Paid content is never unlocked: NetEase VIP songs and Bilibili paid trial clips are refused, not
+played as previews. Bilibili songs that only play in mainland China are played from YouTube Music
+or NetEase instead.
+
+### Browsing and search
+
+- Feeds, categories, search results and creator pages scroll endlessly.
+- *Categories* opens a window with every category of the platform, grouped and filterable.
+- Search suggests while you type and remembers recent searches. The *All platforms* chip searches
+  every platform of the tab at once, with *More* for one platform's full results.
+- *Sort & filter* on every list: sort by title, creator or length; filter by length, words or
+  platform. Platform-side options too: YouTube upload date / length, Bilibili sort and length,
+  uploader sort, radio sort.
+- Tap a creator's name for their latest uploads; saved creators become feed chips on phone and car.
+
+### Queue and playlists
+
+- Long-press any item: *Play next*, *Add to queue*, *Download*, add to a playlist.
+- Queue rows show thumbnails. Drag the ⋮⋮ grip on the left of a row to reorder; the list scrolls
+  when you hold a row near the edge. Long-press a row to move it to the top or remove it;
+  *Clear upcoming* empties what's left. Screen readers get *Move up* / *Move down* actions.
+- Playlists mix every platform. Reorder them by dragging (in their own order), sort them and keep
+  a sorted order, play or shuffle from the phone or the car. Adding a Drive folder adds every
+  song inside it.
+- **Import** (Playlists tab): paste a link or a song list, or open a file. NetEase, YouTube /
+  YouTube Music playlists and Bilibili favourites import as they are. QQ Music, Kugou, Spotify and
+  Apple Music playlists, CSV files (Exportify, TuneMyMusic…) and "Artist - Title" text are matched
+  song by song on the platforms you choose. Short share links are resolved first.
+- **Export**: a re-importable Pitstop file (one playlist or all), CSV or plain text through the
+  share sheet.
+
+### Playback
+
+- One player shared by phone and car: pick on either one, and with Android Auto connected the
+  video goes to the car display.
+- Shuffle (restorable) and repeat off / all / one.
+- Quality button on the video (gear + current quality), with separate defaults for Wi-Fi and
+  mobile data: Auto / 720p / 480p / 360p / *Audio only*. Audio only fetches just the sound and
+  shows the cover like a song.
+- Picks only streams the device can decode; on a decoder failure it retries once at 480p AVC.
+  Reconnects with backoff at the same position, refreshes expired stream links, and steps quality
+  down after repeated stalls. The next item is looked up in advance.
+- Live streams join at the live edge.
+- **Subtitles**: YouTube uploaded tracks, auto-generated captions and auto-translation into your
+  language; Bilibili uploaded and AI subtitles (AI ones usually need sign-in). Style them in
+  *Settings*: language, size, colour, text and background opacity, edge style, with a live preview.
+- **Background playback**: notification, lock screen, headset and Bluetooth controls; picture-in-
+  picture (automatic on Android 12+). The screen stays on while a video plays.
+- **Data saver** on mobile data and hotspots: audio capped at about 128 kbps, a shorter buffer,
+  no lookahead for the next track, and thumbnails at the size shown.
+
+### Downloads
+
+- *Download* in the player and in every item's menu: video at 1080 / 720 / 480 / 360p or audio
+  only; songs as they are. Split video and audio streams are merged into one MP4 without
+  re-encoding.
+- Save to the phone (*Download/Pitstop* or a folder you pick) and / or to Google Drive (an
+  app-made *Pitstop* folder, or one picked in Google's Drive picker).
+- Runs in the background with a progress notification; cancel, retry or open finished files in
+  *Settings*.
+- Public builds don't save YouTube or YouTube Music videos (see [Build options](#build-options)).
+
+### Car screen
+
+- **Full screen**: video fills the visible area, with title and author beside Android Auto's
+  buttons. **Split**: video beside (or, on portrait screens, above) title, progress and up next.
+  Toggle with *Split / Full*.
+- *Browse* opens as a side panel with the video shrunk beside it. *Queue* opens a side panel over
+  the video; tap any entry (or Bilibili part) to jump to it. *CC* turns subtitles on and off.
+- −10 s / +10 s buttons; tap the progress bar to jump, or drag it to scrub with a preview.
+- **Parked-only lock**: when the car moves, video on the car screen is hidden. By default the sound
+  keeps playing (audio-only); you can choose to pause instead. Music is not affected. Speed comes
+  from the car, or GPS as a fallback. The lock can't be turned off.
+
+### Look and language
+
+- Pastel light theme or night theme (Light / Night / System), optional background picture from
+  your own gallery, and a choice of player layout on narrow phones: a separate page with a mini bar,
+  or a draggable floating window.
+- English and Simplified Chinese, switched live on phone and car.
+- Header avatar: the author's picture by default; a local `header_avatar` image replaces it in
+  your own builds.
 
 ## How it works
 
@@ -47,16 +140,28 @@ when Android Auto is connected the video goes to the car display.
   that session. Subscribed channels are remembered, and *Subscriptions* falls back to their public
   RSS feeds if the web API changes or the session ends.
 - Bilibili uses its public web API (WBI-signed), DASH video + audio merged by ExoPlayer.
+- SoundCloud, Bandcamp and PeerTube also come through NewPipeExtractor. NetEase uses its web API
+  (weapi encryption), Twitch its HLS playlists, Douyu its signed web API.
+- Every platform implements `core/VideoSource` (feeds, categories, search, creator pages), so the
+  phone UI, the car screens and search treat them all the same way.
 
 ```
 app/src/main/java/app/pitstop/video/
-  core/       models, VideoSource interface, HTTP, thumbnails
-  youtube/    NewPipe downloader, YouTubeSource, YouTubeAccount (web sign-in, feeds, RSS fallback)
-  bilibili/   BiliApi, BiliSource, cookie jar, WBI signer
-  local/      LocalSource (MediaStore)
-  player/     PlaybackHub, StreamSelector, DrivingMonitor (parked-only lock)
-  car/        CarAppService, Session, screens, VirtualDisplay renderer + presentation
-  ui/         Compose phone UI, Bilibili WebView login
+  core/       models, VideoSource interface, HTTP, settings, playlists, I18n (EN / ZH)
+  youtube/    YouTube + YouTube Music sources, YouTubeAccount (web sign-in, feeds, RSS fallback), subtitles
+  bilibili/   BiliApi, video / music / live sources, cookie jar, WBI signer, CDN choice
+  netease/    NetEase Cloud Music API, crypto, source
+  newpipe/    SoundCloud, Bandcamp, PeerTube
+  podcast/    Apple charts + iTunes search, RSS parser
+  radio/      radio-browser.info
+  live/       Twitch, Douyu
+  gdrive/     Drive picker (drive.file) and Drive source
+  local/      videos and songs on the device (MediaStore)
+  importer/   playlist import (NetEase, YouTube, Bilibili, QQ Music, Kugou, Spotify, Apple Music, CSV, text) and track matching
+  download/   download service, stream merging, Drive upload
+  player/     PlaybackHub, PlaybackService, StreamSelector, data saver, DrivingMonitor (parked-only lock)
+  car/        CarAppService, screens, VirtualDisplay renderer + presentation
+  ui/         Compose phone UI, sign-in pages, drag to reorder
 ```
 
 ## Build
@@ -106,9 +211,8 @@ Android Auto only shows apps that are not from the Play Store when developer mod
 4. **Customize launcher** → make sure *Pitstop Video* is ticked.
 5. Plug into the CX-5 (or connect wirelessly) and open *Pitstop Video* from the Android Auto launcher.
 
-Pitstop Video is listed in the Android Auto app grid (A–Z, after *Phone*). Because Android Auto
-treats it as a navigation app it stays in the map card until another navigation app replaces it;
-use the **✕** button (bottom right) to pause and close it. Switching to another car app pauses
+Pitstop Video is listed in the Android Auto app grid (A–Z, after *Phone*). It draws its video on
+Android Auto's map surface; use *Browse → Exit* to pause and close it. Switching to another car app pauses
 the video.
 
 Mazda Connect notes: the touchscreen only works while parked (by Mazda's design); the commander
