@@ -67,6 +67,7 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.coroutines.play.services)
     implementation(libs.newpipe.extractor)
+    implementation(libs.nanojson)
     implementation(libs.play.services.auth)
     implementation(libs.zxing.core)
 

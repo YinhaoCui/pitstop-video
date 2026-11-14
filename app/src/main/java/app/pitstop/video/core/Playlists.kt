@@ -112,6 +112,8 @@ class PlaylistStore(private val file: File) {
     fun addAll(id: String, items: List<VideoItem>) = edit(id) { PlaylistOps.addAll(it, items) }
     fun removeAt(id: String, index: Int) = edit(id) { PlaylistOps.removeAt(it, index) }
     fun move(id: String, from: Int, to: Int) = edit(id) { PlaylistOps.move(it, from, to) }
+    /** Saves a new order of the same items (Sort & filter → Keep this order). */
+    fun reorder(id: String, items: List<VideoItem>) = edit(id) { p -> if (items.size == p.items.size) p.copy(items = items) else p }
 
     private fun edit(id: String, f: (Playlist) -> Playlist) = mutate { list -> list.map { if (it.id == id) f(it) else it } }
 

@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.pitstop.video.AppGraph
 import app.pitstop.video.R
+import app.pitstop.video.core.ListView
 import app.pitstop.video.core.S
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
@@ -54,6 +55,11 @@ fun FolderPage(
     var reload by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf<VideoItem?>(null) }
     adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
+    var view by remember(folder.id) { mutableStateOf(ListView()) }
+    var showSortFilter by remember { mutableStateOf(false) }
+    if (showSortFilter) SortFilterDialog(
+        null, emptyList(), emptyMap(), view, onApply = { _, v -> view = v }, onDismiss = { showSortFilter = false },
+    )
     val result by produceState<Result<List<VideoItem>>?>(null, source, folder.id, reload) {
         value = null
         value = try {
@@ -69,6 +75,7 @@ fun FolderPage(
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_back), S.back) }
             Text(folder.title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            SortFilterChip(active = !view.isDefault) { showSortFilter = true }
         }
         val r = result
         when {
@@ -78,7 +85,7 @@ fun FolderPage(
                 Button(onClick = { reload++ }, Modifier.padding(top = 8.dp)) { Text(S.retry) }
             }
             else -> {
-                val items = r.getOrDefault(emptyList())
+                val items = view.apply(r.getOrDefault(emptyList()), source::isFolder)
                 val tracks = items.filterNot(source::isFolder)
                 if (items.isEmpty()) Text(S.noVideos, Modifier.padding(24.dp))
                 else LazyColumn(Modifier.fillMaxSize()) {
@@ -97,6 +104,7 @@ fun FolderPage(
                         VideoRow(
                             graph, item,
                             onClick = { if (isFolder) onOpen(item) else graph.hub.playQueue(tracks, tracks.indexOf(item)) },
+                            onLongClick = { adding = item },
                         ) {
                             if (!isFolder) IconButton(onClick = { adding = item }) {
                                 Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist)

@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -32,6 +33,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pitstop.video.AppGraph
 import app.pitstop.video.R
 import app.pitstop.video.core.Creator
+import app.pitstop.video.core.ListView
+import app.pitstop.video.core.Picked
 import app.pitstop.video.core.S
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
@@ -43,6 +46,13 @@ fun CreatorPage(graph: AppGraph, source: VideoSource, id: String, name: String, 
     BackHandler(onBack = onBack)
     val saved by graph.creators.creators.collectAsStateWithLifecycle()
     val isSaved = saved.any { it.source == source.id && it.id == id }
+    var picked by remember(source.id, id) { mutableStateOf<Picked>(emptyMap()) }
+    var view by remember(source.id, id) { mutableStateOf(ListView()) }
+    var showSortFilter by remember { mutableStateOf(false) }
+    if (showSortFilter) SortFilterDialog(
+        S.sourceName(source.id), remember(source.id) { source.creatorOptions() }, picked, view,
+        onApply = { p, v -> picked = p; view = v }, onDismiss = { showSortFilter = false },
+    )
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_back), S.back) }
@@ -51,11 +61,14 @@ fun CreatorPage(graph: AppGraph, source: VideoSource, id: String, name: String, 
             if (isSaved) FilledTonalButton(onClick = toggle) { Text(S.savedCreator) }
             else OutlinedButton(onClick = toggle) { Text(S.saveCreator) }
         }
+        Box(Modifier.padding(horizontal = 12.dp)) {
+            SortFilterChip(active = picked.isNotEmpty() || !view.isDefault) { showSortFilter = true }
+        }
         // Endless: older videos load as the end of the list comes into view.
         PagedVideoList(
-            graph, source, loadKey = listOf(source.id, id),
-            page = { cursor -> source.creatorPage(id, cursor) },
-            onFolder = {}, onCreator = null, onAdd = null,
+            graph, source, loadKey = listOf(source.id, id, picked),
+            page = { cursor -> source.creatorPage(id, cursor, picked) },
+            onFolder = {}, onCreator = null, onAdd = null, view = view,
         )
     }
 }

@@ -57,6 +57,7 @@ import app.pitstop.video.AppGraph
 import app.pitstop.video.R
 import app.pitstop.video.core.Category
 import app.pitstop.video.core.FeedPage
+import app.pitstop.video.core.ListView
 import app.pitstop.video.core.S
 import app.pitstop.video.core.Settings
 import app.pitstop.video.core.VideoItem
@@ -88,6 +89,8 @@ internal fun PagedVideoList(
     onCreator: ((VideoItem) -> Unit)?,
     onAdd: ((VideoItem) -> Unit)?,
     modifier: Modifier = Modifier,
+    /** In-app sort & filter of what has loaded (Sort & filter window). */
+    view: ListView = ListView(),
 ) {
     var reload by remember { mutableIntStateOf(0) }
     var load by remember { mutableStateOf<LoadState>(LoadState.Loading) }
@@ -129,20 +132,33 @@ internal fun PagedVideoList(
             Spacer(Modifier.height(8.dp))
             Button(onClick = { reload++ }) { Text(S.retry) }
         }
-        is LoadState.Loaded -> if (l.items.isEmpty()) {
-            Text(S.noVideos, modifier.padding(24.dp))
-        } else LazyColumn(modifier.fillMaxSize()) {
-            itemsIndexed(l.items, key = { i, it -> "$i:${it.id}" }) { _, item ->
+        is LoadState.Loaded -> {
+          val shown = remember(l.items, view) { view.apply(l.items, source::isFolder) }
+          if (shown.isEmpty() && l.next == null) {
+            Column(modifier.padding(24.dp)) {
+                Text(S.noVideos)
+                if (l.items.isNotEmpty()) Text(S.hiddenByFilters(l.items.size), style = MaterialTheme.typography.bodySmall)
+            }
+          } else LazyColumn(modifier.fillMaxSize()) {
+            val hidden = l.items.size - shown.size
+            if (hidden > 0) item(key = "hidden") {
+                Text(
+                    S.hiddenByFilters(hidden), Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            itemsIndexed(shown, key = { i, it -> "$i:${it.id}" }) { _, item ->
                 val onClick = if (source.isFolder(item)) {
                     { onFolder(item) }
                 } else {
                     {
-                        val tracks = l.items.filterNot(source::isFolder)
+                        // The queue follows what's shown: the sorted / filtered order.
+                        val tracks = shown.filterNot(source::isFolder)
                         graph.hub.playQueue(tracks, tracks.indexOf(item))
                     }
                 }
                 val openCreator = onCreator?.takeIf { item.authorId != null && source.supportsCreators }?.let { { it(item) } }
-                VideoRow(graph, item, onClick = onClick, onAuthor = openCreator) {
+                VideoRow(graph, item, onClick = onClick, onAuthor = openCreator, onLongClick = onAdd?.let { a -> { a(item) } }) {
                     if (onAdd != null) IconButton(onClick = { onAdd(item) }) {
                         Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist)
                     }
@@ -161,6 +177,7 @@ internal fun PagedVideoList(
                     }
                 }
             }
+          }
         }
     }
 }

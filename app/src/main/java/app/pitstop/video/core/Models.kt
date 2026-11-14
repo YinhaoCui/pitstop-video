@@ -1,5 +1,7 @@
 package app.pitstop.video.core
 
+import kotlinx.coroutines.asContextElement
+
 /**
  * Every feed the app can play. [music] sources are audio-only: no picture, so no parked-only lock.
  * [live] sources are live video (Live tab); the parked-only lock applies to them like any video.
@@ -106,6 +108,18 @@ interface VideoSource {
     suspend fun searchPage(query: String, cursor: String?): FeedPage =
         if (cursor == null) FeedPage(search(query)) else FeedPage(emptyList())
 
+    /** Sort orders / filters the platform applies to search results (Sort & filter window); empty = none. */
+    fun searchOptions(): List<OptionGroup> = emptyList()
+
+    /** [searchPage] with platform options picked from [searchOptions] (defaults omitted). */
+    suspend fun searchPage(query: String, cursor: String?, picked: Picked): FeedPage = searchPage(query, cursor)
+
+    /** Sort orders the platform offers for a creator's videos; empty = none. */
+    fun creatorOptions(): List<OptionGroup> = emptyList()
+
+    /** [creatorPage] with options picked from [creatorOptions] (defaults omitted). */
+    suspend fun creatorPage(authorId: String, cursor: String?, picked: Picked): FeedPage = creatorPage(authorId, cursor)
+
     /** Search-as-you-type suggestions (query completions); empty when the platform has none. */
     suspend fun suggestions(query: String): List<String> = emptyList()
     suspend fun resolve(item: VideoItem): PlayableStream
@@ -156,13 +170,28 @@ object StreamPolicy {
     @Volatile var safe: Boolean = false
     /** Lowered step by step when the connection keeps stalling; reset when the network changes. */
     @Volatile var capHeight: Int = 1080
+    @Volatile private var chosenQuality: VideoQuality = VideoQuality.AUTO
+    @Volatile private var meteredNow: Boolean = false
+
+    /**
+     * Set inside a download's coroutine ([forDownload]): resolves pick the quality the user asked
+     * for, AVC + AAC (so the parts can be merged into an MP4) and full audio, whatever the player does.
+     */
+    private val download = ThreadLocal<VideoQuality?>()
+    fun forDownload(quality: VideoQuality): kotlin.coroutines.CoroutineContext = download.asContextElement(quality)
+    val downloading: Boolean get() = download.get() != null
+
     /** The user's choice for the current network (Wi-Fi or mobile data), set before each resolve. */
-    @Volatile var quality: VideoQuality = VideoQuality.AUTO
-    val maxHeight: Int get() = effectiveMaxHeight(quality, capHeight, safe)
+    var quality: VideoQuality
+        get() = download.get() ?: chosenQuality
+        set(value) { chosenQuality = value }
+    val maxHeight: Int get() = download.get()?.maxHeight ?: effectiveMaxHeight(quality, capHeight, safe)
     /** Data saver: fetch only the sound of videos, no picture at all. */
     val audioOnly: Boolean get() = quality == VideoQuality.AUDIO
     /** On mobile data / a hotspot (pay-per-byte); set by the player from the system's network info. */
-    @Volatile var metered: Boolean = false
+    var metered: Boolean
+        get() = if (downloading) false else meteredNow
+        set(value) { meteredNow = value }
     /** Audio bitrate ceiling (bits/s): ~128 kbps on mobile data instead of 192-320 kbps / lossless. */
     val audioMaxBps: Long get() = audioMaxBps(metered)
     /** How far ahead the player downloads: less on mobile data, so skipping wastes little. */

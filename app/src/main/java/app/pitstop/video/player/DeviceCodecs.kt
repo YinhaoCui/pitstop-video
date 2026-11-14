@@ -20,7 +20,8 @@ object DeviceCodecs {
 
     /** Use as StreamSelector's `supported` predicate. Unknown codecs are allowed. */
     fun canPlay(track: StreamSelector.VideoTrack): Boolean {
-        if (StreamPolicy.safe && !track.codec.startsWith("avc")) return false
+        // Downloads want AVC too: it merges with the AAC sound into an MP4 that plays everywhere.
+        if ((StreamPolicy.safe || StreamPolicy.downloading) && !track.codec.startsWith("avc")) return false
         val mime = mimeOf(track.codec) ?: return !StreamPolicy.safe
         if (decoders.isEmpty()) return true
         val h = track.height.coerceAtLeast(1)

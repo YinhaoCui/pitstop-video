@@ -30,6 +30,16 @@ import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
+import app.pitstop.video.core.Option
+import app.pitstop.video.core.OptionGroup
+import app.pitstop.video.core.Picked
+import app.pitstop.video.core.pick
+import com.grack.nanojson.JsonArray
+import com.grack.nanojson.JsonObject
+import com.grack.nanojson.JsonWriter
+import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
+import org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamInfoItemExtractor
 
 /**
  * YouTube without an API key: listing/search/stream URLs come from NewPipeExtractor.
@@ -123,6 +133,74 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
 
     override suspend fun suggestions(query: String): List<String> = youtubeSuggestions(query)
 
+    override fun searchOptions(): List<OptionGroup> {
+        val s = I18n.s
+        return listOf(
+            OptionGroup(YtSearchParams.SORT, s.optSort, listOf(
+                Option("0", s.optRelevance), Option("2", s.optNewest), Option("3", s.optMostViewed), Option("1", s.optTopRated),
+            )),
+            OptionGroup(YtSearchParams.DATE, s.optUploaded, listOf(
+                Option("0", s.optAny), Option("1", s.optLastHour), Option("2", s.optToday), Option("3", s.optThisWeek),
+                Option("4", s.optThisMonth), Option("5", s.optThisYear),
+            )),
+            OptionGroup(YtSearchParams.LENGTH, s.optLength, listOf(
+                Option("0", s.optAny), Option("1", s.optUnderMin(4)), Option("3", s.optMinRange(4, 20)), Option("2", s.optOverMin(20)),
+            )),
+        )
+    }
+
+    /**
+     * Search with YouTube's own sort / filters: NewPipe can't pass them, so this calls the site's
+     * search endpoint with the "sp" parameter (NewPipe's request helpers and item parser). The cursor
+     * is YouTube's continuation token.
+     */
+    override suspend fun searchPage(query: String, cursor: String?, picked: Picked): FeedPage {
+        if (picked.isEmpty()) return searchPage(query, cursor)
+        return withContext(Dispatchers.IO) {
+            val loc = NewPipe.getPreferredLocalization()
+            val builder = YoutubeParsingHelper.prepareDesktopJsonBuilder(loc, NewPipe.getPreferredContentCountry())
+            if (cursor == null) {
+                val sp = YtSearchParams.encode(
+                    picked.pick(YtSearchParams.SORT, "0").toInt(), picked.pick(YtSearchParams.DATE, "0").toInt(),
+                    picked.pick(YtSearchParams.LENGTH, "0").toInt(),
+                )
+                builder.value("query", query).value("params", sp)
+            } else builder.value("continuation", cursor)
+            val body = JsonWriter.string(builder.done()).toByteArray(Charsets.UTF_8)
+            val json = YoutubeParsingHelper.getJsonPostResponse("search", body, loc)
+            val parser = ServiceList.YouTube.getTimeAgoParser(loc)
+            val videos = mutableListOf<JsonObject>()
+            var next: String? = null
+            fun walk(node: Any?) {
+                when (node) {
+                    is JsonObject -> {
+                        node.getObject("videoRenderer").takeIf { it.isNotEmpty() }?.let { videos += it; return }
+                        node.getObject("continuationItemRenderer").getObject("continuationEndpoint")
+                            .getObject("continuationCommand").getString("token")?.let { next = it }
+                        node.values.forEach(::walk)
+                    }
+                    is JsonArray -> node.forEach(::walk)
+                }
+            }
+            walk(json)
+            val items = videos.mapNotNull { v ->
+                runCatching {
+                    val e = YoutubeStreamInfoItemExtractor(v, parser)
+                    VideoItem(
+                        source = SourceId.YOUTUBE,
+                        id = e.url,
+                        title = e.name,
+                        author = e.uploaderName,
+                        authorId = e.uploaderUrl?.ifEmpty { null },
+                        thumbnailUrl = e.thumbnails.sortedBy { it.width }.firstOrNull { it.width >= 320 }?.url ?: e.thumbnails.lastOrNull()?.url,
+                        durationSec = e.duration.takeIf { it > 0 },
+                    )
+                }.getOrNull()
+            }
+            FeedPage(items, next?.takeIf { items.isNotEmpty() })
+        }
+    }
+
     override suspend fun resolve(item: VideoItem): PlayableStream = withContext(Dispatchers.IO) {
         val info = StreamInfo.getInfo(ServiceList.YouTube, item.id)
         val headers = mapOf("User-Agent" to NewPipeDownloader.USER_AGENT)
@@ -195,7 +273,10 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
                 val service = ServiceList.YouTube
                 val info = ChannelInfo.getInfo(service, channelUrl)
                 val tab = info.tabs.firstOrNull { it.contentFilters.contains(ChannelTabs.VIDEOS) }
-                    ?: info.tabs.firstOrNull() ?: return@withContext FeedPage(emptyList())
+                    ?: info.tabs.firstOrNull()
+                    // Auto-generated artist channels ("Miles Davis - Topic") have no tabs at all:
+                    // list the artist's songs from a YouTube Music search instead, only this channel's.
+                    ?: return@withContext topicSongs(pager, channelUrl, info.name.removeSuffix(" - Topic"), source)
                 pager.pages(service.getChannelTabExtractor(tab), null, { i ->
                     (i as? StreamInfoItem)?.let { s ->
                         VideoItem(
@@ -210,6 +291,30 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
                     }
                 })
             }
+
+        /** Songs by one artist channel (a song search for its name, kept to that channel). Blocking. */
+        private fun topicSongs(pager: NewPipePager, channelUrl: String, artist: String, source: SourceId): FeedPage {
+            val channelId = channelUrl.substringAfterLast('/')
+            return pager.pages(
+                ServiceList.YouTube.getSearchExtractor(
+                    artist, listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS), "",
+                ),
+                null,
+                { i ->
+                    (i as? StreamInfoItem)?.takeIf { it.uploaderUrl.orEmpty().endsWith(channelId) }?.let { s ->
+                        VideoItem(
+                            source = source,
+                            id = Regex("[?&]v=([\\w-]{6,})").find(s.url)?.groupValues?.get(1)?.let(::watchUrl) ?: s.url,
+                            title = s.name,
+                            author = artist,
+                            thumbnailUrl = s.thumbnails.sortedBy { it.width }.firstOrNull { it.width >= 226 }?.url ?: s.thumbnails.lastOrNull()?.url,
+                            durationSec = s.duration.takeIf { it > 0 },
+                            authorId = channelUrl,
+                        )
+                    }
+                },
+            )
+        }
 
         /** YouTube's search-as-you-type completions (also used for YouTube Music). */
         suspend fun youtubeSuggestions(query: String): List<String> = withContext(Dispatchers.IO) {

@@ -12,6 +12,7 @@ import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.border
@@ -93,6 +94,8 @@ import androidx.compose.material3.InputChip
 import app.pitstop.video.core.asFeed
 import app.pitstop.video.core.FeedPage
 import app.pitstop.video.core.Category
+import app.pitstop.video.core.ListView
+import app.pitstop.video.core.Picked
 import app.pitstop.video.player.DisplayMode
 import app.pitstop.video.player.RepeatMode
 import kotlinx.coroutines.CancellationException
@@ -271,6 +274,8 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
     val s by graph.hub.state.collectAsStateWithLifecycle()
     var adding by remember { mutableStateOf<VideoItem?>(null) }
     adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
+    var downloading by remember { mutableStateOf<VideoItem?>(null) }
+    downloading?.let { DownloadDialog(graph, it) { downloading = null } }
     var showQueue by remember { mutableStateOf(false) }
     if (showQueue) QueueDialog(graph) { showQueue = false }
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -326,6 +331,9 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
             IconButton(onClick = { showQueue = true }) { Icon(painterResource(R.drawable.ic_playlist_play), S.queue) }
             s.current?.let { cur ->
                 IconButton(onClick = { adding = cur }) { Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist) }
+                if (graph.downloads.canDownload(cur)) {
+                    IconButton(onClick = { downloading = cur }) { Icon(painterResource(R.drawable.ic_download), S.download) }
+                }
             }
             if (s.carActive) {
                 IconButton(onClick = graph.hub::toggleMode) {
@@ -487,6 +495,15 @@ internal fun SourceTab(
         value = runCatching { source.categories() }.getOrDefault(emptyList())
     }
     var showCategories by remember { mutableStateOf(false) }
+    // Sort & filter: platform options (search only) reload the list; the in-app view sorts / filters what loaded.
+    var searchPicked by remember(source.id) { mutableStateOf<Picked>(emptyMap()) }
+    var view by remember(source.id) { mutableStateOf(ListView()) }
+    var showSortFilter by remember { mutableStateOf(false) }
+    val platformGroups = if (activeQuery != null) remember(source.id) { source.searchOptions() } else emptyList()
+    if (showSortFilter) SortFilterDialog(
+        S.sourceName(source.id), platformGroups, searchPicked, view,
+        onApply = { p, v -> searchPicked = p; view = v }, onDismiss = { showSortFilter = false },
+    )
     if (showCategories) CategoryDialog(graph, source, categories, categoryKey, onPick = { c ->
         categoryKey = c.key; categoryTitle = c.title; activeQuery = null; showCategories = false
     }, onDismiss = { showCategories = false })
@@ -501,6 +518,9 @@ internal fun SourceTab(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val browsingFeed = activeQuery == null && categoryKey == null
+            if (!(activeQuery != null && everywhere)) {
+                SortFilterChip(active = !view.isDefault || (activeQuery != null && searchPicked.isNotEmpty())) { showSortFilter = true }
+            }
             // Active search first, with an x to go back to browsing.
             activeQuery?.let { q ->
                 InputChip(
@@ -549,10 +569,11 @@ internal fun SourceTab(
         }
         PagedVideoList(
             graph, source,
-            loadKey = listOf(source.id, q, cat?.key, feed?.key, reload, refreshKey),
+            loadKey = listOf(source.id, q, cat?.key, feed?.key, reload, refreshKey, if (q != null) searchPicked else null),
+            view = view,
             page = { cursor ->
                 when {
-                    q != null -> source.searchPage(q, cursor)
+                    q != null -> source.searchPage(q, cursor, searchPicked)
                     cat != null -> source.loadFeedPage(cat, cursor)
                     feed != null -> source.loadFeedPage(feed, cursor)
                     else -> FeedPage(emptyList())
@@ -571,11 +592,19 @@ fun VideoRow(
     item: VideoItem,
     onClick: () -> Unit,
     onAuthor: (() -> Unit)? = null,
+    /** Long-press: the item's menu (play next, add to queue, playlists, download). */
+    onLongClick: (() -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
 ) {
     val thumb by produceState(graph.thumbnails.cached(item), item) { value = graph.thumbnails.load(item) }
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick?.let { l -> { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); l() } },
+            )
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
