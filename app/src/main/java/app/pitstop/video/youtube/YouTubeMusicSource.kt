@@ -46,7 +46,7 @@ class YouTubeMusicSource(private val account: YouTubeAccount) : VideoSource {
     private val pager = NewPipePager()
 
     override suspend fun loadPage(feed: Feed, cursor: String?): FeedPage {
-        // Data API feeds: the cursor is the API's own pageToken.
+        // Account feeds: the cursor is YouTube's own continuation token.
         when (feed.key) {
             FEED_LIKED -> return account.likedMusicPage(cursor)
             FEED_PLAYLISTS -> return account.playlistsPage(SourceId.YT_MUSIC, cursor)

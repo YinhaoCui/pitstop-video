@@ -85,6 +85,7 @@ dependencies {
     implementation(libs.nanojson)
     implementation(libs.play.services.auth)
     implementation(libs.zxing.core)
+    implementation(libs.androidx.webkit)
 
     testImplementation(libs.junit)
     testImplementation(libs.org.json)

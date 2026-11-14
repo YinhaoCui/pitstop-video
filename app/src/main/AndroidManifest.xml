@@ -72,6 +72,10 @@
             android:name=".ui.NeteaseLoginActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".ui.YouTubeLoginActivity"
+            android:exported="false" />
+
         <service
             android:name=".download.DownloadService"
             android:exported="false"

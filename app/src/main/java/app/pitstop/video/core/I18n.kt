@@ -44,6 +44,8 @@ class Strings(val language: AppLanguage) {
     val popular get() = t("Popular", "热门")
     val subscriptions get() = t("Subscriptions", "订阅")
     val liked get() = t("Liked videos", "赞过的视频")
+    val watchLater get() = t("Watch later", "稍后观看")
+    val history get() = t("History", "观看记录")
     val recommended get() = t("Recommended", "推荐")
     val following get() = t("Following", "关注动态")
     val allVideos get() = t("All videos", "全部视频")
@@ -561,12 +563,13 @@ class Strings(val language: AppLanguage) {
     val defaultPlaylistName get() = t("Playlist", "播放列表")
 
     // Account
-    val youtubeSignedIn get() = t("Signed in. Subscriptions and Liked videos are on.", "已登录。可查看订阅和赞过的视频。")
-    val youtubeSignedOut get() = t("Popular and search work without an account. Sign in to add Subscriptions and Liked videos.", "不登录也能看热门和搜索。登录后可加入订阅和赞过的视频。")
+    val youtubeSignedIn get() = t("Signed in. Subscriptions, Liked videos, Watch later and History are on.", "已登录。可查看订阅、赞过的视频、稍后观看和观看记录。")
+    val youtubeSignedOut get() = t("Popular and search work without an account. Sign in with Google to add Subscriptions, Liked videos, Watch later and History.", "不登录也能看热门和搜索。用 Google 账号登录后可加入订阅、赞过的视频、稍后观看和观看记录。")
+    val youtubeLoginNote get() = t("You sign in on Google's own page. The session stays on this device and is only used to list your feeds; videos play without it.", "在 Google 自己的页面登录。登录信息只保存在本机，仅用于读取你的列表；播放视频不使用它。")
+    fun youtubeRemembered(n: Int) = t("Subscriptions still update from $n remembered channels.", "订阅仍会从已记住的 $n 个频道更新。")
+    val forgetChannels get() = t("Forget channels", "清除频道")
     val signOutYoutube get() = t("Sign out of YouTube", "退出 YouTube")
-    val youtubeSignInAgain get() = t("YouTube access expired. Sign in to YouTube again in Settings.", "YouTube 授权已失效，请在设置中重新登录 YouTube。")
-    val youtubeQuota get() = t("YouTube's daily limit for this app is used up. Try again tomorrow.", "本应用今日的 YouTube 接口额度已用完，请明天再试。")
-    val youtubeApiDisabled get() = t("The YouTube Data API is turned off for this app's Google Cloud project.", "本应用的 Google Cloud 项目未启用 YouTube Data API。")
+    val youtubeSignInAgain get() = t("YouTube sign-in expired. Sign in again in Settings → YouTube.", "YouTube 登录已失效，请在 设置 → YouTube 中重新登录。")
     val signInGoogle get() = t("Sign in with Google", "使用 Google 登录")
     fun googleFailed(msg: String?) = t("Google sign-in failed: $msg. See README → YouTube sign-in setup.", "Google 登录失败：$msg。请参阅 README 中的 YouTube 登录设置。")
     fun biliSignedIn(name: String?) = t("Signed in${name?.let { " as $it" } ?: ""}. Following feed and 1080p are on.", "已登录${name?.let { "（$it）" } ?: ""}。可看关注动态和 1080p。")
@@ -651,7 +654,6 @@ class Strings(val language: AppLanguage) {
 
     // Errors shown as-is
     val needBiliLogin get() = t("Sign in to Bilibili on the phone first", "请先在手机上登录哔哩哔哩")
-    val finishYoutubeSignIn get() = t("Open Pitstop Video on the phone to finish YouTube sign-in", "请在手机上打开 Pitstop Video 完成 YouTube 登录")
 }
 
 /** Current strings inside Compose; recomposes when the language changes. */
