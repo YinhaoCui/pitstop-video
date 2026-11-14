@@ -9,6 +9,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
+import app.pitstop.video.BuildConfig
 import app.pitstop.video.core.COLLECTION_PREFIX
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.PlayableStream
@@ -124,12 +125,17 @@ class Downloads(
         }
     }
 
-    /** True when [item] can be downloaded at all (not live, not a whole playlist / folder). */
+    /**
+     * True when [item] can be downloaded at all (not live, not a whole playlist / folder). YouTube and
+     * YouTube Music are streaming-only unless the build opts in ([BuildConfig.YOUTUBE_DOWNLOADS]).
+     */
     fun canDownload(item: VideoItem): Boolean =
         !item.source.live && item.source != SourceId.RADIO && !item.id.startsWith(COLLECTION_PREFIX) &&
+            (BuildConfig.YOUTUBE_DOWNLOADS || item.source !in STREAM_ONLY) &&
             !source(item.source).isFolder(item)
 
     fun enqueue(item: VideoItem, quality: VideoQuality, toPhone: Boolean, toDrive: Boolean) {
+        if (!canDownload(item)) return
         val task = DownloadTask(nextId++, item, quality, toPhone, toDrive)
         _tasks.update { it + task }
         queue.trySend(task.id)
@@ -353,6 +359,8 @@ class Downloads(
     }
 
     private companion object {
+        /** Sources that are never saved to the device in public builds (streaming terms). */
+        val STREAM_ONLY = setOf(SourceId.YOUTUBE, SourceId.YT_MUSIC)
         const val TAG = "Downloads"
         const val CHUNK = 8L * 1024 * 1024
         const val KEY_TREE = "phone_tree"

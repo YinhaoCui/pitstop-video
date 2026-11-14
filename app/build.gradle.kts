@@ -1,7 +1,20 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+/**
+ * Opt-in features for personal builds, off in the public release: set them in local.properties or
+ * with -P (e.g. `pitstop.youtubeDownloads=true`).
+ * - pitstop.youtubeDownloads: allow saving YouTube / YouTube Music videos to the device.
+ * - pitstop.googleCloud: Google Drive features that need your own Google Cloud OAuth client (see README).
+ */
+val localProps = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+fun optIn(name: String): Boolean = (findProperty(name) ?: localProps.getProperty(name))?.toString()?.toBoolean() ?: false
 
 android {
     namespace = "app.pitstop.video"
@@ -16,6 +29,8 @@ android {
         targetSdk = 37
         versionCode = 5
         versionName = "0.5.0"
+        buildConfigField("boolean", "YOUTUBE_DOWNLOADS", optIn("pitstop.youtubeDownloads").toString())
+        buildConfigField("boolean", "GOOGLE_CLOUD", optIn("pitstop.googleCloud").toString())
     }
 
     buildTypes {
