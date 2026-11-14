@@ -7,6 +7,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -109,6 +112,7 @@ fun MusicTab(graph: AppGraph) {
  * the user picks) is the main way; the system file picker, which lists Drive only when the Drive app
  * is installed, stays as the alternative.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked: Boolean) {
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -131,20 +135,19 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (!hasFiles && !hasGooglePicked) Text(S.drivePickHint, style = MaterialTheme.typography.bodySmall)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
+        // Both ways in on one line; wraps instead of truncating when the font is too large to fit.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val tight = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            Button(contentPadding = tight, onClick = {
                 scope.launch {
                     runCatching { drivePicker.beginPick() }
                         .onSuccess { googleLauncher.launch(IntentSenderRequest.Builder(it.intentSender).build()) }
                         .onFailure { message = I18n.s.drivePickerFailed(it.message) to true }
                 }
-            }) { Text(S.driveGooglePick) }
-            if (hasGooglePicked) TextButton(onClick = drivePicker::clear) { Text(S.driveClear) }
+            }) { Text(S.driveGooglePick, maxLines = 1) }
+            OutlinedButton(contentPadding = tight, onClick = { files.launch(arrayOf("audio/*")) }) { Text(S.driveAddSongs, maxLines = 1) }
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { files.launch(arrayOf("audio/*")) }) { Text(S.driveAddSongs) }
-            if (hasFiles) TextButton(onClick = graph.driveSource::clearPicked) { Text(S.driveClear) }
-        }
+        if (hasGooglePicked || hasFiles) TextButton(onClick = { drivePicker.clear(); graph.driveSource.clearPicked() }) { Text(S.driveClear) }
         message?.let { (text, error) ->
             Text(
                 text, style = MaterialTheme.typography.bodySmall,
