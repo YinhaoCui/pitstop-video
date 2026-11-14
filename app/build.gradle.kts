@@ -33,10 +33,20 @@ android {
         buildConfigField("boolean", "GOOGLE_CLOUD", optIn("pitstop.googleCloud").toString())
     }
 
+    // Public releases are signed with a fixed key from the environment (CI secrets), so updates install
+    // over older versions. Without it, release builds fall back to the debug key for personal use.
+    val releaseKeystore = System.getenv("PITSTOP_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKeystore != null) create("release") {
+            storeFile = releaseKeystore
+            storePassword = System.getenv("PITSTOP_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("PITSTOP_KEY_ALIAS")
+            keyPassword = System.getenv("PITSTOP_KEY_PASSWORD")
+        }
+    }
     buildTypes {
         release {
-            // Sideloaded personal build: sign with the debug key so it installs directly.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (releaseKeystore != null) "release" else "debug")
         }
     }
     compileOptions {
