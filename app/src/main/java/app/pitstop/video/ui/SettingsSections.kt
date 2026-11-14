@@ -263,6 +263,14 @@ fun DrivingAudioSection() {
             }
             Switch(checked = on, onCheckedChange = Settings::setAudioOnlyWhileDriving)
         }
+        val videoOnly by Settings.carVideoOnly.collectAsStateWithLifecycle()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(S.carVideoOnly, style = MaterialTheme.typography.bodyLarge)
+                Text(S.carVideoOnlyText, style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = videoOnly, onCheckedChange = Settings::setCarVideoOnly)
+        }
     }
 }
 

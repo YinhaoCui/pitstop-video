@@ -70,6 +70,8 @@ data class HubState(
     val carActive: Boolean = false,
     /** This device itself is a car screen (Android Automotive OS or a head unit the user marked). */
     val inCarDevice: Boolean = false,
+    /** The app's car activity is showing on a car display (Android Auto parked app) and owns the video. */
+    val onCarDisplay: Boolean = false,
     val mode: DisplayMode = DisplayMode.FULL,
     /** Car is moving and the car screen is in use: video paused and hidden. */
     val drivingLocked: Boolean = false,
@@ -201,7 +203,7 @@ class PlaybackHub(
         scope.launch {
             combine(
                 driving.moving,
-                _state.map { it.carActive || it.inCarDevice }.distinctUntilChanged(),
+                _state.map { it.carActive || it.inCarDevice || it.onCarDisplay }.distinctUntilChanged(),
             ) { moving, onCarScreen -> moving && onCarScreen }
                 .distinctUntilChanged()
                 .collect { locked ->
@@ -700,7 +702,7 @@ class PlaybackHub(
     private fun applyVideoTrack() {
         val s = _state.value
         // Audio-only data saver: never pick a video track (matters for live HLS, which carries both).
-        val disabled = s.drivingLocked || (phoneBackground && !s.carActive) || resolvedQuality == VideoQuality.AUDIO
+        val disabled = s.drivingLocked || (phoneBackground && !s.carActive && !s.onCarDisplay) || resolvedQuality == VideoQuality.AUDIO
         if (player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_VIDEO) == disabled) return
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, disabled).build()
@@ -710,6 +712,11 @@ class PlaybackHub(
     fun playAllowed(): Boolean = _state.value.let { !it.drivingLocked || it.audioOnly || it.isMusic }
 
     fun setInCarDevice(value: Boolean) = _state.update { it.copy(inCarDevice = value) }
+
+    fun setOnCarDisplay(value: Boolean) {
+        _state.update { it.copy(onCarDisplay = value) }
+        applyVideoTrack()
+    }
 
     private fun buildMediaSource(stream: PlayableStream, item: VideoItem): MediaSource {
         val httpFactory = OkHttpDataSource.Factory(http)

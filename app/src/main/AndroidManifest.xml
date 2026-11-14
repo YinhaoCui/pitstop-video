@@ -24,7 +24,7 @@
     <uses-permission android:name="com.google.android.gms.permission.CAR_SPEED" />
     <!-- Android Auto: draw our own content (the video) on the map surface of MapWithContentTemplate.
          A point-of-interest app, not navigation: Android Auto hides sideloaded navigation apps. -->
-    <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />
+    <uses-permission android:name="androidx.car.app.${carPermission}" />
     <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />
 
     <!-- One APK for phones, tablets, Android Automotive OS cars and aftermarket head units. -->
@@ -36,10 +36,11 @@
 
     <application
         android:name=".PitstopApp"
+        android:appCategory="${appCategory}"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="@string/app_name"
+        android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@style/Theme.Pitstop">
 
@@ -64,6 +65,26 @@
             </intent-filter>
         </activity>
 
+        <!-- Android Auto parked app: this activity is shown on the car screen while parked. It is the only
+             route Android Auto accepts for a sideloaded build on a real car: the Car App Library service
+             below is refused there ("failed all other checks") and only shows on developer head units
+             (DHU). Parked apps need a category Android Auto has enabled; "video" is not yet ("Not allowed
+             native app"), so the app is declared a game. It is a second activity with its own task, so
+             the phone app can be open at the same time and act as a remote. -->
+        <activity
+            android:name=".ui.CarDisplayActivity"
+            android:theme="@style/Theme.Pitstop.Starting"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="${applicationId}.car"
+            android:excludeFromRecents="true"
+            android:resizeableActivity="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="${parkedCategory}" />
+            </intent-filter>
+        </activity>
         <activity
             android:name=".ui.BiliLoginActivity"
             android:exported="false" />
@@ -96,7 +117,7 @@
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
                 <!-- POI + MAP_TEMPLATES: MapWithContentTemplate's map surface is where the video is drawn. -->
-                <category android:name="androidx.car.app.category.POI" />
+                <category android:name="androidx.car.app.category.${carCategory}" />
             </intent-filter>
         </service>
     </application>

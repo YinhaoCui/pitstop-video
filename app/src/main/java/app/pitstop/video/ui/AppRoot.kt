@@ -68,6 +68,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -100,6 +101,7 @@ import app.pitstop.video.core.Category
 import app.pitstop.video.core.ListView
 import app.pitstop.video.core.Picked
 import app.pitstop.video.player.DisplayMode
+import app.pitstop.video.player.HubState
 import app.pitstop.video.player.RepeatMode
 import kotlinx.coroutines.CancellationException
 
@@ -109,13 +111,47 @@ private fun DriveSafelyReminder() {
     val connections by CarConnections.count.collectAsStateWithLifecycle()
     // Connections that happened before this screen appeared were already shown on the car screen.
     var seen by rememberSaveable { mutableStateOf(connections) }
-    if (connections > seen) {
+    // On the car screen itself (parked app): once each time the app opens there.
+    val carInstance = LocalCarInstance.current
+    var shownOnCar by rememberSaveable { mutableStateOf(false) }
+    if (connections > seen || (carInstance && !shownOnCar)) {
+        val dismiss = { seen = connections; shownOnCar = true }
         AlertDialog(
-            onDismissRequest = { seen = connections },
+            onDismissRequest = dismiss,
             title = { Text(S.driveSafelyTitle) },
             text = { Text(S.driveSafely) },
-            confirmButton = { TextButton(onClick = { seen = connections }) { Text(S.ok) } },
+            confirmButton = { TextButton(onClick = dismiss) { Text(S.ok) } },
         )
+    }
+}
+
+/** True inside the activity that Android Auto shows on the car screen (parked app). */
+val LocalCarInstance = staticCompositionLocalOf { false }
+
+/** The video is shown by another screen: the car template surface, or the car activity while this is the phone. */
+@Composable
+fun HubState.shownElsewhere(): Boolean = carActive || (onCarDisplay && !LocalCarInstance.current)
+
+/**
+ * The car screen in "video only" mode: the picture fills the screen (cover art for music). Tapping
+ * shows the player's own controls and a button that brings the whole app back.
+ */
+@Composable
+private fun CarVideoOnly(graph: AppGraph) {
+    val s by graph.hub.state.collectAsStateWithLifecycle()
+    DriveSafelyReminder()
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        when {
+            s.current == null -> Text(
+                S.carPickOnPhone, Modifier.align(Alignment.Center),
+                color = Color.White, style = MaterialTheme.typography.titleLarge,
+            )
+            s.isMusic -> MusicStage(graph, Modifier.fillMaxSize())
+            else -> PhonePlayer(graph, Modifier.fillMaxSize(), showControls = true)
+        }
+        IconButton(onClick = { Settings.setCarVideoOnly(false) }, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+            Icon(painterResource(R.drawable.ic_split), contentDescription = S.carShowApp, tint = Color.White.copy(alpha = 0.7f))
+        }
     }
 }
 
@@ -123,6 +159,10 @@ private fun DriveSafelyReminder() {
 fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenChange: (Boolean) -> Unit) {
     if (inPip) {
         PhonePlayer(graph, Modifier.fillMaxSize(), showControls = false)
+        return
+    }
+    if (LocalCarInstance.current && Settings.carVideoOnly.collectAsStateWithLifecycle().value) {
+        CarVideoOnly(graph)
         return
     }
     if (fullscreen) {
@@ -298,8 +338,9 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
     downloading?.let { DownloadDialog(graph, it) { downloading = null } }
     var showQueue by remember { mutableStateOf(false) }
     if (showQueue) QueueDialog(graph) { showQueue = false }
+    val elsewhere = s.shownElsewhere()
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        if (s.carActive) {
+        if (elsewhere) {
             Box(
                 Modifier.fillMaxWidth().height(96.dp).clip(MaterialTheme.shapes.large)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
@@ -413,6 +454,7 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
     val subtitleStyle by Settings.subtitles.collectAsStateWithLifecycle()
     // The quality button shows and hides together with the player's own controls.
     var controlsShown by remember { mutableStateOf(false) }
+    val elsewhere = s.shownElsewhere()
     Box(modifier.background(Color.Black)) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -426,17 +468,17 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
                 SubtitleStyling.apply(view.subtitleView, subtitleStyle)
                 view.useController = showControls && !s.drivingLocked
                 // Don't let the phone screen time out mid-video.
-                view.keepScreenOn = s.wantsToPlay && !s.carActive
-                val wanted = if (s.carActive) null else graph.hub.player
+                view.keepScreenOn = s.wantsToPlay && !elsewhere
+                val wanted = if (elsewhere) null else graph.hub.player
                 if (view.player !== wanted) view.player = wanted
             },
             onRelease = { it.player = null },
         )
-        if (showControls && controlsShown && !s.drivingLocked && !s.carActive && hasQualityChoice(s.current)) {
+        if (showControls && controlsShown && !s.drivingLocked && !elsewhere && hasQualityChoice(s.current)) {
             Box(Modifier.align(Alignment.TopStart).padding(10.dp)) { QualityButton(graph, onVideo = true) }
         }
         // On a car screen (Automotive OS / head unit) video is hidden while moving.
-        if (s.drivingLocked && !s.carActive) {
+        if (s.drivingLocked && !elsewhere) {
             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
                 Text(
                     if (s.audioOnly) "${S.audioOnlyDriving}\n${S.audioOnlyPark}" else S.pausedMoving,
