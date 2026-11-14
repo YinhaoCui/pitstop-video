@@ -1,5 +1,6 @@
 package app.pitstop.video.ui
 
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -110,7 +111,10 @@ fun PlayerScreen(graph: AppGraph, onClose: () -> Unit, onFullscreen: () -> Unit)
             IconButton(onClick = onClose) { Icon(painterResource(R.drawable.ic_arrow_down), S.back) }
             Text(S.nowPlaying, style = MaterialTheme.typography.titleMedium)
         }
-        LazyColumn(Modifier.fillMaxSize()) {
+        val listState = rememberLazyListState()
+        val reorder = rememberReorderState(listState)
+        reorder.bind(first = 3, count = s.queue.size, onMove = graph.hub::moveInQueue)
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
             item(key = "player") { NowPlayingCard(graph, onFullscreen = onFullscreen) }
             item(key = "tabs") {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -125,7 +129,7 @@ fun PlayerScreen(graph: AppGraph, onClose: () -> Unit, onFullscreen: () -> Unit)
             if (tab == 0) {
                 item(key = "qhead") { QueueHeader(graph, s.index, s.queue.size) }
                 itemsIndexed(s.queue, key = { i, it -> "q$i:${it.id}:${it.part}" }) { i, item ->
-                    QueueRow(graph, item, i, s.index, s.queue.size, onPlay = { graph.hub.jumpTo(i) })
+                    QueueRow(graph, item, i, s.index, s.queue.size, reorder, onPlay = { graph.hub.jumpTo(i) })
                 }
             } else if (playlists.isEmpty()) {
                 item(key = "none") { Text(S.noPlaylists, Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium) }

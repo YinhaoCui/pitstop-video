@@ -58,25 +58,26 @@ fun QueueHeader(graph: AppGraph, current: Int, size: Int) {
 }
 
 /**
- * One queue entry: small cover, title, creator. Tap plays it; long-press (or the ⋮ button) opens
+ * One queue entry: ⋮⋮ drag handle, small cover, title, creator. Tap plays it; long-press (or the ⋮ button) opens
  * Play next / Move up / Move down / Move to top / Remove / Add to playlist.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun QueueRow(graph: AppGraph, item: VideoItem, i: Int, current: Int, size: Int, onPlay: () -> Unit) {
+fun QueueRow(graph: AppGraph, item: VideoItem, i: Int, current: Int, size: Int, reorder: ReorderState, onPlay: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     if (adding) AddToPlaylistDialog(graph, item) { adding = false }
     val haptics = LocalHapticFeedback.current
     val playing = i == current
     val thumb by produceState(graph.thumbnails.cached(item), item) { value = graph.thumbnails.load(item) }
-    Box {
+    Box(Modifier.reorderable(reorder, i, MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Row(
             Modifier.fillMaxWidth()
                 .combinedClickable(onClick = onPlay, onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); menu = true })
-                .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                .padding(start = 0.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            DragHandle(reorder, i, size)
             Box(
                 Modifier.width(if (item.source.music) 44.dp else 72.dp).aspectRatio(if (item.source.music) 1f else 16f / 9f)
                     .clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainerHighest),

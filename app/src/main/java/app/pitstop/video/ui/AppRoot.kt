@@ -594,19 +594,23 @@ fun VideoRow(
     onAuthor: (() -> Unit)? = null,
     /** Long-press: the item's menu (play next, add to queue, playlists, download). */
     onLongClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    /** Shown before the cover, e.g. a drag handle; the row's left padding shrinks to make room. */
+    leading: (@Composable () -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
 ) {
     val thumb by produceState(graph.thumbnails.cached(item), item) { value = graph.thumbnails.load(item) }
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
-        Modifier.fillMaxWidth()
+        modifier.fillMaxWidth()
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick?.let { l -> { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); l() } },
             )
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(start = if (leading != null) 0.dp else 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        leading?.invoke()
         Box(
             // Songs and playlists get square covers; videos 16:9.
             Modifier.width(if (item.source.music) 76.dp else 140.dp).aspectRatio(if (item.source.music) 1f else 16f / 9f)
