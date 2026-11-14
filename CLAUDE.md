@@ -24,4 +24,13 @@ Car App Library 1.7 for the car. See README.md for the architecture overview.
   a POI app with `MAP_TEMPLATES`, not navigation: Android Auto hides sideloaded navigation apps even with
   Unknown sources on (its log: `CAR.VALIDATOR: Package DENIED; failed all other checks`). Needs car API 7+.
   Respect host limits (max 4 actions per strip, list length from `ConstraintManager`).
+- Android Auto 18 hides this sideloaded app from the phone's *Customize launcher* while no car is
+  connected (`CAR.VALIDATOR: ... failed all other checks`, `CarInfo is null`), even with Unknown
+  sources on, a debuggable build or `adb install -i com.android.vending`. It is listed in the car's
+  app grid and in Customize launcher once a car (or the DHU) is connected. Test car changes with the
+  DHU: AA → ⋮ → Start head unit server, `adb forward tcp:5277 tcp:5277`, run
+  `extras/google/auto/desktop-head-unit.exe` (end it with its `quit` command, not by killing it,
+  or AA stays "Already connected").
+- Google Drive picker (`drive.file`): picking a folder grants the folder, not the files in it, so the
+  music picker asks for songs only; folder picking is kept for the downloads destination.
 - Commits: small and focused; run unit tests + assembleDebug before committing.

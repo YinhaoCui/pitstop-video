@@ -64,8 +64,7 @@ or NetEase instead.
   when you hold a row near the edge. Long-press a row to move it to the top or remove it;
   *Clear upcoming* empties what's left. Screen readers get *Move up* / *Move down* actions.
 - Playlists mix every platform. Reorder them by dragging (in their own order), sort them and keep
-  a sorted order, play or shuffle from the phone or the car. Adding a Drive folder adds every
-  song inside it.
+  a sorted order, play or shuffle from the phone or the car.
 - **Import** (Playlists tab): paste a link or a song list, or open a file. NetEase, YouTube /
   YouTube Music playlists and Bilibili favourites import as they are. QQ Music, Kugou, Spotify and
   Apple Music playlists, CSV files (Exportify, TuneMyMusic…) and "Artist - Title" text are matched
@@ -208,8 +207,16 @@ Android Auto only shows apps that are not from the Play Store when developer mod
 1. On the phone: **Settings → Connected devices → Connection preferences → Android Auto**.
 2. Scroll down, tap **Version** ~10 times → accept developer mode.
 3. ⋮ menu → **Developer settings** → enable **Unknown sources**.
-4. **Customize launcher** → make sure *Pitstop Video* is ticked.
-5. Plug into the CX-5 (or connect wirelessly) and open *Pitstop Video* from the Android Auto launcher.
+4. Plug into the CX-5 (or connect wirelessly) and open *Pitstop Video* from the Android Auto launcher.
+
+*Customize launcher* in the phone's Android Auto settings lists Pitstop Video only **while the phone
+is connected to a car**. With no car connected, Android Auto can't verify an app that isn't from the
+Play Store and leaves it out of that list (its log says `CAR.VALIDATOR: Package DENIED; failed all
+other checks` and `CarInfo is null`). The app still appears in the car's app grid. To reorder or
+hide it, open *Customize launcher* while connected.
+
+When Pitstop opens on the car screen, it shows a reminder to keep your eyes on the road; if the
+phone app is open at that moment, the phone shows it too.
 
 Pitstop Video is listed in the Android Auto app grid (A–Z, after *Phone*). It draws its video on
 Android Auto's map surface; use *Browse → Exit* to pause and close it. Switching to another car app pauses
@@ -232,31 +239,14 @@ remembered channels while signed out.
 
 ## Google Drive
 
-*Music → Google Drive → Pick from Google Drive* opens Google's own Drive picker: users pick songs or
-whole folders, and the app can see only what they picked (the non-sensitive `drive.file` scope).
-It does not need the Google Drive app. Downloads can also be saved to Drive the same way.
+*Music → Google Drive → Pick from Google Drive* opens Google's own Drive picker: open a folder and
+select its songs (several at once). The app can see only the songs you picked (the non-sensitive
+`drive.file` scope) and doesn't need the Google Drive app. Downloads can also be saved to Drive.
 *Add from files* (the phone's file picker) stays as an alternative; it lists Drive only when the
 Drive app is installed.
 
-The picker needs an OAuth client for the app's signing key. Whoever publishes the APK sets this up
-once in their own Google Cloud project; people installing the release need nothing:
-
-1. In [Google Cloud Console](https://console.cloud.google.com/) create a project and enable the **Google Drive API**.
-2. *OAuth consent screen*: user type **External**, add only the `.../auth/drive.file` scope, then
-   **Publish app** (status *In production*). Non-sensitive scopes like this one don't go through
-   Google's verification review and have no test-user limit; check the console's verification
-   status after publishing.
-3. *Credentials → Create credentials → OAuth client ID → Android*, package `app.pitstop.video`, one
-   client per signing key: the release key (`keytool -list -v -keystore pitstop-release.jks`) and,
-   for your own debug builds, the debug key (`./gradlew signingReport`).
-
-No client ID goes into the code; Google matches the package name + SHA-1. Someone who builds the
-app with their own key needs their own client, or uses *Add from files*.
-
-Personal builds can also browse the whole Drive after signing in, with
-`pitstop.driveFullAccess=true` (see *Build options*). That uses the restricted `drive.readonly`
-scope, which Google only allows for test users unless the app passes a paid security assessment,
-so it is never on in the public release.
+Publishing your own build? The picker needs a one-time Google Cloud setup for your signing key:
+see [docs/google-drive-setup.md](docs/google-drive-setup.md).
 
 ## Bilibili sign-in
 
