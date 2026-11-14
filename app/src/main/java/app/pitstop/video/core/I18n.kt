@@ -444,6 +444,7 @@ class Strings(val language: AppLanguage) {
     val signOutNetease get() = t("Sign out of NetEase", "退出网易云音乐")
     val signInPhoneWeb get() = t("Sign in (phone / password)", "手机号 / 密码登录")
     val neteaseQrHint get() = t("Scan with the NetEase Cloud Music app on another phone.", "请在另一台手机上用网易云音乐 App 扫码。")
+    val paidContent get() = t("This is paid content. Pitstop plays only what is free or included in your own account.", "这是付费内容。Pitstop 只播放免费内容或你账号已包含的内容。")
     val neteaseVip get() = t("NetEase blocks this song here. It needs VIP, or plays only in mainland China.", "网易云在此无法播放这首歌：需要 VIP，或仅限中国大陆。")
     val needNeteaseLogin get() = t("Sign in to NetEase Cloud Music in the Music tab first", "请先在“音乐”页登录网易云音乐")
     val driveSignedIn get() = t("Signed in. Audio files in your Drive stream from here.", "已登录。Drive 里的音频文件可直接在线播放。")
