@@ -1,8 +1,11 @@
 package app.pitstop.video.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
@@ -23,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -170,11 +174,25 @@ fun DragHandle(state: ReorderState, index: Int, count: Int) {
     Box(
         Modifier.size(40.dp)
             .pointerInput(state, index) {
-                detectVerticalDragGestures(
-                    onDragStart = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); state.start(index) },
-                    onDragEnd = { state.end() },
-                    onDragCancel = { state.end() },
-                ) { change, dy -> change.consume(); state.drag(dy) }
+                awaitEachGesture {
+                    // The grip owns every touch that starts on it: consuming the down keeps the row's
+                    // tap and long-press (the item menu) from firing when a finger rests here before dragging.
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
+                    var overSlop = 0f
+                    val drag = awaitVerticalTouchSlopOrCancellation(down.id) { change, over ->
+                        change.consume()
+                        overSlop = over
+                    } ?: return@awaitEachGesture
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    state.start(index)
+                    state.drag(overSlop)
+                    verticalDrag(drag.id) { change ->
+                        state.drag(change.positionChange().y)
+                        change.consume()
+                    }
+                    state.end()
+                }
             }
             .semantics {
                 customActions = buildList {
