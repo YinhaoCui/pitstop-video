@@ -184,6 +184,7 @@ Outside mainland China the app prefers Bilibili's Akamai servers and avoids its 
   have are refused (NetEase VIP songs, Bilibili paid trial clips), not played as previews.
 - Public builds do not save YouTube or YouTube Music videos to the device.
 - Rights holders with a concern can open an issue on this repository.
+- Privacy: the app collects nothing for the developer; see [PRIVACY.md](PRIVACY.md).
 
 ## License
 
