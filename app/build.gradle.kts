@@ -27,8 +27,8 @@ android {
         // Android 8.0+: older phones, tablets and most aftermarket Android head units.
         minSdk = 26
         targetSdk = 37
-        versionCode = 8
-        versionName = "0.6.2"
+        versionCode = 9
+        versionName = "0.6.3"
         buildConfigField("boolean", "YOUTUBE_DOWNLOADS", optIn("pitstop.youtubeDownloads").toString())
         buildConfigField("boolean", "DRIVE_FULL_ACCESS", optIn("pitstop.driveFullAccess").toString())
         // -Ppitstop.idSuffix=.dev installs a test copy next to the release (different signing key, own data);
