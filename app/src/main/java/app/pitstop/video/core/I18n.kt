@@ -515,6 +515,8 @@ class Strings(val language: AppLanguage) {
     val pickVideo get() = t("Pick something to play", "选一个开始播放")
     val pausedCarMoving get() = t("Paused while the car moves", "车辆行驶中，已暂停")
     val playingOnCar get() = t("Playing on the car display", "正在车机屏幕上播放")
+    val driveSafelyTitle get() = t("Connected to your car", "已连接到车辆")
+    val driveSafely get() = t("Keep your eyes on the road. Don't look at or use your phone while driving.", "请专心看路，驾驶时不要查看或使用手机。")
     val playPause get() = t("Play/pause", "播放/暂停")
     val previous get() = t("Previous", "上一个")
     val next get() = t("Next", "下一个")
