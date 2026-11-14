@@ -19,8 +19,9 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="com.google.android.gms.permission.CAR_SPEED" />
-    <!-- Android Auto: draw our own content (the video) on the car screen -->
-    <uses-permission android:name="androidx.car.app.NAVIGATION_TEMPLATES" />
+    <!-- Android Auto: draw our own content (the video) on the map surface of MapWithContentTemplate.
+         A point-of-interest app, not navigation: Android Auto hides sideloaded navigation apps. -->
+    <uses-permission android:name="androidx.car.app.MAP_TEMPLATES" />
     <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />
 
     <!-- One APK for phones, tablets, Android Automotive OS cars and aftermarket head units. -->
@@ -44,7 +45,7 @@
             android:resource="@xml/automotive_app_desc" />
         <meta-data
             android:name="androidx.car.app.minCarApiLevel"
-            android:value="3" />
+            android:value="7" />
 
         <activity
             android:name=".ui.MainActivity"
@@ -82,8 +83,8 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
-                <!-- Navigation category is what grants a full drawing surface on Android Auto. -->
-                <category android:name="androidx.car.app.category.NAVIGATION" />
+                <!-- POI + MAP_TEMPLATES: MapWithContentTemplate's map surface is where the video is drawn. -->
+                <category android:name="androidx.car.app.category.POI" />
             </intent-filter>
         </service>
     </application>

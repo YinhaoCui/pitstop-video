@@ -20,6 +20,8 @@ Car App Library 1.7 for the car. See README.md for the architecture overview.
 - All user-visible text lives in `core/I18n.kt` (English + Simplified Chinese); use `S.x` in Compose,
   `I18n.s.x` elsewhere. Never hard-code UI strings.
 - Every source implements `core/VideoSource`; add new feeds there instead of special-casing the UI.
-- Car templates: the root must stay a `NavigationTemplate` (it is what provides the drawing surface).
+- Car templates: the root is a `MapWithContentTemplate` (its map surface is where the video is drawn). The app is
+  a POI app with `MAP_TEMPLATES`, not navigation: Android Auto hides sideloaded navigation apps even with
+  Unknown sources on (its log: `CAR.VALIDATOR: Package DENIED; failed all other checks`). Needs car API 7+.
   Respect host limits (max 4 actions per strip, list length from `ConstraintManager`).
 - Commits: small and focused; run unit tests + assembleDebug before committing.

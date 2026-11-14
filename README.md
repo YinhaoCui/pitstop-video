@@ -34,9 +34,10 @@ when Android Auto is connected the video goes to the car display.
 
 ## How it works
 
-- Android Auto only gives third-party apps a free drawing surface through the **navigation**
-  template, so the app registers as a navigation-category car app
-  (`androidx.car.app.category.NAVIGATION`). `CarVideoRenderer` receives that surface, creates a
+- Android Auto gives the app a drawing surface through `MapWithContentTemplate` (car API 7+): the
+  app registers as a point-of-interest car app with the `MAP_TEMPLATES` permission
+  (`androidx.car.app.category.POI`). Android Auto hides sideloaded *navigation* apps even with
+  Unknown sources on, so the navigation category isn't used. `CarVideoRenderer` receives that surface, creates a
   private `VirtualDisplay` on it and shows `CarPresentation` (a normal Android view tree with a
   Media3 `PlayerView`) there.
 - Playback is one Media3 ExoPlayer in `PlaybackHub`, shared by phone and car.

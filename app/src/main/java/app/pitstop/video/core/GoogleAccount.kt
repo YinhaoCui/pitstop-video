@@ -26,7 +26,15 @@ open class GoogleScopedAccount(
     val signedIn: StateFlow<Boolean> = _signedIn.asStateFlow()
 
     private val client get() = Identity.getAuthorizationClient(context)
-    private fun request() = AuthorizationRequest.builder().setRequestedScopes(listOf(Scope(scope))).build()
+    /**
+     * Only this account's own scope: Google would otherwise add every scope granted earlier, and
+     * the Drive picker's `drive.file` can't be requested together with others ("Access blocked:
+     * scopes that cannot be requested together").
+     */
+    private fun request() = AuthorizationRequest.builder()
+        .setRequestedScopes(listOf(Scope(scope)))
+        .setOptOutIncludingGrantedScopes(true)
+        .build()
 
     /** Returns a PendingIntent to show the consent UI, or null when access was granted silently. */
     suspend fun beginSignIn(): PendingIntent? {

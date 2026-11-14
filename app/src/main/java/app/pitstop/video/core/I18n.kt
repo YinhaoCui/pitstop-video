@@ -373,6 +373,7 @@ class Strings(val language: AppLanguage) {
     val reconnecting get() = t("Connection lost. Reconnecting…", "网络中断，正在重新连接…")
     fun qualityLowered(h: Int) = t("Slow connection: switched to ${h}p", "网络较慢，已切换到 ${h}p")
     val nowPlaying get() = t("Now playing", "正在播放")
+    val carPickSomething get() = t("Pick something in Browse.", "在“浏览”里选一个开始播放。")
     val close get() = t("Close", "关闭")
     val cancel get() = t("Cancel", "取消")
     val delete get() = t("Delete", "删除")
