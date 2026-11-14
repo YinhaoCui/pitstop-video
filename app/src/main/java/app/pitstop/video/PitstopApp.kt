@@ -18,6 +18,7 @@ import app.pitstop.video.core.ThumbnailLoader
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.buildHttpClient
 import app.pitstop.video.core.shownSources
+import app.pitstop.video.importer.PlaylistImport
 import app.pitstop.video.newpipe.PeerTubeSource
 import app.pitstop.video.newpipe.SoundCloudSource
 import app.pitstop.video.newpipe.BandcampSource
@@ -108,6 +109,9 @@ class AppGraph(app: Application) {
     val shownMusicSources: List<VideoSource> get() = shownSources(musicSources, Settings.hiddenSources.value) { it.id }
 
     fun source(id: SourceId): VideoSource = sources.first { it.id == id }
+
+    /** Playlist import from links (NetEase, QQ, Kugou, Spotify, Apple Music, YouTube, Bilibili), text and files. */
+    val importer by lazy { PlaylistImport(http, biliApi, neteaseApi, ::source) }
 
     private val devicePrefs = app.getSharedPreferences("device", Context.MODE_PRIVATE)
 

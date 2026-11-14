@@ -71,6 +71,7 @@ fun MusicTab(graph: AppGraph) {
     val sources = remember(hidden) { graph.shownMusicSources }
     var selected by rememberSaveable { mutableStateOf(sources.first().id) }
     val source = sources.firstOrNull { it.id == selected } ?: sources.first()
+    var pendingQuery by remember { mutableStateOf<String?>(null) }
 
     val ytSignedIn by graph.youTubeAccount.signedIn.collectAsStateWithLifecycle()
     val biliLoggedIn by graph.biliCookies.loggedIn.collectAsStateWithLifecycle()
@@ -96,6 +97,8 @@ fun MusicTab(graph: AppGraph) {
         SourceTab(
             graph, source,
             refreshKey = "$ytSignedIn/$biliLoggedIn/$neteaseSignedIn/$driveSignedIn/${drivePicked.size}/${googlePicked.size}",
+            siblings = sources, pendingQuery = pendingQuery, onPendingConsumed = { pendingQuery = null },
+            onSearchIn = { s, q -> selected = s.id; pendingQuery = q },
         )
     }
 }

@@ -122,6 +122,8 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
     var videoSourceId by rememberSaveable { mutableStateOf(videoSources.first().id) }
     val liveSources = remember(hidden) { graph.shownLiveSources }
     var liveSourceId by rememberSaveable { mutableStateOf(liveSources.firstOrNull()?.id) }
+    // Search everywhere → More: switch platform and run the same search there.
+    var pendingQuery by remember { mutableStateOf<String?>(null) }
     val state by graph.hub.state.collectAsStateWithLifecycle()
     // Re-read feed lists after sign-in / sign-out.
     val ytSignedIn by graph.youTubeAccount.signedIn.collectAsStateWithLifecycle()
@@ -134,12 +136,20 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
                 Page.VIDEO -> {
                     val index = videoSources.indexOfFirst { it.id == videoSourceId }.coerceAtLeast(0)
                     SourceChips(videoSources.map { S.sourceName(it.id) }, index) { videoSourceId = videoSources[it].id }
-                    SourceTab(graph, videoSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn")
+                    SourceTab(
+                        graph, videoSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn",
+                        siblings = videoSources, pendingQuery = pendingQuery, onPendingConsumed = { pendingQuery = null },
+                        onSearchIn = { s, q -> videoSourceId = s.id; pendingQuery = q },
+                    )
                 }
                 Page.LIVE -> if (liveSources.isNotEmpty()) {
                     val index = liveSources.indexOfFirst { it.id == liveSourceId }.coerceAtLeast(0)
                     SourceChips(liveSources.map { S.sourceName(it.id) }, index) { liveSourceId = liveSources[it].id }
-                    SourceTab(graph, liveSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn")
+                    SourceTab(
+                        graph, liveSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn",
+                        siblings = liveSources, pendingQuery = pendingQuery, onPendingConsumed = { pendingQuery = null },
+                        onSearchIn = { s, q -> liveSourceId = s.id; pendingQuery = q },
+                    )
                 }
                 Page.MUSIC -> MusicTab(graph)
                 Page.PLAYLISTS -> PlaylistsTab(graph)
@@ -412,7 +422,17 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
 
 
 @Composable
-internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) {
+internal fun SourceTab(
+    graph: AppGraph,
+    source: VideoSource,
+    refreshKey: String,
+    /** The other platforms of this tab, for search everywhere. */
+    siblings: List<VideoSource> = emptyList(),
+    /** A search handed over from search everywhere's More. */
+    pendingQuery: String? = null,
+    onPendingConsumed: () -> Unit = {},
+    onSearchIn: ((VideoSource, String) -> Unit)? = null,
+) {
     if (source is PermissionSource) {
         var granted by remember { mutableStateOf(source.hasPermission()) }
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -453,6 +473,10 @@ internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String)
     // A category picked in the Categories window replaces the feed until it's cleared.
     var categoryKey by rememberSaveable(source.id) { mutableStateOf<String?>(null) }
     var categoryTitle by rememberSaveable(source.id) { mutableStateOf("") }
+    var everywhere by rememberSaveable(source.id) { mutableStateOf(false) }
+    LaunchedEffect(pendingQuery, source.id) {
+        pendingQuery?.let { query = it; activeQuery = it; everywhere = false; categoryKey = null; onPendingConsumed() }
+    }
     var reload by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf<VideoItem?>(null) }
     adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
@@ -484,6 +508,11 @@ internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String)
                     label = { Text("${S.searchResults}: $q", maxLines = 1) },
                     trailingIcon = { Icon(painterResource(R.drawable.ic_close), S.clearHistory, Modifier.size(16.dp)) },
                 )
+                // Same search on every platform of this tab.
+                if (siblings.count { it.supportsSearch } > 1) FilterChip(
+                    selected = everywhere, onClick = { everywhere = !everywhere },
+                    label = { Text(S.searchEverywhere) },
+                )
             }
             // Categories: opens the window with every category; shows the picked one (x clears it).
             if (categories.isNotEmpty()) {
@@ -510,6 +539,14 @@ internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String)
         }
         val q = activeQuery
         val cat = categoryKey?.let { Category(it, categoryTitle).asFeed() }
+        if (q != null && everywhere) {
+            EverywhereResults(
+                graph, siblings, q,
+                onMore = { s -> if (s.id == source.id) everywhere = false else onSearchIn?.invoke(s, q) },
+                onFolder = { s, item -> if (s.id == source.id) openFolders = openFolders + item else onSearchIn?.invoke(s, q) },
+            )
+            return@Column
+        }
         PagedVideoList(
             graph, source,
             loadKey = listOf(source.id, q, cat?.key, feed?.key, reload, refreshKey),

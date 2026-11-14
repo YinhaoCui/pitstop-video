@@ -63,6 +63,7 @@ import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** State of an endless list: the first page is loading / failed / loaded (with the next page's cursor). */
 internal sealed interface LoadState {
@@ -313,5 +314,70 @@ private fun CategoryRow(graph: AppGraph, source: VideoSource, c: Category, selec
             Spacer(Modifier.size(12.dp))
         }
         Text(c.title, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/**
+ * Search everywhere: the same query on every platform of this tab at once; each platform's top
+ * results under its name, with More to open that platform's full (endless) results.
+ */
+@Composable
+internal fun EverywhereResults(
+    graph: AppGraph,
+    sources: List<VideoSource>,
+    query: String,
+    onMore: (VideoSource) -> Unit,
+    onFolder: (VideoSource, VideoItem) -> Unit,
+) {
+    val results = remember(query, sources) { androidx.compose.runtime.mutableStateMapOf<app.pitstop.video.core.SourceId, Result<List<VideoItem>>>() }
+    LaunchedEffect(query, sources) {
+        results.clear()
+        kotlinx.coroutines.coroutineScope {
+            sources.filter { it.supportsSearch }.forEach { s ->
+                launch {
+                    results[s.id] = try {
+                        Result.success(kotlinx.coroutines.withTimeout(20_000) { s.search(query) }.take(5))
+                    } catch (e: CancellationException) {
+                        if (e is kotlinx.coroutines.TimeoutCancellationException) Result.failure(e) else throw e
+                    } catch (e: Exception) {
+                        Result.failure(e)
+                    }
+                }
+            }
+        }
+    }
+    LazyColumn(Modifier.fillMaxSize()) {
+        sources.filter { it.supportsSearch }.forEach { s ->
+            item(key = "h:${s.id}") {
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(S.sourceName(s.id), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    TextButton(onClick = { onMore(s) }) { Text(S.moreResults) }
+                }
+            }
+            val r = results[s.id]
+            when {
+                r == null -> item(key = "l:${s.id}") {
+                    Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
+                }
+                r.isFailure -> item(key = "e:${s.id}") {
+                    Text(r.exceptionOrNull()?.message ?: S.noVideos, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                r.getOrNull().isNullOrEmpty() -> item(key = "n:${s.id}") {
+                    Text(S.noVideos, Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
+                }
+                else -> {
+                    val items = r.getOrDefault(emptyList())
+                    itemsIndexed(items, key = { i, it -> "${s.id}:$i:${it.id}" }) { _, item ->
+                        VideoRow(graph, item, onClick = {
+                            if (s.isFolder(item)) onFolder(s, item)
+                            else {
+                                val tracks = items.filterNot(s::isFolder)
+                                graph.hub.playQueue(tracks, tracks.indexOf(item))
+                            }
+                        })
+                    }
+                }
+            }
+        }
     }
 }

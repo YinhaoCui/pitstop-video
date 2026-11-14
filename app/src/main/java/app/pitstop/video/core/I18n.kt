@@ -98,6 +98,35 @@ class Strings(val language: AppLanguage) {
     val clearCategory get() = t("Clear category", "取消分类")
     val searchResults get() = t("Search results", "搜索结果")
 
+    // --- Playlist import / export, search everywhere ---
+    val importPlaylist get() = t("Import", "导入")
+    val importTitle get() = t("Import a playlist", "导入歌单")
+    val importHint get() = t("Paste a playlist link (NetEase, QQ Music, Kugou, Spotify, Apple Music, YouTube, Bilibili) or a list of songs, one \"Artist - Title\" per line.", "粘贴歌单链接（网易云、QQ音乐、酷狗、Spotify、Apple Music、YouTube、B站），或歌曲列表，每行一首“歌手 - 歌名”。")
+    val importOpenFile get() = t("Open file", "打开文件")
+    val importAsMusic get() = t("Songs", "歌曲")
+    val importAsVideo get() = t("Videos", "视频")
+    val importMatchOn get() = t("Find songs on", "在这些平台查找")
+    val importStart get() = t("Import", "开始导入")
+    val importReading get() = t("Reading the playlist…", "正在读取歌单…")
+    fun importMatching(done: Int, total: Int) = t("Finding songs: $done / $total", "正在匹配歌曲：$done / $total")
+    fun importSummary(found: Int, total: Int) = t("Found $found of $total", "找到 $found / $total 首")
+    val importNotMatched get() = t("Not found", "未找到")
+    val importSave get() = t("Save playlist", "保存歌单")
+    val importName get() = t("Playlist name", "歌单名称")
+    val importUnknownLink get() = t("This link isn't a playlist Pitstop can read.", "无法识别这个歌单链接。")
+    val importNothingFound get() = t("No songs found in this text.", "没有在文本中找到歌曲。")
+    val importText get() = t("Text", "文本")
+    fun importedPlaylists(n: Int) = t("Imported $n playlist(s)", "已导入 $n 个歌单")
+    fun importFrom(platform: String) = t("From $platform", "来自 $platform")
+    val exportPlaylist get() = t("Export", "导出")
+    val exportPitstop get() = t("Pitstop file (re-importable)", "Pitstop 文件（可再次导入）")
+    val exportCsv get() = t("CSV spreadsheet", "CSV 表格")
+    val exportText get() = t("Text (Artist - Title)", "文本（歌手 - 歌名）")
+    val exportAll get() = t("Export all", "全部导出")
+    val exported get() = t("Saved", "已保存")
+    val searchEverywhere get() = t("All platforms", "全部平台")
+    val moreResults get() = t("More", "更多")
+
     // --- Category strings: Bilibili family (add new ones here) ---
 
     // --- Category strings: YouTube / YouTube Music / SoundCloud / Bandcamp / PeerTube (add new ones here) ---
@@ -281,6 +310,12 @@ class Strings(val language: AppLanguage) {
     }
 
     // --- Category strings: NetEase (add new ones here) ---
+    // Playlist importers (QQ Music / Kugou / Spotify / Apple Music)
+    val importBadLink get() = t("This link is not a playlist that can be imported.", "这个链接不是可导入的歌单。")
+    val importNotFound get() = t("Playlist not found, or it is private. Make it public and try again.", "歌单不存在或未公开，请设为公开后再试。")
+    val importEmpty get() = t("No readable tracks in this playlist.", "这个歌单里没有可读取的歌曲。")
+    val importFailed get() = t("Could not read the playlist right now. Try again later.", "暂时无法读取歌单，请稍后再试。")
+    val importKugouList get() = t("Kugou playlist", "酷狗歌单")
     val neteaseCharts get() = t("Charts", "排行榜")
 
     // --- Strings for SoundCloud / Bandcamp / PeerTube (add new ones here) ---

@@ -307,6 +307,50 @@ class BiliApi(
         return BiliZones.uploaderPage(d, mid, page, UPLOADER_PAGE_SIZE, source)
     }
 
+    /**
+     * A public favourites folder (收藏夹) for playlist import: (folder name, every video), 20 per request.
+     * Private folders answer an error, shown to the user.
+     */
+    suspend fun favFolder(mediaId: Long, source: SourceId, limit: Int = 1000): Pair<String, List<VideoItem>> {
+        val out = mutableListOf<VideoItem>()
+        var name = ""
+        var page = 1
+        while (out.size < limit) {
+            val d = data("https://api.bilibili.com/x/v3/fav/resource/list?media_id=$mediaId&pn=$page&ps=20&platform=web")
+            name = d.optJSONObject("info")?.optString("title").orEmpty().ifEmpty { name }
+            d.optJSONArray("medias").objects().forEach { m ->
+                val bvid = m.optString("bvid").ifEmpty { return@forEach }
+                out += VideoItem(
+                    source = source, id = bvid, title = BiliText.clean(m.optString("title")),
+                    author = m.optJSONObject("upper")?.optString("name"),
+                    authorId = m.optJSONObject("upper")?.optLong("mid")?.takeIf { it > 0 }?.toString(),
+                    thumbnailUrl = BiliText.thumb(m.optString("cover")),
+                    durationSec = m.optLong("duration").takeIf { it > 0 },
+                )
+            }
+            if (!d.optBoolean("has_more")) break
+            page++
+        }
+        return name to out
+    }
+
+    /** An uploader's collection (合集) for playlist import: (collection name, every video), 30 per request. */
+    suspend fun season(mid: Long, seasonId: Long, source: SourceId, limit: Int = 1000): Pair<String, List<VideoItem>> {
+        val out = mutableListOf<VideoItem>()
+        var name = ""
+        var page = 1
+        while (out.size < limit) {
+            val d = data("https://api.bilibili.com/x/polymer/web-space/seasons_archives_list?mid=$mid&season_id=$seasonId&page_num=$page&page_size=30")
+            name = d.optJSONObject("meta")?.optString("name").orEmpty().ifEmpty { name }
+            val got = d.optJSONArray("archives").objects()
+            got.forEach { out += archiveToItem(it, source) }
+            val total = d.optJSONObject("page")?.optInt("total") ?: 0
+            if (got.isEmpty() || out.size >= total) break
+            page++
+        }
+        return name to out
+    }
+
     /** Music charts: the first page of the music center's comprehensive chart. */
     suspend fun musicRanking(): List<VideoItem> = musicRankingPage(1).items
 
