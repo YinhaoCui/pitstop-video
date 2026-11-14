@@ -172,3 +172,19 @@ Outside mainland China the app prefers Bilibili's Akamai servers and avoids its 
   have are refused (NetEase VIP songs, Bilibili paid trial clips), not played as previews.
 - Public builds do not save YouTube or YouTube Music videos to the device.
 - Rights holders with a concern can open an issue on this repository.
+
+## License
+
+Copyright (C) 2026 Yinhao Cui
+
+Pitstop Video is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+
+In short: anyone may use, study, change and share the app. Anyone who distributes it, changed or
+not, must do so under the same license and make the complete source code available.
+
+It includes [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) (GPL-3.0) and
+other open-source libraries under their own compatible licenses.
