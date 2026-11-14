@@ -339,9 +339,14 @@ class PlaybackHub(
                 resolvedQuality = if (item.source.music || item.source == SourceId.LOCAL) null else StreamPolicy.quality
                 _state.update { it.copy(noPicture = stream.audioOnly) }
                 applyVideoTrack()
+                // Adaptive streams (live HLS): never pick a rendition above the quality the user allows.
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setMaxVideoSize(Int.MAX_VALUE, if (StreamPolicy.maxHeight > 0) StreamPolicy.maxHeight else Int.MAX_VALUE)
+                    .build()
                 player.setMediaSource(buildMediaSource(stream, item))
                 player.prepare()
-                if (resumeAtMs > 0) player.seekTo(resumeAtMs)
+                // Live: rejoin at the live edge, not at the old position.
+                if (resumeAtMs > 0 && !stream.live) player.seekTo(resumeAtMs)
                 resumeAtMs = 0
                 player.playWhenReady = playAllowed()
                 _state.update { it.copy(loading = false) }
@@ -473,6 +478,8 @@ class PlaybackHub(
         val s = _state.value
         val next = s.queue.getOrNull(s.index + 1) ?: return
         if (next.id.startsWith(COLLECTION_PREFIX) || next.source == SourceId.LOCAL || next.source == SourceId.LOCAL_MUSIC) return
+        // Live links expire quickly and radio streams never end: nothing useful to prefetch.
+        if (next.source.live || next.source == SourceId.RADIO) return
         applyNetworkPolicy()
         // Data saver: on mobile data, look the next stream up only when it is actually played.
         if (StreamPolicy.metered) return

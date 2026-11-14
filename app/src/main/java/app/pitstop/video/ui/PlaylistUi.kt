@@ -4,6 +4,7 @@ import app.pitstop.video.core.S
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,6 +52,9 @@ fun PlaylistsTab(graph: AppGraph) {
     val playlists by graph.playlists.playlists.collectAsStateWithLifecycle()
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
+    var exportAll by remember { mutableStateOf(false) }
+    if (importing) ImportDialog(graph, onDismiss = { importing = false }, onSaved = { importing = false; openId = it })
 
     val open = playlists.firstOrNull { it.id == openId }
     if (open != null) {
@@ -62,7 +66,16 @@ fun PlaylistsTab(graph: AppGraph) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(S.playlistCount(playlists.size), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            // Import from other platforms / files; export everything as a Pitstop file.
+            OutlinedButton(onClick = { importing = true }) { Text(S.importPlaylist) }
+            Spacer(Modifier.size(8.dp))
             Button(onClick = { creating = true }) { Text(S.newPlaylist) }
+            Box {
+                IconButton(onClick = { exportAll = true }, enabled = playlists.isNotEmpty()) {
+                    Icon(painterResource(R.drawable.ic_share), S.exportAll)
+                }
+                ExportMenu(graph, null, exportAll) { exportAll = false }
+            }
         }
         if (playlists.isEmpty()) {
             Text(
@@ -100,6 +113,7 @@ fun PlaylistsTab(graph: AppGraph) {
 private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
     var renaming by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var exporting by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -108,6 +122,10 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
                 p.name, Modifier.weight(1f).clickable { renaming = true },
                 style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
+            Box {
+                IconButton(onClick = { exporting = true }) { Icon(painterResource(R.drawable.ic_share), S.exportPlaylist) }
+                ExportMenu(graph, p, exporting) { exporting = false }
+            }
             IconButton(onClick = { confirmDelete = true }) { Icon(painterResource(R.drawable.ic_delete), S.deletePlaylist) }
         }
         Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -123,6 +141,8 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
         LazyColumn(Modifier.fillMaxSize()) {
             itemsIndexed(p.items, key = { i, it -> "$i:${it.source}:${it.id}" }) { i, item ->
                 VideoRow(graph, item, onClick = { graph.hub.playQueue(p.items, i) }) {
+                    // Playlists mix platforms: show where each item comes from.
+                    PlatformBadge(S.sourceName(item.source))
                     Column {
                         IconButton(onClick = { graph.playlists.move(p.id, i, i - 1) }, enabled = i > 0, modifier = Modifier.size(32.dp)) {
                             Icon(painterResource(R.drawable.ic_arrow_up), S.moveUp)

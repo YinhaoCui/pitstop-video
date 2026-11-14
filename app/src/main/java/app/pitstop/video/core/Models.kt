@@ -1,10 +1,22 @@
 package app.pitstop.video.core
 
-/** Every feed the app can play. [music] sources are audio-only: no picture, so no parked-only lock. */
-enum class SourceId(val music: Boolean = false) {
-    YOUTUBE, BILIBILI, LOCAL,
-    BILI_MUSIC(true), YT_MUSIC(true), NETEASE(true), GDRIVE(true), LOCAL_MUSIC(true),
+/**
+ * Every feed the app can play. [music] sources are audio-only: no picture, so no parked-only lock.
+ * [live] sources are live video (Live tab); the parked-only lock applies to them like any video.
+ */
+enum class SourceId(val music: Boolean = false, val live: Boolean = false) {
+    YOUTUBE, BILIBILI, PEERTUBE, LOCAL,
+    BILI_MUSIC(true), YT_MUSIC(true), NETEASE(true), SOUNDCLOUD(true), BANDCAMP(true),
+    PODCASTS(true), RADIO(true), GDRIVE(true), LOCAL_MUSIC(true),
+    BILI_LIVE(live = true), TWITCH(live = true), DOUYU(live = true),
 }
+
+/**
+ * The platforms shown in one bar (Video or Music): [all] minus the [hidden] ones. A bar is never left
+ * empty: if every platform in it is hidden, all of them are shown.
+ */
+fun <T> shownSources(all: List<T>, hidden: Set<SourceId>, id: (T) -> SourceId): List<T> =
+    all.filter { id(it) !in hidden }.ifEmpty { all }
 
 /** Items whose id starts with this are collections (playlist / folder); [VideoSource.expand] turns them into tracks. */
 const val COLLECTION_PREFIX = "list:"
@@ -37,6 +49,20 @@ data class SubtitleTrack(
 /** A browsable list inside a source ("Popular", "Subscriptions", ...). */
 data class Feed(val key: String, val title: String)
 
+/** One page of a feed; [next] is the cursor for the following page, null at the end. */
+data class FeedPage(val items: List<VideoItem>, val next: String? = null)
+
+/**
+ * A browsable category: a zone, genre, game, live area, country ... [group] puts it under a heading
+ * in the Categories window (e.g. a parent area); [key] is whatever the source needs to list it.
+ */
+data class Category(val key: String, val title: String, val group: String? = null, val thumbnailUrl: String? = null)
+
+/** Feeds whose key starts with this are categories; [VideoSource.loadPage] gets them like any feed. */
+const val CATEGORY_FEED_PREFIX = "cat:"
+fun Category.asFeed() = Feed(CATEGORY_FEED_PREFIX + key, title)
+fun Feed.categoryKey(): String? = key.takeIf { it.startsWith(CATEGORY_FEED_PREFIX) }?.removePrefix(CATEGORY_FEED_PREFIX)
+
 /** Where the player should actually fetch media from. */
 data class PlayableStream(
     val videoUri: String,
@@ -47,6 +73,8 @@ data class PlayableStream(
     val subtitles: List<SubtitleTrack> = emptyList(),
     /** Only the sound of a video was fetched (data saver): show the cover like a song. */
     val audioOnly: Boolean = false,
+    /** A live stream or radio station: no seeking back to an old position, no prefetching (links expire). */
+    val live: Boolean = false,
 ) {
     enum class Kind { PROGRESSIVE, HLS, DASH }
 }
@@ -59,7 +87,27 @@ interface VideoSource {
     /** Feeds available right now (login-only feeds disappear when signed out). */
     fun feeds(): List<Feed>
     suspend fun load(feed: Feed): List<VideoItem>
+
+    /**
+     * Endless feeds: [cursor] null for the first page, then the previous page's [FeedPage.next].
+     * By default a feed is a single page.
+     */
+    suspend fun loadPage(feed: Feed, cursor: String?): FeedPage =
+        if (cursor == null) FeedPage(load(feed)) else FeedPage(emptyList())
     suspend fun search(query: String): List<VideoItem>
+
+    /**
+     * Every category the platform offers (shown in the Categories window); empty = no Categories
+     * button. Picking one calls [loadPage] with `category.asFeed()` (key = [CATEGORY_FEED_PREFIX] + key).
+     */
+    suspend fun categories(): List<Category> = emptyList()
+
+    /** Endless search: [cursor] null for the first page, then the previous page's [FeedPage.next]. */
+    suspend fun searchPage(query: String, cursor: String?): FeedPage =
+        if (cursor == null) FeedPage(search(query)) else FeedPage(emptyList())
+
+    /** Search-as-you-type suggestions (query completions); empty when the platform has none. */
+    suspend fun suggestions(query: String): List<String> = emptyList()
     suspend fun resolve(item: VideoItem): PlayableStream
 
     /** Splits a multi-part video into its parts (Bilibili 分P); null when it is a single video. */
@@ -76,6 +124,10 @@ interface VideoSource {
 
     /** Latest videos of one creator (channel / uploader). */
     suspend fun creatorVideos(authorId: String): List<VideoItem> = emptyList()
+
+    /** A creator's videos, endlessly: like [loadPage]. Defaults to [creatorVideos] as one page. */
+    suspend fun creatorPage(authorId: String, cursor: String?): FeedPage =
+        if (cursor == null) FeedPage(creatorVideos(authorId)) else FeedPage(emptyList())
 }
 
 /**

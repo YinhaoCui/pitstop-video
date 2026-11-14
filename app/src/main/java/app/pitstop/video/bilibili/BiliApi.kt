@@ -1,6 +1,7 @@
 package app.pitstop.video.bilibili
 
 import app.pitstop.video.core.I18n
+import app.pitstop.video.core.FeedPage
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
@@ -78,43 +79,85 @@ class BiliApi(
         return Profile(loggedIn, d.optString("uname").takeIf { loggedIn && it.isNotEmpty() })
     }
 
-    suspend fun popular(): List<VideoItem> {
+    suspend fun popular(): List<VideoItem> = popularPage(1).items
+
+    /** Popular (热门), 30 per page; the cursor is the next page number until Bilibili says no_more. */
+    suspend fun popularPage(page: Int): FeedPage {
         ensureDeviceId()
-        val list = data("https://api.bilibili.com/x/web-interface/popular?ps=30&pn=1").optJSONArray("list")
-        return list.objects().map(::archiveToItem)
+        val d = data("https://api.bilibili.com/x/web-interface/popular?ps=30&pn=$page")
+        val items = d.optJSONArray("list").objects().map(::archiveToItem)
+        return FeedPage(items, (page + 1).toString().takeIf { items.isNotEmpty() && !d.optBoolean("no_more") })
     }
 
-    suspend fun recommended(): List<VideoItem> {
+    suspend fun recommended(): List<VideoItem> = recommendedPage(1).items
+
+    /** Homepage recommendations: an endless stream, each "refresh" index gives a new batch. */
+    suspend fun recommendedPage(index: Int): FeedPage {
         val items = wbiData(
             "https://api.bilibili.com/x/web-interface/wbi/index/top/feed/rcmd",
-            mapOf("ps" to "30", "fresh_type" to "4", "fresh_idx" to "1"),
+            mapOf("ps" to "30", "fresh_type" to "4", "fresh_idx" to "$index", "fresh_idx_1h" to "$index", "brush" to "$index"),
         ).optJSONArray("item")
-        return items.objects().filter { it.optString("bvid").isNotEmpty() }.map(::archiveToItem)
+        val list = items.objects().filter { it.optString("bvid").isNotEmpty() }.map(::archiveToItem)
+        return FeedPage(list, (index + 1).toString().takeIf { list.isNotEmpty() })
     }
 
     /** Video search; [tids] narrows to a zone (3 = music). */
-    suspend fun search(keyword: String, tids: String? = null, source: SourceId = SourceId.BILIBILI): List<VideoItem> {
-        val params = mapOf("search_type" to "video", "keyword" to keyword, "page" to "1") +
+    suspend fun search(keyword: String, tids: String? = null, source: SourceId = SourceId.BILIBILI): List<VideoItem> =
+        searchPage(keyword, 1, tids, source).items
+
+    /** One page (20 videos) of a video search; the cursor is the next page number until `numPages`. */
+    suspend fun searchPage(keyword: String, page: Int, tids: String? = null, source: SourceId = SourceId.BILIBILI): FeedPage {
+        val params = mapOf("search_type" to "video", "keyword" to keyword, "page" to "$page") +
             (tids?.let { mapOf("tids" to it) } ?: emptyMap())
-        val result = wbiData("https://api.bilibili.com/x/web-interface/wbi/search/type", params).optJSONArray("result")
-        return result.objects().filter { it.optString("bvid").isNotEmpty() }.map {
-            VideoItem(
-                source = source,
-                id = it.getString("bvid"),
-                title = BiliText.clean(it.optString("title")),
-                author = it.optString("author"),
-                authorId = it.optLong("mid").takeIf { m -> m > 0 }?.toString(),
-                thumbnailUrl = BiliText.thumb(it.optString("pic")),
-                durationSec = parseClock(it.optString("duration")),
-            )
+        return BiliZones.searchPage(wbiData("https://api.bilibili.com/x/web-interface/wbi/search/type", params), page, source)
+    }
+
+    /** Search-box completions (the web site's suggest service). */
+    suspend fun suggestions(term: String): List<String> {
+        if (term.isBlank()) return emptyList()
+        val url = "https://s.search.bilibili.com/main/suggest?main_ver=v1&term=" + java.net.URLEncoder.encode(term.trim(), "UTF-8")
+        return BiliZones.suggestions(raw(url))
+    }
+
+    private val zoneLock = Mutex()
+    private var zoneCache: List<BiliZones.Zone>? = null
+
+    /** The site's video zones (分区) with their sub-zones, as the web navigation lists them (kv-frontend config). */
+    suspend fun zones(): List<BiliZones.Zone> = zoneLock.withLock {
+        zoneCache ?: run {
+            val json = raw("https://api.bilibili.com/x/kv-frontend/namespace/data?appKey=333.1339&nscode=10")
+            if (json.optInt("code") != 0) throw BiliException(json.optInt("code"), json.optString("message"))
+            BiliZones.parseZones(json.optJSONObject("data")?.optJSONObject("data")).also { if (it.isNotEmpty()) zoneCache = it }
         }
     }
 
-    /** Video posts from followed uploaders (requires login). */
-    suspend fun following(): List<VideoItem> {
+    /**
+     * A top-level zone's recommendation feed (what bilibili.com/c/<zone> shows), 15 per call; [index] starts at 1
+     * and keeps going until Bilibili answers "no more" (code 62013). Sub-zone ids are rejected (-400) by this endpoint.
+     */
+    suspend fun zonePage(tid: Int, index: Int, source: SourceId = SourceId.BILIBILI): FeedPage {
+        ensureDeviceId()
+        val json = raw(
+            "https://api.bilibili.com/x/web-interface/region/feed/rcmd?display_id=$index&request_cnt=15" +
+                "&from_region=$tid&device=web&plat=30&web_location=333.40138",
+        )
+        return BiliZones.regionPage(json, index, source)
+    }
+
+    /**
+     * Video posts from followed uploaders (requires login), about 20 per page. [offset] is the cursor
+     * Bilibili returned with the previous page; the result carries the next one (null when there are no more).
+     */
+    suspend fun following(offset: String? = null, page: Int = 1): FeedPage {
         if (!cookies.loggedIn.value) throw UserFacingException(I18n.s.needBiliLogin)
-        val items = data("https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?type=video&page=1")
-            .optJSONArray("items")
+        val url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?type=video&page=$page" +
+            (offset?.let { "&offset=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")
+        val d = data(url)
+        val next = d.optString("offset").takeIf { d.optBoolean("has_more") && it.isNotEmpty() && it != offset }
+        return FeedPage(parseFollowing(d.optJSONArray("items")), next)
+    }
+
+    private fun parseFollowing(items: org.json.JSONArray?): List<VideoItem> {
         return items.objects().mapNotNull { post ->
             val modules = post.optJSONObject("modules") ?: return@mapNotNull null
             val archive = modules.optJSONObject("module_dynamic")?.optJSONObject("major")?.optJSONObject("archive")
@@ -245,36 +288,88 @@ class BiliApi(
         }
     }
 
-    /** An uploader's latest videos (space page). The dm_* fields are what the web page sends; without them Bilibili answers -352. */
-    suspend fun uploaderVideos(mid: String, source: SourceId): List<VideoItem> {
+    /** An uploader's latest videos (space page). */
+    suspend fun uploaderVideos(mid: String, source: SourceId): List<VideoItem> = uploaderPage(mid, 1, source).items
+
+    /**
+     * One page (30, newest first) of an uploader's videos; the cursor is the next page number while
+     * `page.count` says there are more. The dm_* fields are what the web page sends; without them Bilibili answers -352.
+     */
+    suspend fun uploaderPage(mid: String, page: Int, source: SourceId): FeedPage {
         val d = wbiData(
             "https://api.bilibili.com/x/space/wbi/arc/search",
             mapOf(
-                "mid" to mid, "ps" to "30", "pn" to "1", "order" to "pubdate", "platform" to "web",
+                "mid" to mid, "ps" to "$UPLOADER_PAGE_SIZE", "pn" to "$page", "order" to "pubdate", "platform" to "web",
                 "dm_img_list" to "[]", "dm_img_str" to "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
                 "dm_cover_img_str" to "QU5HTEUgKEdvb2dsZSwgVnVsa2FuIDEuMy4wIChTd2lmdFNoYWRlciBEZXZpY2UgKFN1Ymdhem9yb2...",
             ),
         )
-        return d.optJSONObject("list")?.optJSONArray("vlist").objects().map {
-            VideoItem(
-                source = source,
-                id = it.getString("bvid"),
-                title = BiliText.clean(it.optString("title")),
-                author = it.optString("author"),
-                thumbnailUrl = BiliText.thumb(it.optString("pic")),
-                durationSec = parseClock(it.optString("length")),
-                authorId = mid,
-            )
-        }
+        return BiliZones.uploaderPage(d, mid, page, UPLOADER_PAGE_SIZE, source)
     }
 
-    /** Music zone (rid 3) ranking. */
-    suspend fun musicRanking(): List<VideoItem> {
+    /**
+     * A public favourites folder (收藏夹) for playlist import: (folder name, every video), 20 per request.
+     * Private folders answer an error, shown to the user.
+     */
+    suspend fun favFolder(mediaId: Long, source: SourceId, limit: Int = 1000): Pair<String, List<VideoItem>> {
+        val out = mutableListOf<VideoItem>()
+        var name = ""
+        var page = 1
+        while (out.size < limit) {
+            val d = data("https://api.bilibili.com/x/v3/fav/resource/list?media_id=$mediaId&pn=$page&ps=20&platform=web")
+            name = d.optJSONObject("info")?.optString("title").orEmpty().ifEmpty { name }
+            d.optJSONArray("medias").objects().forEach { m ->
+                val bvid = m.optString("bvid").ifEmpty { return@forEach }
+                out += VideoItem(
+                    source = source, id = bvid, title = BiliText.clean(m.optString("title")),
+                    author = m.optJSONObject("upper")?.optString("name"),
+                    authorId = m.optJSONObject("upper")?.optLong("mid")?.takeIf { it > 0 }?.toString(),
+                    thumbnailUrl = BiliText.thumb(m.optString("cover")),
+                    durationSec = m.optLong("duration").takeIf { it > 0 },
+                )
+            }
+            if (!d.optBoolean("has_more")) break
+            page++
+        }
+        return name to out
+    }
+
+    /** An uploader's collection (合集) for playlist import: (collection name, every video), 30 per request. */
+    suspend fun season(mid: Long, seasonId: Long, source: SourceId, limit: Int = 1000): Pair<String, List<VideoItem>> {
+        val out = mutableListOf<VideoItem>()
+        var name = ""
+        var page = 1
+        while (out.size < limit) {
+            val d = data("https://api.bilibili.com/x/polymer/web-space/seasons_archives_list?mid=$mid&season_id=$seasonId&page_num=$page&page_size=30")
+            name = d.optJSONObject("meta")?.optString("name").orEmpty().ifEmpty { name }
+            val got = d.optJSONArray("archives").objects()
+            got.forEach { out += archiveToItem(it, source) }
+            val total = d.optJSONObject("page")?.optInt("total") ?: 0
+            if (got.isEmpty() || out.size >= total) break
+            page++
+        }
+        return name to out
+    }
+
+    /** Music charts: the first page of the music center's comprehensive chart. */
+    suspend fun musicRanking(): List<VideoItem> = musicRankingPage(1).items
+
+    /**
+     * The music center's comprehensive chart (综合榜, music.bilibili.com), 20 songs per page, a few hundred
+     * deep; the cursor is the next page number until a page comes back empty. (ranking/v2?rid=3 has been
+     * frozen since April 2025.)
+     */
+    suspend fun musicRankingPage(page: Int): FeedPage {
         ensureDeviceId()
-        val list = runCatching {
-            wbiData("https://api.bilibili.com/x/web-interface/ranking/v2", mapOf("rid" to "3", "type" to "all")).optJSONArray("list")
-        }.getOrElse { data("https://api.bilibili.com/x/web-interface/ranking/v2?rid=3&type=all").optJSONArray("list") }
-        return list.objects().map { archiveToItem(it, SourceId.BILI_MUSIC) }
+        val d = data("$MUSIC_CENTER/music/comprehensive/web/rank?pn=$page&ps=20")
+        val items = BiliZones.musicCenterItems(d.optJSONArray("list"), SourceId.BILI_MUSIC)
+        return FeedPage(items, (page + 1).toString().takeIf { items.isNotEmpty() })
+    }
+
+    /** Music center hot songs (热歌榜, ~100) or new releases (新歌, ~30): one page each. */
+    suspend fun musicCenterList(path: String): List<VideoItem> {
+        ensureDeviceId()
+        return BiliZones.musicCenterItems(data("$MUSIC_CENTER/$path").optJSONArray("list"), SourceId.BILI_MUSIC)
     }
 
     /** Best audio-only stream of a video: Hi-Res FLAC / Dolby when offered (needs login / VIP), else AAC. */
@@ -315,6 +410,13 @@ class BiliApi(
         durationSec = o.optLong("duration").takeIf { it > 0 },
         extra = o.optLong("cid").takeIf { it > 0 }?.toString(),
     )
+
+    companion object {
+        private const val UPLOADER_PAGE_SIZE = 30
+        private const val MUSIC_CENTER = "https://api.bilibili.com/x/centralization/interface"
+        const val MUSIC_HOT = "music/hot/rank?plat=2"
+        const val MUSIC_NEW = "new/music?plat=2"
+    }
 }
 
 private fun JSONArray?.strings(): List<String> =
@@ -322,3 +424,105 @@ private fun JSONArray?.strings(): List<String> =
 
 private fun JSONArray?.objects(): List<JSONObject> =
     if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }
+
+/** Pure parsing for zones, zone feeds, search / uploader pages and suggestions (no Android types; unit-tested). */
+object BiliZones {
+    data class Zone(val tid: Int, val name: String, val route: String, val subs: List<Zone> = emptyList())
+
+    /** What the zone feed answers once it has nothing more to give. */
+    const val NO_MORE = 62013
+
+    /**
+     * The kv-frontend namespace map (`data.data`): "channel_list.sort" holds the zone order and
+     * "channel_list.<route>" each zone, both as JSON strings. Channels without a zone id (番剧, 电影, 公益 ...)
+     * are left out: they have no zone feed.
+     */
+    fun parseZones(ns: JSONObject?): List<Zone> {
+        if (ns == null) return emptyList()
+        val order = runCatching { JSONArray(ns.optString("channel_list.sort")) }.getOrNull().strings()
+        val routes = order.ifEmpty {
+            ns.keys().asSequence().filter { it.startsWith("channel_list.") }.map { it.removePrefix("channel_list.") }.toList()
+        }
+        return routes.mapNotNull { route ->
+            val o = runCatching { JSONObject(ns.optString("channel_list.$route")) }.getOrNull() ?: return@mapNotNull null
+            val tid = o.optInt("tid").takeIf { it > 0 } ?: return@mapNotNull null
+            val subs = o.optJSONArray("sub").objects().mapNotNull { s ->
+                s.optInt("tid").takeIf { it > 0 }?.let { Zone(it, s.optString("name"), s.optString("route")) }
+            }
+            Zone(tid, o.optString("name").ifEmpty { route }, o.optString("route").ifEmpty { route }, subs)
+        }
+    }
+
+    /** region/feed/rcmd answer: `data.archives`; code 62013 ends the feed. */
+    fun regionPage(json: JSONObject, index: Int, source: SourceId): FeedPage {
+        val code = json.optInt("code")
+        if (code == NO_MORE) return FeedPage(emptyList())
+        if (code != 0) throw BiliException(code, json.optString("message"))
+        val items = json.optJSONObject("data")?.optJSONArray("archives").objects().mapNotNull { o ->
+            val bvid = o.optString("bvid").ifEmpty { return@mapNotNull null }
+            val author = o.optJSONObject("author")
+            VideoItem(
+                source = source,
+                id = bvid,
+                title = BiliText.clean(o.optString("title")),
+                author = author?.optString("name"),
+                authorId = author?.optLong("mid")?.takeIf { it > 0 }?.toString(),
+                thumbnailUrl = BiliText.thumb(o.optString("cover")),
+                durationSec = o.optLong("duration").takeIf { it > 0 },
+                extra = o.optLong("cid").takeIf { it > 0 }?.toString(),
+            )
+        }
+        return FeedPage(items, (index + 1).toString().takeIf { items.isNotEmpty() })
+    }
+
+    /** wbi/search/type (search_type=video) `data`: 20 per page, `numPages` of them (at most 50). */
+    fun searchPage(d: JSONObject, page: Int, source: SourceId): FeedPage {
+        val items = d.optJSONArray("result").objects().filter { it.optString("bvid").isNotEmpty() }.map {
+            VideoItem(
+                source = source,
+                id = it.getString("bvid"),
+                title = BiliText.clean(it.optString("title")),
+                author = it.optString("author"),
+                authorId = it.optLong("mid").takeIf { m -> m > 0 }?.toString(),
+                thumbnailUrl = BiliText.thumb(it.optString("pic")),
+                durationSec = parseClock(it.optString("duration")),
+            )
+        }
+        return FeedPage(items, (page + 1).toString().takeIf { items.isNotEmpty() && page < d.optInt("numPages") })
+    }
+
+    /** s.search.bilibili.com/main/suggest: `result.tag[].value` (`result` is empty when nothing matches). */
+    fun suggestions(json: JSONObject): List<String> =
+        json.optJSONObject("result")?.optJSONArray("tag").objects()
+            .map { it.optString("value").trim() }.filter { it.isNotEmpty() }.distinct()
+
+    /** space/wbi/arc/search `data`: `list.vlist` plus `page.count` (total videos). */
+    fun uploaderPage(d: JSONObject, mid: String, page: Int, pageSize: Int, source: SourceId): FeedPage {
+        val items = d.optJSONObject("list")?.optJSONArray("vlist").objects().filter { it.optString("bvid").isNotEmpty() }.map {
+            VideoItem(
+                source = source,
+                id = it.getString("bvid"),
+                title = BiliText.clean(it.optString("title")),
+                author = it.optString("author"),
+                thumbnailUrl = BiliText.thumb(it.optString("pic")),
+                durationSec = parseClock(it.optString("length")),
+                authorId = mid,
+            )
+        }
+        val count = d.optJSONObject("page")?.optInt("count") ?: 0
+        return FeedPage(items, (page + 1).toString().takeIf { items.isNotEmpty() && page.toLong() * pageSize < count })
+    }
+
+    /** Music center lists (comprehensive / hot / new): each song points at a video (bvid, cid). */
+    fun musicCenterItems(list: JSONArray?, source: SourceId): List<VideoItem> = list.objects().mapNotNull { o ->
+        val bvid = o.optString("bvid").ifEmpty { return@mapNotNull null }
+        VideoItem(
+            source = source,
+            id = bvid,
+            title = BiliText.clean(o.optString("music_title")),
+            author = o.optString("author").ifEmpty { null },
+            thumbnailUrl = BiliText.thumb(o.optString("cover")),
+            extra = o.optString("cid").toLongOrNull()?.takeIf { it > 0 }?.toString(),
+        )
+    }
+}

@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pitstop.video.AppGraph
 import app.pitstop.video.R
+import app.pitstop.video.core.Settings
 import app.pitstop.video.core.S
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.formatDuration
@@ -65,9 +67,11 @@ import kotlinx.coroutines.delay
  */
 @Composable
 fun MusicTab(graph: AppGraph) {
-    val sources = graph.musicSources
+    val hidden by Settings.hiddenSources.collectAsStateWithLifecycle()
+    val sources = remember(hidden) { graph.shownMusicSources }
     var selected by rememberSaveable { mutableStateOf(sources.first().id) }
     val source = sources.firstOrNull { it.id == selected } ?: sources.first()
+    var pendingQuery by remember { mutableStateOf<String?>(null) }
 
     val ytSignedIn by graph.youTubeAccount.signedIn.collectAsStateWithLifecycle()
     val biliLoggedIn by graph.biliCookies.loggedIn.collectAsStateWithLifecycle()
@@ -93,6 +97,8 @@ fun MusicTab(graph: AppGraph) {
         SourceTab(
             graph, source,
             refreshKey = "$ytSignedIn/$biliLoggedIn/$neteaseSignedIn/$driveSignedIn/${drivePicked.size}/${googlePicked.size}",
+            siblings = sources, pendingQuery = pendingQuery, onPendingConsumed = { pendingQuery = null },
+            onSearchIn = { s, q -> selected = s.id; pendingQuery = q },
         )
     }
 }
@@ -142,9 +148,12 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
 /** Which service / source to browse: a scrollable row of chips under the Video / Music switch. */
 @Composable
 fun SourceChips(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    var picking by remember { mutableStateOf(false) }
+    if (picking) PlatformPickerDialog { picking = false }
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         labels.forEachIndexed { i, label ->
             FilterChip(
@@ -156,6 +165,10 @@ fun SourceChips(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
             )
+        }
+        // Choose which platforms this bar shows.
+        IconButton(onClick = { picking = true }) {
+            Icon(painterResource(R.drawable.ic_tune), S.choosePlatforms, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

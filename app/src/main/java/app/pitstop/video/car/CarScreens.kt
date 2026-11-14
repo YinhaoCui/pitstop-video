@@ -19,7 +19,9 @@ import androidx.car.app.model.Row
 import androidx.car.app.model.SearchTemplate
 import androidx.car.app.model.Template
 import androidx.car.app.navigation.model.MapWithContentTemplate
-import androidx.car.app.navigation.model.NavigationTemplate
+import androidx.car.app.navigation.model.MapController
+import androidx.car.app.model.Pane
+import androidx.car.app.model.PaneTemplate
 import androidx.core.graphics.drawable.IconCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
@@ -55,12 +57,8 @@ private fun CarContext.playPause(hub: PlaybackHub) = Action.Builder()
     .setIcon(icon(if (hub.state.value.wantsToPlay) R.drawable.ic_pause else R.drawable.ic_play))
     .setOnClickListener { hub.togglePause() }.build()
 
-/**
- * Lists open as a side panel over the still-playing (shrunk) video when the host supports it
- * (car API 7+, MapWithContentTemplate); older hosts show them full screen.
- */
+/** Lists open as a side panel beside the still-playing video (MapWithContentTemplate, car API 7+). */
 private fun CarContext.panel(content: Template, hub: PlaybackHub, extra: List<Action> = emptyList()): Template {
-    if (carAppApiLevel < 7) return content
     val strip = ActionStrip.Builder().addAction(playPause(hub))
     extra.forEach(strip::addAction)
     return MapWithContentTemplate.Builder().setContentTemplate(content).setActionStrip(strip.build()).build()
@@ -77,8 +75,9 @@ private fun Screen.refreshOn(hub: PlaybackHub, key: (app.pitstop.video.player.Hu
 }
 
 /**
- * Root screen. NavigationTemplate is the only template that hands a third-party app the full
- * drawing surface, which is where [CarVideoRenderer] draws the video.
+ * Root screen: MapWithContentTemplate. Its map surface is where [CarVideoRenderer] draws the video
+ * (beside a small now-playing card); the app is a POI app because Android Auto hides sideloaded
+ * navigation apps.
  */
 class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Screen(carContext) {
     init {
@@ -123,7 +122,19 @@ class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
                 screenManager.push(BrowseScreen(carContext, hub))
             }.build())
             .build()
-        return NavigationTemplate.Builder().setActionStrip(actions).setMapActionStrip(side).build()
+        val item = s.current
+        val card = Row.Builder()
+            .setTitle(item?.title ?: t.appName)
+            .apply { (item?.author ?: t.carPickSomething).let { if (it.isNotEmpty()) addText(it) } }
+            .build()
+        val content = PaneTemplate.Builder(Pane.Builder().addRow(card).build())
+            .setHeader(Header.Builder().setTitle(t.nowPlaying).build())
+            .build()
+        return MapWithContentTemplate.Builder()
+            .setContentTemplate(content)
+            .setActionStrip(actions)
+            .setMapController(MapController.Builder().setMapActionStrip(side).build())
+            .build()
     }
 }
 
@@ -180,7 +191,8 @@ class BrowseScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
     override fun onGetTemplate(): Template {
         val t = I18n.s
         val list = ItemList.Builder()
-        carContext.graph.sources.forEach { src ->
+        val graph = carContext.graph
+        (graph.shownVideoSources + graph.shownLiveSources + graph.shownMusicSources).forEach { src ->
             list.addItem(
                 Row.Builder().setTitle(t.sourceName(src.id)).setBrowsable(true)
                     .setImage(carContext.icon(when { src.id.music -> R.drawable.ic_music; src.id == SourceId.LOCAL -> R.drawable.ic_folder; else -> R.drawable.ic_video }))

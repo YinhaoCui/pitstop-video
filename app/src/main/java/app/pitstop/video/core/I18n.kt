@@ -56,7 +56,275 @@ class Strings(val language: AppLanguage) {
         SourceId.NETEASE -> netease
         SourceId.GDRIVE -> googleDrive
         SourceId.LOCAL_MUSIC -> musicOnDevice
+        SourceId.PEERTUBE -> "PeerTube"
+        SourceId.SOUNDCLOUD -> "SoundCloud"
+        SourceId.BANDCAMP -> "Bandcamp"
+        SourceId.PODCASTS -> podcasts
+        SourceId.RADIO -> radio
+        SourceId.BILI_LIVE -> biliLive
+        SourceId.TWITCH -> "Twitch"
+        SourceId.DOUYU -> douyu
     }
+    val podcasts get() = t("Podcasts", "播客")
+    val radio get() = t("Radio", "电台")
+    val biliLive get() = t("Bilibili Live", "B站直播")
+    val douyu get() = t("Douyu", "斗鱼")
+    val live get() = t("Live", "直播")
+    val topCharts get() = t("Top charts", "排行榜")
+    val newReleases get() = t("New releases", "新发布")
+    val featured get() = t("Featured", "精选")
+    val radioTop get() = t("Most popular", "最受欢迎")
+    val radioLocal get() = t("Near you", "本地电台")
+    val radioChinese get() = t("Chinese stations", "中文电台")
+    val streamOffline get() = t("This channel isn't live right now.", "该主播当前未开播。")
+    val liveUnavailable get() = t("Couldn't get this live stream; the site may have changed.", "无法获取直播流，网站可能已更改。")
+    fun viewers(n: Long) = t(if (n >= 1000) "%.1fk watching".format(n / 1000.0) else "$n watching", if (n >= 10000) "%.1f万人观看".format(n / 10000.0) else "${n}人观看")
+
+    // --- Strings for Bilibili Live + Twitch (add new ones here) ---
+
+    // --- Strings for Douyu (add new ones here) ---
+
+    // --- Strings for Podcasts + Radio (add new ones here) ---
+    val podcastNoFeed get() = t("This podcast has no public feed", "该播客没有公开的订阅源")
+    val radioNoStream get() = t("This station has no playable stream", "该电台没有可播放的音频流")
+
+    // --- Categories & search ---
+    val categories get() = t("Categories", "分类")
+    val allCategories get() = t("All categories", "全部分类")
+    val filterCategories get() = t("Filter categories", "筛选分类")
+    val noCategories get() = t("No categories here.", "这里没有分类。")
+    val recentSearches get() = t("Recent searches", "最近搜索")
+    val clearHistory get() = t("Clear", "清除")
+    val clearCategory get() = t("Clear category", "取消分类")
+    val searchResults get() = t("Search results", "搜索结果")
+
+    // --- Playlist import / export, search everywhere ---
+    val importPlaylist get() = t("Import", "导入")
+    val importTitle get() = t("Import a playlist", "导入歌单")
+    val importHint get() = t("Paste a playlist link (NetEase, QQ Music, Kugou, Spotify, Apple Music, YouTube, Bilibili) or a list of songs, one \"Artist - Title\" per line.", "粘贴歌单链接（网易云、QQ音乐、酷狗、Spotify、Apple Music、YouTube、B站），或歌曲列表，每行一首“歌手 - 歌名”。")
+    val importOpenFile get() = t("Open file", "打开文件")
+    val importAsMusic get() = t("Songs", "歌曲")
+    val importAsVideo get() = t("Videos", "视频")
+    val importMatchOn get() = t("Find songs on", "在这些平台查找")
+    val importStart get() = t("Import", "开始导入")
+    val importReading get() = t("Reading the playlist…", "正在读取歌单…")
+    fun importMatching(done: Int, total: Int) = t("Finding songs: $done / $total", "正在匹配歌曲：$done / $total")
+    fun importSummary(found: Int, total: Int) = t("Found $found of $total", "找到 $found / $total 首")
+    val importNotMatched get() = t("Not found", "未找到")
+    val importSave get() = t("Save playlist", "保存歌单")
+    val importName get() = t("Playlist name", "歌单名称")
+    val importUnknownLink get() = t("This link isn't a playlist Pitstop can read.", "无法识别这个歌单链接。")
+    val importNothingFound get() = t("No songs found in this text.", "没有在文本中找到歌曲。")
+    val importText get() = t("Text", "文本")
+    fun importedPlaylists(n: Int) = t("Imported $n playlist(s)", "已导入 $n 个歌单")
+    fun importFrom(platform: String) = t("From $platform", "来自 $platform")
+    val exportPlaylist get() = t("Export", "导出")
+    val exportPitstop get() = t("Pitstop file (re-importable)", "Pitstop 文件（可再次导入）")
+    val exportCsv get() = t("CSV spreadsheet", "CSV 表格")
+    val exportText get() = t("Text (Artist - Title)", "文本（歌手 - 歌名）")
+    val exportAll get() = t("Export all", "全部导出")
+    val exported get() = t("Saved", "已保存")
+    val searchEverywhere get() = t("All platforms", "全部平台")
+    val moreResults get() = t("More", "更多")
+
+    // --- Category strings: Bilibili family (add new ones here) ---
+
+    // --- Category strings: YouTube / YouTube Music / SoundCloud / Bandcamp / PeerTube (add new ones here) ---
+    val catTrending get() = t("Trending", "时下流行")
+    val catTopics get() = t("Topics", "主题")
+    val catGenres get() = t("Genres", "流派")
+    val catMoods get() = t("Moods & activities", "心情与场景")
+
+    /** YouTube trending kiosks and topic categories; null for an unknown key. */
+    fun ytCategory(key: String): String? = when (key) {
+        "Trending" -> t("Trending now", "时下流行")
+        "trending_music" -> t("Trending music", "热门音乐")
+        "trending_gaming" -> t("Trending gaming", "热门游戏")
+        "trending_movies_and_shows" -> t("Movies & trailers", "电影与预告片")
+        "trending_podcasts_episodes" -> t("Podcasts", "播客")
+        "live" -> t("Live now", "正在直播")
+        "news" -> t("News", "新闻")
+        "sports" -> t("Sports", "体育")
+        "music" -> t("Music", "音乐")
+        "gaming" -> t("Gaming", "游戏")
+        "comedy" -> t("Comedy", "搞笑")
+        "education" -> t("Education", "教育")
+        "science" -> t("Science & tech", "科技")
+        "travel" -> t("Travel", "旅行")
+        "cooking" -> t("Cooking", "美食")
+        "cars" -> t("Cars", "汽车")
+        "kids" -> t("Kids", "儿童")
+        "documentary" -> t("Documentaries", "纪录片")
+        "fitness" -> t("Fitness", "健身")
+        "animals" -> t("Animals", "动物")
+        "diy" -> t("DIY & crafts", "手工 DIY")
+        "fashion" -> t("Fashion & beauty", "时尚美妆")
+        else -> null
+    }
+
+    /** What a YouTube topic category (or a trending list once it runs out) searches for, in the app language. */
+    fun ytTopicQuery(key: String): String = when (key) {
+        "news" -> t("news today", "今日新闻")
+        "sports" -> t("sports highlights", "体育集锦")
+        "music" -> t("official music video", "音乐 MV")
+        "gaming" -> t("gameplay", "游戏实况")
+        "comedy" -> t("comedy", "搞笑视频")
+        "education" -> t("explained", "知识科普")
+        "science" -> t("science and technology", "科技")
+        "travel" -> t("travel vlog", "旅行 vlog")
+        "cooking" -> t("cooking recipe", "美食做法")
+        "cars" -> t("car review", "汽车评测")
+        "kids" -> t("kids cartoons", "儿童动画")
+        "documentary" -> t("documentary", "纪录片")
+        "fitness" -> t("workout", "健身")
+        "animals" -> t("funny animals", "萌宠动物")
+        "diy" -> t("DIY", "手工 DIY")
+        "fashion" -> t("fashion", "时尚穿搭")
+        "trailers" -> t("official trailer", "电影预告片")
+        "podcasts" -> t("podcast", "播客")
+        "live" -> t("live", "直播")
+        "popular" -> t("trending", "热门")
+        else -> ytCategory(key) ?: key
+    }
+
+    /** Music genre / mood names (YouTube Music, SoundCloud, Bandcamp); null for an unknown key. */
+    fun musicGenre(key: String): String? = when (key) {
+        "pop" -> t("Pop", "流行")
+        "rock" -> t("Rock", "摇滚")
+        "hiphop" -> t("Hip-hop", "嘻哈说唱")
+        "rnb" -> t("R&B & soul", "R&B 与灵魂乐")
+        "jazz" -> t("Jazz", "爵士")
+        "classical" -> t("Classical", "古典")
+        "electronic" -> t("Electronic", "电子")
+        "lofi" -> t("Lo-fi", "Lo-fi")
+        "kpop" -> t("K-pop", "韩流")
+        "cpop" -> t("C-pop", "华语流行")
+        "jpop" -> t("J-pop", "日语流行")
+        "mandopop" -> t("Mandopop", "国语流行")
+        "cantopop" -> t("Cantopop", "粤语流行")
+        "country" -> t("Country", "乡村")
+        "metal" -> t("Metal", "金属")
+        "soundtrack" -> t("Soundtracks", "影视原声")
+        "folk" -> t("Folk", "民谣")
+        "indie" -> t("Indie", "独立音乐")
+        "alternative" -> t("Alternative", "另类")
+        "blues" -> t("Blues", "蓝调")
+        "reggae" -> t("Reggae", "雷鬼")
+        "latin" -> t("Latin", "拉丁")
+        "punk" -> t("Punk", "朋克")
+        "ambient" -> t("Ambient", "氛围音乐")
+        "dance" -> t("Dance & EDM", "舞曲与 EDM")
+        "house" -> t("House", "浩室")
+        "techno" -> t("Techno", "科技舞曲")
+        "funk" -> t("Funk", "放克")
+        "experimental" -> t("Experimental", "实验音乐")
+        "world" -> t("World", "世界音乐")
+        "acoustic" -> t("Acoustic", "原声")
+        "kids" -> t("Kids", "儿歌")
+        "workout" -> t("Workout", "健身")
+        "chill" -> t("Chill", "放松")
+        "focus" -> t("Focus", "专注")
+        "sleep" -> t("Sleep", "睡眠")
+        "party" -> t("Party", "派对")
+        "romance" -> t("Romance", "浪漫情歌")
+        "driving" -> t("Driving", "开车听")
+        "happy" -> t("Feel good", "开心")
+        "sad" -> t("Sad", "伤感")
+        else -> null
+    }
+
+    /** What a music genre / mood searches for, in the app language. */
+    fun musicGenreQuery(key: String): String = when (key) {
+        "pop" -> t("pop hits", "流行歌曲")
+        "rock" -> t("rock songs", "摇滚")
+        "hiphop" -> t("hip hop", "说唱")
+        "rnb" -> t("r&b soul", "R&B")
+        "jazz" -> t("jazz", "爵士乐")
+        "classical" -> t("classical music", "古典音乐")
+        "electronic" -> t("electronic music", "电子音乐")
+        "lofi" -> t("lofi", "lofi")
+        "kpop" -> t("kpop", "kpop")
+        "cpop" -> t("cpop", "华语流行")
+        "jpop" -> t("jpop", "日语歌")
+        "mandopop" -> t("mandopop", "国语流行歌曲")
+        "cantopop" -> t("cantopop", "粤语歌")
+        "country" -> t("country music", "乡村音乐")
+        "metal" -> t("metal", "金属乐")
+        "soundtrack" -> t("movie soundtrack", "影视原声")
+        "folk" -> t("folk music", "民谣")
+        "indie" -> t("indie", "独立音乐")
+        "alternative" -> t("alternative rock", "另类摇滚")
+        "blues" -> t("blues", "蓝调")
+        "reggae" -> t("reggae", "雷鬼")
+        "latin" -> t("latin hits", "拉丁音乐")
+        "punk" -> t("punk rock", "朋克")
+        "ambient" -> t("ambient", "氛围音乐")
+        "dance" -> t("dance edm", "电音舞曲")
+        "house" -> t("house music", "house 音乐")
+        "techno" -> t("techno", "techno")
+        "funk" -> t("funk", "放克")
+        "experimental" -> t("experimental music", "实验音乐")
+        "world" -> t("world music", "世界音乐")
+        "acoustic" -> t("acoustic", "原声吉他")
+        "kids" -> t("kids songs", "儿歌")
+        "workout" -> t("workout music", "健身音乐")
+        "chill" -> t("chill music", "放松音乐")
+        "focus" -> t("focus music", "专注音乐")
+        "sleep" -> t("sleep music", "助眠音乐")
+        "party" -> t("party songs", "派对歌曲")
+        "romance" -> t("love songs", "情歌")
+        "driving" -> t("driving songs", "开车音乐")
+        "happy" -> t("happy songs", "欢快歌曲")
+        "sad" -> t("sad songs", "伤感歌曲")
+        else -> musicGenre(key) ?: key
+    }
+
+    // --- Category strings: Twitch / Douyu / Podcasts / Radio (add new ones here) ---
+    /** Douyu: the "everything in this area" entry heading each parent area (e.g. 网游竞技). */
+    fun douyuAllOf(area: String) = t("All of $area", "全部$area")
+    val radioGenres get() = t("Genres", "流派")
+    val radioCountries get() = t("Countries", "国家和地区")
+    val radioLanguages get() = t("Languages", "语言")
+    /** Apple podcast genre names by genre id (PodcastParser.GENRES). */
+    fun podcastGenre(id: Int) = when (id) {
+        1301 -> t("Arts", "艺术")
+        1321 -> t("Business", "商业")
+        1303 -> t("Comedy", "喜剧")
+        1304 -> t("Education", "教育")
+        1483 -> t("Fiction", "小说")
+        1511 -> t("Government", "政府")
+        1512 -> t("Health & Fitness", "健康与健身")
+        1487 -> t("History", "历史")
+        1305 -> t("Kids & Family", "儿童与家庭")
+        1502 -> t("Leisure", "休闲")
+        1310 -> t("Music", "音乐")
+        1489 -> t("News", "新闻")
+        1314 -> t("Religion & Spirituality", "宗教与灵修")
+        1533 -> t("Science", "科学")
+        1324 -> t("Society & Culture", "社会与文化")
+        1545 -> t("Sports", "体育")
+        1309 -> t("TV & Film", "电视与电影")
+        1318 -> t("Technology", "科技")
+        1488 -> t("True Crime", "真实罪案")
+        else -> id.toString()
+    }
+
+    // --- Category strings: NetEase (add new ones here) ---
+    // Playlist importers (QQ Music / Kugou / Spotify / Apple Music)
+    val importBadLink get() = t("This link is not a playlist that can be imported.", "这个链接不是可导入的歌单。")
+    val importNotFound get() = t("Playlist not found, or it is private. Make it public and try again.", "歌单不存在或未公开，请设为公开后再试。")
+    val importEmpty get() = t("No readable tracks in this playlist.", "这个歌单里没有可读取的歌曲。")
+    val importFailed get() = t("Could not read the playlist right now. Try again later.", "暂时无法读取歌单，请稍后再试。")
+    val importKugouList get() = t("Kugou playlist", "酷狗歌单")
+    val neteaseCharts get() = t("Charts", "排行榜")
+
+    // --- Strings for SoundCloud / Bandcamp / PeerTube (add new ones here) ---
+    val newAndHot get() = t("New & hot", "新歌热榜")
+    val bandcampRadio get() = t("Bandcamp Radio", "Bandcamp 电台")
+    val mostLiked get() = t("Most liked", "最多点赞")
+    val peertubeLocal get() = t("This instance", "本站")
+    val noAudioStream get() = t("No playable audio for this track.", "这首歌没有可播放的音频。")
+    val noVideoStream get() = t("No playable stream for this video.", "这个视频没有可播放的流。")
 
     // Music
     val video get() = t("Video", "视频")
@@ -140,6 +408,7 @@ class Strings(val language: AppLanguage) {
     val reconnecting get() = t("Connection lost. Reconnecting…", "网络中断，正在重新连接…")
     fun qualityLowered(h: Int) = t("Slow connection: switched to ${h}p", "网络较慢，已切换到 ${h}p")
     val nowPlaying get() = t("Now playing", "正在播放")
+    val carPickSomething get() = t("Pick something in Browse.", "在“浏览”里选一个开始播放。")
     val close get() = t("Close", "关闭")
     val cancel get() = t("Cancel", "取消")
     val delete get() = t("Delete", "删除")
@@ -273,6 +542,10 @@ class Strings(val language: AppLanguage) {
     val audioOnlyDriving get() = t("Audio only while driving", "行驶中，仅播放声音")
     val audioOnlyPark get() = t("The picture returns when you park.", "停车后恢复画面。")
     val audioOnlyPhone get() = t("Audio only while the car moves", "车辆行驶中，仅播放声音")
+    val platforms get() = t("Platforms", "平台")
+    val platformsText get() = t("Choose which platforms appear in the Video and Music bars (and on the car screen). At least one stays in each bar.", "选择在“视频”和“音乐”栏（以及车机屏幕）中显示哪些平台。每栏至少保留一个。")
+    val choosePlatforms get() = t("Choose platforms", "选择平台")
+    val done get() = t("Done", "完成")
     val dataSaver get() = t("Video quality & data", "画质与流量")
     val dataSaverText get() = t("Lower quality uses less data. \"Audio only\" fetches just the sound of videos, great for music and podcasts. On mobile data the app also streams music at about 128 kbps, buffers less ahead, skips preloading the next track and loads smaller thumbnails.", "画质越低越省流量。“仅音频”只获取视频的声音，适合听歌和播客。使用移动数据时，还会以约 128 kbps 播放音乐、减少预缓冲、不预加载下一首，并加载较小的缩略图。")
     val onWifi get() = t("On Wi-Fi", "Wi-Fi 下")

@@ -88,6 +88,11 @@ import app.pitstop.video.core.formatDuration
 import app.pitstop.video.local.PermissionSource
 import app.pitstop.video.core.feedsWith
 import app.pitstop.video.core.loadFeed
+import app.pitstop.video.core.loadFeedPage
+import androidx.compose.material3.InputChip
+import app.pitstop.video.core.asFeed
+import app.pitstop.video.core.FeedPage
+import app.pitstop.video.core.Category
 import app.pitstop.video.player.DisplayMode
 import app.pitstop.video.player.RepeatMode
 import kotlinx.coroutines.CancellationException
@@ -109,10 +114,16 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
         return
     }
 
-    val videoSources = graph.videoSources
+    // Only the platforms the user chose to show (Settings → Platforms, or the button after the chips).
+    val hidden by Settings.hiddenSources.collectAsStateWithLifecycle()
+    val videoSources = remember(hidden) { graph.shownVideoSources }
     // Top level: Video or Music (each with its sources below), plus Playlists and Settings.
     var page by rememberSaveable { mutableStateOf(Page.VIDEO) }
-    var videoSource by rememberSaveable { mutableIntStateOf(0) }
+    var videoSourceId by rememberSaveable { mutableStateOf(videoSources.first().id) }
+    val liveSources = remember(hidden) { graph.shownLiveSources }
+    var liveSourceId by rememberSaveable { mutableStateOf(liveSources.firstOrNull()?.id) }
+    // Search everywhere → More: switch platform and run the same search there.
+    var pendingQuery by remember { mutableStateOf<String?>(null) }
     val state by graph.hub.state.collectAsStateWithLifecycle()
     // Re-read feed lists after sign-in / sign-out.
     val ytSignedIn by graph.youTubeAccount.signedIn.collectAsStateWithLifecycle()
@@ -123,9 +134,22 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
             AppHeader(page, onPage = { page = it })
             when (page) {
                 Page.VIDEO -> {
-                    val index = videoSource.coerceIn(videoSources.indices)
-                    SourceChips(videoSources.map { S.sourceName(it.id) }, index) { videoSource = it }
-                    SourceTab(graph, videoSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn")
+                    val index = videoSources.indexOfFirst { it.id == videoSourceId }.coerceAtLeast(0)
+                    SourceChips(videoSources.map { S.sourceName(it.id) }, index) { videoSourceId = videoSources[it].id }
+                    SourceTab(
+                        graph, videoSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn",
+                        siblings = videoSources, pendingQuery = pendingQuery, onPendingConsumed = { pendingQuery = null },
+                        onSearchIn = { s, q -> videoSourceId = s.id; pendingQuery = q },
+                    )
+                }
+                Page.LIVE -> if (liveSources.isNotEmpty()) {
+                    val index = liveSources.indexOfFirst { it.id == liveSourceId }.coerceAtLeast(0)
+                    SourceChips(liveSources.map { S.sourceName(it.id) }, index) { liveSourceId = liveSources[it].id }
+                    SourceTab(
+                        graph, liveSources[index], refreshKey = "$ytSignedIn/$biliLoggedIn",
+                        siblings = liveSources, pendingQuery = pendingQuery, onPendingConsumed = { pendingQuery = null },
+                        onSearchIn = { s, q -> liveSourceId = s.id; pendingQuery = q },
+                    )
                 }
                 Page.MUSIC -> MusicTab(graph)
                 Page.PLAYLISTS -> PlaylistsTab(graph)
@@ -183,7 +207,7 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
     }
 }
 
-private enum class Page { VIDEO, MUSIC, PLAYLISTS, SETTINGS }
+private enum class Page { VIDEO, MUSIC, LIVE, PLAYLISTS, SETTINGS }
 
 /** One row: avatar, the Video / Music switch, then Playlists and Settings. */
 @Composable
@@ -195,11 +219,11 @@ private fun AppHeader(page: Page, onPage: (Page) -> Unit) {
         Avatar(36.dp)
         Spacer(Modifier.width(12.dp))
         SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
-            listOf(Page.VIDEO to S.video, Page.MUSIC to S.music).forEachIndexed { i, (p, label) ->
+            listOf(Page.VIDEO to S.video, Page.MUSIC to S.music, Page.LIVE to S.live).forEachIndexed { i, (p, label) ->
                 SegmentedButton(
                     selected = page == p,
                     onClick = { onPage(p) },
-                    shape = SegmentedButtonDefaults.itemShape(i, 2),
+                    shape = SegmentedButtonDefaults.itemShape(i, 3),
                     icon = {},
                 ) { Text(label, maxLines = 1) }
             }
@@ -273,8 +297,8 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
             Text(sub, maxLines = 2, style = MaterialTheme.typography.bodySmall,
                 color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        // Videos only (also while fetched as audio only, so the picture can be switched back on).
-        if (s.current?.source == SourceId.YOUTUBE || s.current?.source == SourceId.BILIBILI) {
+        // While a video plays as audio only there is no video view (and no button on it): offer the switch here.
+        if (s.noPicture && hasQualityChoice(s.current)) {
             Box(Modifier.padding(horizontal = 4.dp)) { QualityButton(graph) }
         }
         Spacer(Modifier.height(4.dp))
@@ -314,16 +338,30 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
     }
 }
 
+/** Only streamed videos have a quality to choose (music and local files don't). */
+private fun hasQualityChoice(item: VideoItem?) = item != null && !item.source.music && item.source != SourceId.LOCAL
+
 /** Quick quality / data-saver switch for the network in use (Wi-Fi or mobile data); also in Settings. */
 @Composable
-private fun QualityButton(graph: AppGraph) {
+private fun QualityButton(graph: AppGraph, onVideo: Boolean = false) {
     val metered by graph.hub.onMeteredNetwork.collectAsStateWithLifecycle()
     val wifi by Settings.qualityWifi.collectAsStateWithLifecycle()
     val mobile by Settings.qualityMobile.collectAsStateWithLifecycle()
     val current = if (metered) mobile else wifi
     var open by remember { mutableStateOf(false) }
     Box {
-        androidx.compose.material3.AssistChip(
+        if (onVideo) {
+            // On the picture, next to the player's own controls: gear + current choice, YouTube style.
+            Row(
+                Modifier.clip(MaterialTheme.shapes.small).background(Color.Black.copy(alpha = 0.55f))
+                    .clickable { open = true }.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(painterResource(R.drawable.ic_settings), S.quality, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(6.dp))
+                Text(qualityLabel(current), color = Color.White, style = MaterialTheme.typography.labelLarge)
+            }
+        } else androidx.compose.material3.AssistChip(
             onClick = { open = true },
             label = { Text("${S.quality}: ${qualityLabel(current)}") },
         )
@@ -345,12 +383,15 @@ private fun QualityButton(graph: AppGraph) {
 fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
     val s by graph.hub.state.collectAsStateWithLifecycle()
     val subtitleStyle by Settings.subtitles.collectAsStateWithLifecycle()
+    // The quality button shows and hides together with the player's own controls.
+    var controlsShown by remember { mutableStateOf(false) }
     Box(modifier.background(Color.Black)) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     setShowNextButton(false); setShowPreviousButton(false); setShowSubtitleButton(true)
+                    setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v -> controlsShown = v == android.view.View.VISIBLE })
                 }
             },
             update = { view ->
@@ -363,6 +404,9 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
             },
             onRelease = { it.player = null },
         )
+        if (showControls && controlsShown && !s.drivingLocked && !s.carActive && hasQualityChoice(s.current)) {
+            Box(Modifier.align(Alignment.TopStart).padding(10.dp)) { QualityButton(graph, onVideo = true) }
+        }
         // On a car screen (Automotive OS / head unit) video is hidden while moving.
         if (s.drivingLocked && !s.carActive) {
             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
@@ -376,14 +420,19 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
     }
 }
 
-private sealed interface LoadState {
-    data object Loading : LoadState
-    data class Loaded(val items: List<VideoItem>) : LoadState
-    data class Failed(val message: String) : LoadState
-}
 
 @Composable
-internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) {
+internal fun SourceTab(
+    graph: AppGraph,
+    source: VideoSource,
+    refreshKey: String,
+    /** The other platforms of this tab, for search everywhere. */
+    siblings: List<VideoSource> = emptyList(),
+    /** A search handed over from search everywhere's More. */
+    pendingQuery: String? = null,
+    onPendingConsumed: () -> Unit = {},
+    onSearchIn: ((VideoSource, String) -> Unit)? = null,
+) {
     if (source is PermissionSource) {
         var granted by remember { mutableStateOf(source.hasPermission()) }
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -421,82 +470,98 @@ internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String)
     var feedKey by rememberSaveable(source.id) { mutableStateOf(feeds.firstOrNull()?.key) }
     var query by rememberSaveable(source.id) { mutableStateOf("") }
     var activeQuery by rememberSaveable(source.id) { mutableStateOf<String?>(null) }
+    // A category picked in the Categories window replaces the feed until it's cleared.
+    var categoryKey by rememberSaveable(source.id) { mutableStateOf<String?>(null) }
+    var categoryTitle by rememberSaveable(source.id) { mutableStateOf("") }
+    var everywhere by rememberSaveable(source.id) { mutableStateOf(false) }
+    LaunchedEffect(pendingQuery, source.id) {
+        pendingQuery?.let { query = it; activeQuery = it; everywhere = false; categoryKey = null; onPendingConsumed() }
+    }
     var reload by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf<VideoItem?>(null) }
     adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
     val feed = feeds.firstOrNull { it.key == feedKey } ?: feeds.firstOrNull()
 
-    val load by produceState<LoadState>(LoadState.Loading, source, feed, activeQuery, reload) {
-        value = LoadState.Loading
-        value = try {
-            LoadState.Loaded(activeQuery?.let { source.search(it) } ?: feed?.let { source.loadFeed(it) } ?: emptyList())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            LoadState.Failed(e.message ?: e.javaClass.simpleName)
-        }
+    // The platform's categories (loaded once per platform); no button when there are none.
+    val categories by produceState(emptyList<Category>(), source.id, refreshKey) {
+        value = runCatching { source.categories() }.getOrDefault(emptyList())
     }
+    var showCategories by remember { mutableStateOf(false) }
+    if (showCategories) CategoryDialog(graph, source, categories, categoryKey, onPick = { c ->
+        categoryKey = c.key; categoryTitle = c.title; activeQuery = null; showCategories = false
+    }, onDismiss = { showCategories = false })
 
     Column(Modifier.fillMaxSize()) {
         if (source.supportsSearch) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                singleLine = true,
-                placeholder = { Text(S.searchIn(S.sourceName(source.id))) },
-                leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { activeQuery = query.trim().ifEmpty { null } }),
-            )
+            SearchField(source, query, onQuery = { query = it }, onSearch = { activeQuery = it })
         }
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            val browsingFeed = activeQuery == null && categoryKey == null
+            // Active search first, with an x to go back to browsing.
+            activeQuery?.let { q ->
+                InputChip(
+                    selected = true, onClick = { activeQuery = null; query = "" },
+                    label = { Text("${S.searchResults}: $q", maxLines = 1) },
+                    trailingIcon = { Icon(painterResource(R.drawable.ic_close), S.clearHistory, Modifier.size(16.dp)) },
+                )
+                // Same search on every platform of this tab.
+                if (siblings.count { it.supportsSearch } > 1) FilterChip(
+                    selected = everywhere, onClick = { everywhere = !everywhere },
+                    label = { Text(S.searchEverywhere) },
+                )
+            }
+            // Categories: opens the window with every category; shows the picked one (x clears it).
+            if (categories.isNotEmpty()) {
+                FilterChip(
+                    selected = categoryKey != null && activeQuery == null,
+                    onClick = { showCategories = true },
+                    label = { Text(if (categoryKey != null) categoryTitle else S.categories, maxLines = 1) },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_category), null, Modifier.size(16.dp)) },
+                    trailingIcon = if (categoryKey != null) {
+                        { Icon(painterResource(R.drawable.ic_close), S.clearCategory, Modifier.size(16.dp).clickable { categoryKey = null }) }
+                    } else null,
+                )
+            }
             feeds.forEach { f ->
                 FilterChip(
-                    selected = activeQuery == null && f.key == feed?.key,
+                    selected = browsingFeed && f.key == feed?.key,
                     onClick = {
-                        activeQuery = null; query = ""
-                        if (f.key == feed?.key) reload++ else feedKey = f.key
+                        activeQuery = null; query = ""; categoryKey = null
+                        if (f.key == feed?.key && browsingFeed) reload++ else feedKey = f.key
                     },
                     label = { Text(f.title) },
                 )
             }
         }
-        when (val l = load) {
-            LoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            is LoadState.Failed -> Column(Modifier.fillMaxWidth().padding(24.dp)) {
-                Text(l.message, color = MaterialTheme.colorScheme.error)
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = { reload++ }) { Text(S.retry) }
-            }
-            is LoadState.Loaded -> if (l.items.isEmpty()) {
-                Text(S.noVideos, Modifier.padding(24.dp))
-            } else {
-                LazyColumn(Modifier.fillMaxSize()) {
-                    itemsIndexed(l.items, key = { i, it -> "$i:${it.id}" }) { i, item ->
-                        val openCreator = item.authorId?.takeIf { source.supportsCreators }?.let { id ->
-                            { creatorId = id; creatorName = item.author.orEmpty() }
-                        }
-                        val onClick = if (source.isFolder(item)) {
-                            { openFolders = openFolders + item }
-                        } else {
-                            {
-                                val tracks = l.items.filterNot(source::isFolder)
-                                graph.hub.playQueue(tracks, tracks.indexOf(item))
-                            }
-                        }
-                        VideoRow(graph, item, onClick = onClick, onAuthor = openCreator) {
-                            IconButton(onClick = { adding = item }) {
-                                Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist)
-                            }
-                        }
-                    }
-                }
-            }
+        val q = activeQuery
+        val cat = categoryKey?.let { Category(it, categoryTitle).asFeed() }
+        if (q != null && everywhere) {
+            EverywhereResults(
+                graph, siblings, q,
+                onMore = { s -> if (s.id == source.id) everywhere = false else onSearchIn?.invoke(s, q) },
+                onFolder = { s, item -> if (s.id == source.id) openFolders = openFolders + item else onSearchIn?.invoke(s, q) },
+            )
+            return@Column
         }
+        PagedVideoList(
+            graph, source,
+            loadKey = listOf(source.id, q, cat?.key, feed?.key, reload, refreshKey),
+            page = { cursor ->
+                when {
+                    q != null -> source.searchPage(q, cursor)
+                    cat != null -> source.loadFeedPage(cat, cursor)
+                    feed != null -> source.loadFeedPage(feed, cursor)
+                    else -> FeedPage(emptyList())
+                }
+            },
+            onFolder = { openFolders = openFolders + it },
+            onCreator = { item -> creatorId = item.authorId; creatorName = item.author.orEmpty() },
+            onAdd = { adding = it },
+        )
     }
 }
 

@@ -43,18 +43,6 @@ fun CreatorPage(graph: AppGraph, source: VideoSource, id: String, name: String, 
     BackHandler(onBack = onBack)
     val saved by graph.creators.creators.collectAsStateWithLifecycle()
     val isSaved = saved.any { it.source == source.id && it.id == id }
-    var reload by remember { mutableIntStateOf(0) }
-    val result by produceState<Result<List<VideoItem>>?>(null, source, id, reload) {
-        value = null
-        value = try {
-            Result.success(source.creatorVideos(id))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_back), S.back) }
@@ -63,22 +51,11 @@ fun CreatorPage(graph: AppGraph, source: VideoSource, id: String, name: String, 
             if (isSaved) FilledTonalButton(onClick = toggle) { Text(S.savedCreator) }
             else OutlinedButton(onClick = toggle) { Text(S.saveCreator) }
         }
-        val r = result
-        when {
-            r == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            r.isFailure -> Column(Modifier.padding(24.dp)) {
-                Text(r.exceptionOrNull()?.message ?: "", color = MaterialTheme.colorScheme.error)
-                Button(onClick = { reload++ }, Modifier.padding(top = 8.dp)) { Text(S.retry) }
-            }
-            else -> {
-                val items = r.getOrDefault(emptyList())
-                if (items.isEmpty()) Text(S.noVideos, Modifier.padding(24.dp))
-                else LazyColumn(Modifier.fillMaxSize()) {
-                    itemsIndexed(items, key = { i, it -> "$i:${it.id}" }) { i, item ->
-                        VideoRow(graph, item, onClick = { graph.hub.playQueue(items, i) })
-                    }
-                }
-            }
-        }
+        // Endless: older videos load as the end of the list comes into view.
+        PagedVideoList(
+            graph, source, loadKey = listOf(source.id, id),
+            page = { cursor -> source.creatorPage(id, cursor) },
+            onFolder = {}, onCreator = null, onAdd = null,
+        )
     }
 }

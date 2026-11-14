@@ -54,6 +54,11 @@ object CreatorCodec {
 fun VideoSource.feedsWith(store: CreatorStore): List<Feed> =
     feeds() + if (supportsCreators) store.forSource(id).map { Feed(CREATOR_FEED_PREFIX + it.id, it.name) } else emptyList()
 
+/** One page of a feed (saved-creator feeds are a single page). */
+suspend fun VideoSource.loadFeedPage(feed: Feed, cursor: String?): FeedPage =
+    if (feed.key.startsWith(CREATOR_FEED_PREFIX)) creatorPage(feed.key.removePrefix(CREATOR_FEED_PREFIX), cursor)
+    else loadPage(feed, cursor)
+
 /** Loads a feed, including saved-creator feeds. */
 suspend fun VideoSource.loadFeed(feed: Feed): List<VideoItem> =
     if (feed.key.startsWith(CREATOR_FEED_PREFIX)) creatorVideos(feed.key.removePrefix(CREATOR_FEED_PREFIX)) else load(feed)
