@@ -1,5 +1,6 @@
 package app.pitstop.video.ui
 
+import app.pitstop.video.BuildConfig
 import app.pitstop.video.core.S
 import app.pitstop.video.core.I18n
 import android.Manifest
@@ -70,8 +71,11 @@ fun AccountScreen(graph: AppGraph) {
         HorizontalDivider()
         NeteaseSection(graph)
         HorizontalDivider()
-        DriveSection(graph)
-        HorizontalDivider()
+        // Drive sign-in needs the developer's own Google Cloud OAuth client: personal builds only.
+        if (BuildConfig.GOOGLE_CLOUD) {
+            DriveSection(graph)
+            HorizontalDivider()
+        }
         SafetySection(graph)
         PhonePlaybackSection()
         DataSaverSection()

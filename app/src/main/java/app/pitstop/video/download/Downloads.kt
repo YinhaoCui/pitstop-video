@@ -132,10 +132,12 @@ class Downloads(
     fun canDownload(item: VideoItem): Boolean =
         !item.source.live && item.source != SourceId.RADIO && !item.id.startsWith(COLLECTION_PREFIX) &&
             (BuildConfig.YOUTUBE_DOWNLOADS || item.source !in STREAM_ONLY) &&
+            // A file already on the phone can only be "downloaded" to Drive, which needs a Cloud client.
+            (BuildConfig.GOOGLE_CLOUD || (item.source != SourceId.LOCAL && item.source != SourceId.LOCAL_MUSIC)) &&
             !source(item.source).isFolder(item)
 
     fun enqueue(item: VideoItem, quality: VideoQuality, toPhone: Boolean, toDrive: Boolean) {
-        if (!canDownload(item)) return
+        if (!canDownload(item) || (toDrive && !BuildConfig.GOOGLE_CLOUD)) return
         val task = DownloadTask(nextId++, item, quality, toPhone, toDrive)
         _tasks.update { it + task }
         queue.trySend(task.id)

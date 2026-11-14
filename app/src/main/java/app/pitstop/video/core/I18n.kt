@@ -571,7 +571,7 @@ class Strings(val language: AppLanguage) {
     val signOutYoutube get() = t("Sign out of YouTube", "退出 YouTube")
     val youtubeSignInAgain get() = t("YouTube sign-in expired. Sign in again in Settings → YouTube.", "YouTube 登录已失效，请在 设置 → YouTube 中重新登录。")
     val signInGoogle get() = t("Sign in with Google", "使用 Google 登录")
-    fun googleFailed(msg: String?) = t("Google sign-in failed: $msg. See README → YouTube sign-in setup.", "Google 登录失败：$msg。请参阅 README 中的 YouTube 登录设置。")
+    fun googleFailed(msg: String?) = t("Google sign-in failed: $msg. See README → Google Drive (personal builds).", "Google 登录失败：$msg。请参阅 README 中的 Google Drive（自行构建）。")
     fun biliSignedIn(name: String?) = t("Signed in${name?.let { " as $it" } ?: ""}. Following feed and 1080p are on.", "已登录${name?.let { "（$it）" } ?: ""}。可看关注动态和 1080p。")
     val biliSignedOut get() = t("Plays up to 720p without an account. Sign in for 1080p and your Following feed.", "不登录最高 720p。登录后可看 1080p 和关注动态。")
     val signOutBili get() = t("Sign out of Bilibili", "退出哔哩哔哩")

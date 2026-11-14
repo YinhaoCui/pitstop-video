@@ -1,5 +1,6 @@
 package app.pitstop.video.ui
 
+import app.pitstop.video.BuildConfig
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -85,7 +86,7 @@ fun MusicTab(graph: AppGraph) {
             SourceId.YT_MUSIC -> !ytSignedIn
             SourceId.BILI_MUSIC -> !biliLoggedIn
             SourceId.NETEASE -> !neteaseSignedIn
-            SourceId.GDRIVE -> !driveSignedIn
+            SourceId.GDRIVE -> BuildConfig.GOOGLE_CLOUD && !driveSignedIn
             else -> false
         }
         if (needsLogin) MusicLoginCard(graph, source.id)
@@ -131,15 +132,18 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
             Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text(S.driveAddSongs) }
             if (hasFiles) TextButton(onClick = graph.driveSource::clearPicked) { Text(S.driveClear) }
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                scope.launch {
-                    runCatching { drivePicker.beginPick() }
-                        .onSuccess { googleLauncher.launch(IntentSenderRequest.Builder(it.intentSender).build()) }
-                        .onFailure { message = I18n.s.drivePickerFailed(it.message) }
-                }
-            }) { Text(S.driveGooglePick) }
-            if (hasGooglePicked) TextButton(onClick = drivePicker::clear) { Text(S.driveClear) }
+        // Google's own Drive picker uses an OAuth client: personal builds only.
+        if (BuildConfig.GOOGLE_CLOUD) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    scope.launch {
+                        runCatching { drivePicker.beginPick() }
+                            .onSuccess { googleLauncher.launch(IntentSenderRequest.Builder(it.intentSender).build()) }
+                            .onFailure { message = I18n.s.drivePickerFailed(it.message) }
+                    }
+                }) { Text(S.driveGooglePick) }
+                if (hasGooglePicked) TextButton(onClick = drivePicker::clear) { Text(S.driveClear) }
+            }
         }
         message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }

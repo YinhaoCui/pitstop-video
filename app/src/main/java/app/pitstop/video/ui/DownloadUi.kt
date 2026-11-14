@@ -1,5 +1,6 @@
 package app.pitstop.video.ui
 
+import app.pitstop.video.BuildConfig
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -64,7 +65,7 @@ fun DownloadDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit) {
     var quality by rememberSaveable { mutableStateOf(if (choices.isEmpty()) VideoQuality.AUDIO else VideoQuality.P720) }
     val local = item.source == SourceId.LOCAL || item.source == SourceId.LOCAL_MUSIC
     var toPhone by rememberSaveable { mutableStateOf(!local) }
-    var toDrive by rememberSaveable { mutableStateOf(local) }
+    var toDrive by rememberSaveable { mutableStateOf(local && BuildConfig.GOOGLE_CLOUD) }
     var error by remember { mutableStateOf<String?>(null) }
 
     fun start() {
@@ -104,8 +105,10 @@ fun DownloadDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit) {
                     CheckRow(S.downloadToPhoneOnly, toPhone) { toPhone = it }
                     if (toPhone) PhoneFolderRow(graph, Modifier.padding(start = 48.dp))
                 }
-                CheckRow(S.downloadToDriveOnly, toDrive) { toDrive = it }
-                if (toDrive) DriveFolderRow(graph, Modifier.padding(start = 48.dp))
+                if (BuildConfig.GOOGLE_CLOUD) {
+                    CheckRow(S.downloadToDriveOnly, toDrive) { toDrive = it }
+                    if (toDrive) DriveFolderRow(graph, Modifier.padding(start = 48.dp))
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },
@@ -206,8 +209,10 @@ internal fun DownloadsSection(graph: AppGraph) {
     Text(S.downloadFolders, style = MaterialTheme.typography.titleSmall)
     Text(S.downloadToPhoneOnly, style = MaterialTheme.typography.bodyMedium)
     PhoneFolderRow(graph)
-    Text(S.downloadToDriveOnly, style = MaterialTheme.typography.bodyMedium)
-    DriveFolderRow(graph)
+    if (BuildConfig.GOOGLE_CLOUD) {
+        Text(S.downloadToDriveOnly, style = MaterialTheme.typography.bodyMedium)
+        DriveFolderRow(graph)
+    }
     if (tasks.isEmpty()) {
         Text(S.downloadNothing, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
