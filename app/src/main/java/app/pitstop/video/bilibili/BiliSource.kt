@@ -1,5 +1,6 @@
 package app.pitstop.video.bilibili
 
+import app.pitstop.video.core.Category
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
@@ -7,6 +8,7 @@ import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
+import app.pitstop.video.core.categoryKey
 
 class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) : VideoSource {
     override val id = SourceId.BILIBILI
@@ -21,7 +23,7 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
     override suspend fun load(feed: Feed): List<VideoItem> = when (feed.key) {
         FEED_POPULAR -> api.popular()
         FEED_FOLLOWING -> api.following().items
-        else -> api.recommended()
+        else -> feed.categoryKey()?.toIntOrNull()?.let { api.zonePage(it, 1).items } ?: api.recommended()
     }
 
     /** Following scrolls endlessly; the cursor is Bilibili's offset plus our page number ("offset|page"). */
@@ -31,7 +33,11 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
             FEED_POPULAR -> return api.popularPage(n)
             FEED_RECOMMENDED -> return api.recommendedPage(n)
             FEED_FOLLOWING -> {}
-            else -> return super.loadPage(feed, cursor)
+            else -> {
+                // A zone (分区) picked in Categories: its recommendation feed, endless.
+                val tid = feed.categoryKey()?.toIntOrNull() ?: return super.loadPage(feed, cursor)
+                return api.zonePage(tid, n)
+            }
         }
         val (offset, page) = cursor?.split('|', limit = 2)?.let { it[0] to (it.getOrNull(1)?.toIntOrNull() ?: 2) } ?: (null to 1)
         val p = api.following(offset, page)
@@ -40,9 +46,21 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
 
     override suspend fun search(query: String) = api.search(query)
 
+    /** Bilibili's video zones (分区). Only top-level zones have a working video list, so sub-zones are not offered. */
+    override suspend fun categories(): List<Category> = api.zones().map { Category(it.tid.toString(), it.name) }
+
+    /** Endless search; the cursor is the next page number. */
+    override suspend fun searchPage(query: String, cursor: String?): FeedPage =
+        api.searchPage(query, cursor?.toIntOrNull() ?: 1)
+
+    override suspend fun suggestions(query: String): List<String> = api.suggestions(query)
+
     override val supportsCreators get() = true
 
     override suspend fun creatorVideos(authorId: String) = api.uploaderVideos(authorId, SourceId.BILIBILI)
+
+    override suspend fun creatorPage(authorId: String, cursor: String?): FeedPage =
+        api.uploaderPage(authorId, cursor?.toIntOrNull() ?: 1, SourceId.BILIBILI)
 
     /** 分P: a video with several parts becomes one queue entry per part. */
     override suspend fun expand(item: VideoItem): List<VideoItem>? {

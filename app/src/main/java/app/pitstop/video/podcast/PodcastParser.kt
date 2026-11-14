@@ -1,6 +1,7 @@
 package app.pitstop.video.podcast
 
 import app.pitstop.video.core.COLLECTION_PREFIX
+import app.pitstop.video.core.FeedPage
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.VideoItem
 import java.io.InputStream
@@ -8,6 +9,7 @@ import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.Locale
 import javax.xml.parsers.SAXParserFactory
+import org.json.JSONArray
 import org.json.JSONObject
 import org.xml.sax.Attributes
 import org.xml.sax.InputSource
@@ -40,6 +42,49 @@ object PodcastParser {
     /** Show rows (folders) have ids like `list:show:<feed url or Apple id>`. */
     const val SHOW_PREFIX = COLLECTION_PREFIX + "show:"
     const val MAX_EPISODES = 300
+
+    /** Most episodes kept of one feed (a show's endless episode list, see [episodePage]). */
+    const val MAX_ALL_EPISODES = 3000
+
+    /**
+     * Apple's top-level podcast genres (ids from `itunes.apple.com/WebObjects/MZStoreServices.woa/ws/genres?id=26`),
+     * in Apple's order. Names come from I18n.
+     */
+    val GENRES = listOf(
+        1301, 1321, 1303, 1304, 1483, 1511, 1512, 1487, 1305, 1502,
+        1310, 1489, 1314, 1533, 1324, 1545, 1309, 1318, 1488,
+    )
+
+    /** One page of a show's episodes: [size] rows from [offset]; the cursor is the next offset. */
+    fun episodePage(all: List<VideoItem>, offset: Int, size: Int = 50): FeedPage {
+        val from = offset.coerceIn(0, all.size)
+        val to = minOf(all.size, from + size)
+        return FeedPage(all.subList(from, to).toList(), next = if (to < all.size) to.toString() else null)
+    }
+
+    /**
+     * The legacy iTunes RSS chart (`itunes.apple.com/{cc}/rss/toppodcasts/limit=200/genre={id}/json`,
+     * which, unlike the new charts API, takes a genre): show rows keyed by Apple id. `feed.entry` is an
+     * object instead of an array when there is a single show.
+     */
+    fun legacyChartShows(json: String): List<VideoItem> {
+        val feed = JSONObject(json).optJSONObject("feed") ?: return emptyList()
+        val entries = feed.optJSONArray("entry") ?: feed.optJSONObject("entry")?.let { JSONArray().put(it) } ?: return emptyList()
+        return (0 until entries.length()).mapNotNull { i ->
+            val o = entries.optJSONObject(i) ?: return@mapNotNull null
+            val id = o.optJSONObject("id")?.optJSONObject("attributes")?.optString("im:id")?.ifBlank { null }
+                ?: return@mapNotNull null
+            val images = o.optJSONArray("im:image")
+            val image = images?.optJSONObject(images.length() - 1)?.optString("label")
+            VideoItem(
+                source = SourceId.PODCASTS,
+                id = SHOW_PREFIX + id,
+                title = o.optJSONObject("im:name")?.optString("label").orEmpty(),
+                author = o.optJSONObject("im:artist")?.optString("label")?.ifBlank { null },
+                thumbnailUrl = https(image?.ifBlank { null })?.replace(Regex("/\\d+x\\d+bb\\."), "/600x600bb."),
+            )
+        }
+    }
 
     /**
      * Parses an RSS feed, stopping after [maxItems] items. A malformed feed returns what was read
@@ -133,11 +178,12 @@ object PodcastParser {
      * iTunes search / lookup JSON (`results`): Apple id → show row keyed by its RSS feed URL.
      * Results without a feed URL are left out.
      */
-    fun itunesShows(json: String): Map<String, VideoItem> {
+    fun itunesShows(json: String, genreId: Int? = null): Map<String, VideoItem> {
         val results = JSONObject(json).optJSONArray("results") ?: return emptyMap()
         val out = LinkedHashMap<String, VideoItem>()
         for (i in 0 until results.length()) {
             val o = results.optJSONObject(i) ?: continue
+            if (genreId != null && !o.inGenre(genreId)) continue
             val feedUrl = https(o.optString("feedUrl").ifBlank { null }) ?: continue
             val name = o.optString("collectionName").ifBlank { o.optString("trackName") }
             out[o.optLong("collectionId").toString()] = VideoItem(
@@ -151,6 +197,12 @@ object PodcastParser {
             )
         }
         return out
+    }
+
+    /** True when an iTunes result lists [genreId] among its `genreIds` (strings in the JSON). */
+    private fun JSONObject.inGenre(genreId: Int): Boolean {
+        val ids = optJSONArray("genreIds") ?: return false
+        return (0 until ids.length()).any { ids.optString(it) == genreId.toString() }
     }
 
     /** Chart rows with their Apple ids swapped for feed URLs where the lookup found one. */

@@ -56,9 +56,8 @@ fun VideoSource.feedsWith(store: CreatorStore): List<Feed> =
 
 /** One page of a feed (saved-creator feeds are a single page). */
 suspend fun VideoSource.loadFeedPage(feed: Feed, cursor: String?): FeedPage =
-    if (feed.key.startsWith(CREATOR_FEED_PREFIX)) {
-        if (cursor == null) FeedPage(creatorVideos(feed.key.removePrefix(CREATOR_FEED_PREFIX))) else FeedPage(emptyList())
-    } else loadPage(feed, cursor)
+    if (feed.key.startsWith(CREATOR_FEED_PREFIX)) creatorPage(feed.key.removePrefix(CREATOR_FEED_PREFIX), cursor)
+    else loadPage(feed, cursor)
 
 /** Loads a feed, including saved-creator feeds. */
 suspend fun VideoSource.loadFeed(feed: Feed): List<VideoItem> =

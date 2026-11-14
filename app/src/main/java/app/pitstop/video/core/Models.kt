@@ -52,6 +52,17 @@ data class Feed(val key: String, val title: String)
 /** One page of a feed; [next] is the cursor for the following page, null at the end. */
 data class FeedPage(val items: List<VideoItem>, val next: String? = null)
 
+/**
+ * A browsable category: a zone, genre, game, live area, country ... [group] puts it under a heading
+ * in the Categories window (e.g. a parent area); [key] is whatever the source needs to list it.
+ */
+data class Category(val key: String, val title: String, val group: String? = null, val thumbnailUrl: String? = null)
+
+/** Feeds whose key starts with this are categories; [VideoSource.loadPage] gets them like any feed. */
+const val CATEGORY_FEED_PREFIX = "cat:"
+fun Category.asFeed() = Feed(CATEGORY_FEED_PREFIX + key, title)
+fun Feed.categoryKey(): String? = key.takeIf { it.startsWith(CATEGORY_FEED_PREFIX) }?.removePrefix(CATEGORY_FEED_PREFIX)
+
 /** Where the player should actually fetch media from. */
 data class PlayableStream(
     val videoUri: String,
@@ -84,6 +95,19 @@ interface VideoSource {
     suspend fun loadPage(feed: Feed, cursor: String?): FeedPage =
         if (cursor == null) FeedPage(load(feed)) else FeedPage(emptyList())
     suspend fun search(query: String): List<VideoItem>
+
+    /**
+     * Every category the platform offers (shown in the Categories window); empty = no Categories
+     * button. Picking one calls [loadPage] with `category.asFeed()` (key = [CATEGORY_FEED_PREFIX] + key).
+     */
+    suspend fun categories(): List<Category> = emptyList()
+
+    /** Endless search: [cursor] null for the first page, then the previous page's [FeedPage.next]. */
+    suspend fun searchPage(query: String, cursor: String?): FeedPage =
+        if (cursor == null) FeedPage(search(query)) else FeedPage(emptyList())
+
+    /** Search-as-you-type suggestions (query completions); empty when the platform has none. */
+    suspend fun suggestions(query: String): List<String> = emptyList()
     suspend fun resolve(item: VideoItem): PlayableStream
 
     /** Splits a multi-part video into its parts (Bilibili 分P); null when it is a single video. */
@@ -100,6 +124,10 @@ interface VideoSource {
 
     /** Latest videos of one creator (channel / uploader). */
     suspend fun creatorVideos(authorId: String): List<VideoItem> = emptyList()
+
+    /** A creator's videos, endlessly: like [loadPage]. Defaults to [creatorVideos] as one page. */
+    suspend fun creatorPage(authorId: String, cursor: String?): FeedPage =
+        if (cursor == null) FeedPage(creatorVideos(authorId)) else FeedPage(emptyList())
 }
 
 /**

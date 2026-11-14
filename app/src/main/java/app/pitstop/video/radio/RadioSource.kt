@@ -1,6 +1,7 @@
 package app.pitstop.video.radio
 
 import app.pitstop.video.core.AppLanguage
+import app.pitstop.video.core.Category
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
 import app.pitstop.video.core.I18n
@@ -9,13 +10,17 @@ import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
+import app.pitstop.video.core.categoryKey
 import app.pitstop.video.core.getString
 import java.io.IOException
 import java.util.Locale
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Internet radio from the community radio-browser.info directory. Only stations that passed the
@@ -36,19 +41,43 @@ class RadioSource(private val http: OkHttpClient) : VideoSource {
     override suspend fun load(feed: Feed) = loadPage(feed, null).items
 
     override suspend fun loadPage(feed: Feed, cursor: String?): FeedPage {
+        val filter = feed.categoryKey()?.let { RadioParser.categoryFilter(it) ?: return FeedPage(emptyList()) }
+            ?: when (feed.key) {
+                FEED_LOCAL -> listOf("countrycode" to localCountry())
+                FEED_CHINESE -> listOf("language" to "chinese")
+                else -> emptyList()
+            }
+        return page(filter, cursor)
+    }
+
+    /** Stations matching [filter], most voted first, [PAGE] at a time (cursor = offset). */
+    private suspend fun page(filter: List<Pair<String, String>>, cursor: String?): FeedPage {
         val offset = cursor?.toIntOrNull() ?: 0
-        val filter = when (feed.key) {
-            FEED_LOCAL -> listOf("countrycode" to localCountry())
-            FEED_CHINESE -> listOf("language" to "chinese")
-            else -> emptyList()
-        }
         val json = search(filter + listOf("order" to "votes", "offset" to "$offset", "limit" to "$PAGE"))
         val count = JSONArray(json).length()
         return FeedPage(RadioParser.stations(json), next = if (count >= PAGE) "${offset + PAGE}" else null)
     }
 
-    override suspend fun search(query: String): List<VideoItem> =
-        RadioParser.stations(search(listOf("name" to query, "order" to "votes", "limit" to "100")))
+    override suspend fun search(query: String): List<VideoItem> = searchPage(query, null).items
+
+    override suspend fun searchPage(query: String, cursor: String?): FeedPage = page(listOf("name" to query), cursor)
+
+    /**
+     * Genres (tags), countries and languages, each with enough working stations to be worth a list;
+     * the names are the directory's own. A list that fails to load is left out.
+     */
+    override suspend fun categories(): List<Category> = coroutineScope {
+        val s = I18n.s
+        fun list(path: String) = async {
+            runCatching { api(path, listOf("order" to "stationcount", "reverse" to "true", "hidebroken" to "true")) }.getOrNull()
+        }
+        val tags = list("/json/tags")
+        val countries = list("/json/countries")
+        val languages = list("/json/languages")
+        tags.await()?.let { RadioParser.tagCategories(it, s.radioGenres) }.orEmpty() +
+            countries.await()?.let { RadioParser.countryCategories(it, s.radioCountries) }.orEmpty() +
+            languages.await()?.let { RadioParser.languageCategories(it, s.radioLanguages) }.orEmpty()
+    }
 
     override suspend fun resolve(item: VideoItem): PlayableStream {
         // Fresh details: stations move their stream URLs now and then (saved items may be old).
@@ -139,6 +168,47 @@ object RadioParser {
             )
         }.distinctBy { it.id }
     }
+
+    /** Least stations a tag / country / language needs to be listed as a category. */
+    const val MIN_TAG_STATIONS = 100
+    const val MIN_COUNTRY_STATIONS = 10
+    const val MIN_LANGUAGE_STATIONS = 20
+    /** Category keys: `tag:<name>`, `country:<ISO code>`, `lang:<name>`. */
+    private const val TAG = "tag:"
+    private const val COUNTRY = "country:"
+    private const val LANG = "lang:"
+
+    /** `/json/tags` → genre categories (key `tag:<name>`) with at least [min] stations. */
+    fun tagCategories(json: String, group: String, min: Int = MIN_TAG_STATIONS): List<Category> =
+        named(json, min) { o -> o.optString("name").trim().ifEmpty { null }?.let { Category(TAG + it, it, group) } }
+
+    /** `/json/countries` → country categories (key `country:<ISO 3166-1 code>`, title = `name`). */
+    fun countryCategories(json: String, group: String, min: Int = MIN_COUNTRY_STATIONS): List<Category> =
+        named(json, min) { o ->
+            val code = o.optString("iso_3166_1").trim().uppercase().takeIf { it.length == 2 } ?: return@named null
+            Category(COUNTRY + code, o.optString("name").trim().ifEmpty { code }, group)
+        }
+
+    /** `/json/languages` → language categories (key `lang:<name>`). */
+    fun languageCategories(json: String, group: String, min: Int = MIN_LANGUAGE_STATIONS): List<Category> =
+        named(json, min) { o -> o.optString("name").trim().ifEmpty { null }?.let { Category(LANG + it, it, group) } }
+
+    private fun named(json: String, min: Int, make: (JSONObject) -> Category?): List<Category> {
+        val arr = JSONArray(json)
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            if (o.optInt("stationcount") < min) return@mapNotNull null
+            make(o)
+        }.distinctBy { it.key }
+    }
+
+    /** Station-search parameters for a category key from the functions above; null for an unknown key. */
+    fun categoryFilter(key: String): List<Pair<String, String>>? = when {
+        key.startsWith(TAG) -> listOf("tag" to key.removePrefix(TAG), "tagExact" to "true")
+        key.startsWith(COUNTRY) -> listOf("countrycode" to key.removePrefix(COUNTRY))
+        key.startsWith(LANG) -> listOf("language" to key.removePrefix(LANG), "languageExact" to "true")
+        else -> null
+    }.takeIf { it?.first()?.second?.isNotBlank() == true }
 
     fun streamUrl(item: VideoItem): String? = item.extra?.removePrefix(HLS_MARK)?.ifBlank { null }
 

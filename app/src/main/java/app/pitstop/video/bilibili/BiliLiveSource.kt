@@ -1,5 +1,6 @@
 package app.pitstop.video.bilibili
 
+import app.pitstop.video.core.Category
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
@@ -10,6 +11,7 @@ import app.pitstop.video.core.StreamPolicy
 import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
+import app.pitstop.video.core.categoryKey
 import app.pitstop.video.core.getString
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,6 +42,7 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
 
     override suspend fun loadPage(feed: Feed, cursor: String?): FeedPage {
         val page = cursor?.toIntOrNull() ?: 1
+        feed.categoryKey()?.let { key -> BiliLiveParse.areaKey(key)?.let { (parent, area) -> return areaRooms(parent, area, page) } }
         return when (feed.key) {
             FEED_POPULAR -> popular(page)
             FEED_FOLLOWING -> following(page)
@@ -90,16 +93,49 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
         return FeedPage(out, page.toString().takeIf { page <= total })
     }
 
-    override suspend fun search(query: String): List<VideoItem> {
+    /**
+     * Live areas: parent areas (网游, 手游, 娱乐 ...) as groups, their areas as categories, each parent
+     * starting with its "all" entry (area id 0). The list is cached for the session.
+     */
+    override suspend fun categories(): List<Category> = areaLock.withLock {
+        areaCache ?: BiliLiveParse.areas(dataArray("$LIVE_API/room/v1/Area/getList?need_entrance=1&parent_id=0"))
+            .also { if (it.isNotEmpty()) areaCache = it }
+    }
+
+    private val areaLock = Mutex()
+    private var areaCache: List<Category>? = null
+
+    /** Rooms live in one area by viewers, 30 per page, until the area's `count` is reached. */
+    private suspend fun areaRooms(parent: String, area: String, page: Int): FeedPage {
         ensureDeviceId()
+        val d = data(
+            "$LIVE_API/room/v3/area/getRoomList?platform=web&parent_area_id=$parent&area_id=$area" +
+                "&page=$page&page_size=$AREA_PAGE_SIZE&sort_type=online",
+        )
+        return BiliLiveParse.areaPage(d, page, AREA_PAGE_SIZE, I18n.s::viewers)
+    }
+
+    override suspend fun search(query: String): List<VideoItem> = searchPage(query, null).items
+
+    /** Live room search, 40 per page; the cursor is the next page number until `numPages`. */
+    override suspend fun searchPage(query: String, cursor: String?): FeedPage {
+        ensureDeviceId()
+        val page = cursor?.toIntOrNull() ?: 1
         val d = data(
             "https://api.bilibili.com/x/web-interface/wbi/search/type?" +
                 Wbi.sign(
-                    mapOf("search_type" to "live_room", "keyword" to query, "page" to "1"),
+                    mapOf("search_type" to "live_room", "keyword" to query, "page" to "$page"),
                     wbiKey(), System.currentTimeMillis() / 1000,
                 ),
         )
-        return BiliLiveParse.rooms(d.optJSONArray("result"), I18n.s::viewers)
+        return BiliLiveParse.searchPage(d, page, I18n.s::viewers)
+    }
+
+    /** Bilibili has no live-only suggest service; the site-wide one is used. */
+    override suspend fun suggestions(query: String): List<String> {
+        if (query.isBlank()) return emptyList()
+        val url = "https://s.search.bilibili.com/main/suggest?main_ver=v1&term=" + java.net.URLEncoder.encode(query.trim(), "UTF-8")
+        return BiliZones.suggestions(raw(url))
     }
 
     override suspend fun resolve(item: VideoItem): PlayableStream {
@@ -151,6 +187,14 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
 
     private suspend fun data(url: String): JSONObject = checked(raw(url))
 
+    /** For answers whose `data` is an array (Area/getList). */
+    private suspend fun dataArray(url: String): JSONArray {
+        val json = raw(url)
+        val code = json.optInt("code")
+        if (code != 0) throw BiliException(code, json.optString("message"))
+        return json.optJSONArray("data") ?: JSONArray()
+    }
+
     /** Anonymous device cookies; several live endpoints answer -352 / empty lists without them. */
     private suspend fun ensureDeviceId() {
         if (cookies.get("buvid3") != null) return
@@ -179,6 +223,7 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
         private const val LIVE_REFERER = "https://live.bilibili.com/"
         private const val MAX_RECOMMENDED_PAGES = 30
         private const val FOLLOWING_PAGES_PER_CALL = 3
+        private const val AREA_PAGE_SIZE = 30
         private val PLAY_HEADERS = mapOf("Referer" to LIVE_REFERER, "User-Agent" to DESKTOP_UA)
     }
 }
@@ -257,6 +302,45 @@ object BiliLiveParse {
             thumbnailUrl = BiliText.thumb(o.optString("user_cover").ifEmpty { o.optString("cover") }),
             durationSec = null,
         )
+    }
+
+    /** room/v1/Area/getList `data`: parent areas with their `list` of areas (ids are strings; `pic` is the icon). */
+    fun areas(parents: JSONArray?): List<Category> = parents.objects().flatMap { p ->
+        val parentId = p.optString("id").ifEmpty { return@flatMap emptyList() }
+        val group = p.optString("name")
+        p.optJSONArray("list").objects().mapNotNull { a ->
+            val id = a.optString("id").ifEmpty { return@mapNotNull null }
+            val name = a.optString("name").ifEmpty { return@mapNotNull null }
+            Category("${a.optString("parent_id").ifEmpty { parentId }}:$id", name, group, iconUrl(a.optString("pic")))
+        }
+    }
+
+    /** Area icons are square PNGs: only make the URL absolute https (no 16:9 thumbnail crop). */
+    private fun iconUrl(pic: String): String? = when {
+        pic.isBlank() -> null
+        pic.startsWith("//") -> "https:$pic"
+        pic.startsWith("http://") -> "https://" + pic.removePrefix("http://")
+        else -> pic
+    }
+
+    /** "parent:area" category key -> (parent area id, area id). */
+    fun areaKey(key: String): Pair<String, String>? {
+        val parts = key.split(':')
+        if (parts.size != 2 || parts.any { it.toIntOrNull() == null }) return null
+        return parts[0] to parts[1]
+    }
+
+    /** room/v3/area/getRoomList `data`: `list` of rooms plus the area's total `count`. */
+    fun areaPage(d: JSONObject, page: Int, pageSize: Int, viewers: (Long) -> String): FeedPage {
+        val items = rooms(d.optJSONArray("list"), viewers)
+        val more = items.isNotEmpty() && page.toLong() * pageSize < d.optLong("count")
+        return FeedPage(items, (page + 1).toString().takeIf { more })
+    }
+
+    /** wbi/search/type (live_room) `data`: `result` rooms, `numPages` pages. */
+    fun searchPage(d: JSONObject, page: Int, viewers: (Long) -> String): FeedPage {
+        val items = rooms(d.optJSONArray("result"), viewers)
+        return FeedPage(items, (page + 1).toString().takeIf { items.isNotEmpty() && page < d.optInt("numPages") })
     }
 
     /** Followed streamers who are live now (web-ucenter/user/following `list`). */

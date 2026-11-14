@@ -94,6 +94,7 @@ object Settings {
         _backgroundPlay.value = p.getBoolean("background_play", true)
         _themeMode.value = runCatching { ThemeMode.valueOf(p.getString("theme_mode", null)!!) }.getOrDefault(ThemeMode.LIGHT)
         _background.value = p.getString("background_uri", null)
+        _searchHistory.value = p.getString("search_history", null).orEmpty().split('\n').filter { it.isNotBlank() }
         _hiddenSources.value = p.getStringSet("hidden_sources", emptySet()).orEmpty()
             .mapNotNull { n -> SourceId.entries.firstOrNull { it.name == n } }.toSet()
         _qualityWifi.value = runCatching { VideoQuality.valueOf(p.getString("quality_wifi", null)!!) }.getOrDefault(VideoQuality.AUTO)
@@ -137,6 +138,25 @@ object Settings {
         val s = if (shown) _hiddenSources.value - id else _hiddenSources.value + id
         _hiddenSources.value = s
         prefs?.edit()?.putStringSet("hidden_sources", s.mapTo(HashSet()) { it.name })?.apply()
+    }
+
+    private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
+    /** Recent searches, newest first (shared by every platform), at most [MAX_HISTORY]. */
+    val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
+    private const val MAX_HISTORY = 12
+
+    fun addSearch(query: String) {
+        val q = query.trim()
+        if (q.isEmpty()) return
+        saveHistory((listOf(q) + _searchHistory.value.filterNot { it.equals(q, ignoreCase = true) }).take(MAX_HISTORY))
+    }
+
+    fun clearSearchHistory() = saveHistory(emptyList())
+
+    private fun saveHistory(list: List<String>) {
+        _searchHistory.value = list
+        // Newlines can't appear in a single-line search, so they separate the entries.
+        prefs?.edit()?.putString("search_history", list.joinToString("\n"))?.apply()
     }
 
     fun setAudioOnlyWhileDriving(value: Boolean) {

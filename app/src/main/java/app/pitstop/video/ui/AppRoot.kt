@@ -89,6 +89,10 @@ import app.pitstop.video.local.PermissionSource
 import app.pitstop.video.core.feedsWith
 import app.pitstop.video.core.loadFeed
 import app.pitstop.video.core.loadFeedPage
+import androidx.compose.material3.InputChip
+import app.pitstop.video.core.asFeed
+import app.pitstop.video.core.FeedPage
+import app.pitstop.video.core.Category
 import app.pitstop.video.player.DisplayMode
 import app.pitstop.video.player.RepeatMode
 import kotlinx.coroutines.CancellationException
@@ -406,12 +410,6 @@ fun PhonePlayer(graph: AppGraph, modifier: Modifier, showControls: Boolean) {
     }
 }
 
-private sealed interface LoadState {
-    data object Loading : LoadState
-    /** [next]: cursor of the following page (endless feeds); [moreFailed]: loading it failed, offer a retry. */
-    data class Loaded(val items: List<VideoItem>, val next: String? = null, val moreFailed: String? = null) : LoadState
-    data class Failed(val message: String) : LoadState
-}
 
 @Composable
 internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String) {
@@ -452,121 +450,81 @@ internal fun SourceTab(graph: AppGraph, source: VideoSource, refreshKey: String)
     var feedKey by rememberSaveable(source.id) { mutableStateOf(feeds.firstOrNull()?.key) }
     var query by rememberSaveable(source.id) { mutableStateOf("") }
     var activeQuery by rememberSaveable(source.id) { mutableStateOf<String?>(null) }
+    // A category picked in the Categories window replaces the feed until it's cleared.
+    var categoryKey by rememberSaveable(source.id) { mutableStateOf<String?>(null) }
+    var categoryTitle by rememberSaveable(source.id) { mutableStateOf("") }
     var reload by remember { mutableIntStateOf(0) }
     var adding by remember { mutableStateOf<VideoItem?>(null) }
     adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
     val feed = feeds.firstOrNull { it.key == feedKey } ?: feeds.firstOrNull()
 
-    var load by remember { mutableStateOf<LoadState>(LoadState.Loading) }
-    LaunchedEffect(source, feed, activeQuery, reload) {
-        load = LoadState.Loading
-        load = try {
-            if (activeQuery != null) LoadState.Loaded(source.search(activeQuery!!))
-            else feed?.let { f -> source.loadFeedPage(f, null).let { LoadState.Loaded(it.items, it.next) } }
-                ?: LoadState.Loaded(emptyList())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            LoadState.Failed(e.message ?: e.javaClass.simpleName)
-        }
+    // The platform's categories (loaded once per platform); no button when there are none.
+    val categories by produceState(emptyList<Category>(), source.id, refreshKey) {
+        value = runCatching { source.categories() }.getOrDefault(emptyList())
     }
-    // Endless feeds: the next page is fetched when the end of the list comes into view.
-    var moreTry by remember { mutableIntStateOf(0) }
-    suspend fun loadMore(from: LoadState.Loaded) {
-        val f = feed ?: return
-        val cursor = from.next ?: return
-        load = try {
-            val seen = from.items.mapTo(HashSet()) { it.id }
-            var next: String? = cursor
-            var fresh = emptyList<VideoItem>()
-            // A page with nothing new (an empty chart, only repeats) is skipped; three in a row means the end.
-            var tries = 0
-            while (next != null && fresh.isEmpty() && tries++ < 3) {
-                val page = source.loadFeedPage(f, next)
-                fresh = page.items.filter { seen.add(it.id) }
-                next = page.next
-            }
-            LoadState.Loaded(from.items + fresh, next.takeIf { fresh.isNotEmpty() })
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            from.copy(moreFailed = e.message ?: e.javaClass.simpleName)
-        }
-    }
+    var showCategories by remember { mutableStateOf(false) }
+    if (showCategories) CategoryDialog(graph, source, categories, categoryKey, onPick = { c ->
+        categoryKey = c.key; categoryTitle = c.title; activeQuery = null; showCategories = false
+    }, onDismiss = { showCategories = false })
 
     Column(Modifier.fillMaxSize()) {
         if (source.supportsSearch) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                singleLine = true,
-                placeholder = { Text(S.searchIn(S.sourceName(source.id))) },
-                leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { activeQuery = query.trim().ifEmpty { null } }),
-            )
+            SearchField(source, query, onQuery = { query = it }, onSearch = { activeQuery = it })
         }
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            val browsingFeed = activeQuery == null && categoryKey == null
+            // Active search first, with an x to go back to browsing.
+            activeQuery?.let { q ->
+                InputChip(
+                    selected = true, onClick = { activeQuery = null; query = "" },
+                    label = { Text("${S.searchResults}: $q", maxLines = 1) },
+                    trailingIcon = { Icon(painterResource(R.drawable.ic_close), S.clearHistory, Modifier.size(16.dp)) },
+                )
+            }
+            // Categories: opens the window with every category; shows the picked one (x clears it).
+            if (categories.isNotEmpty()) {
+                FilterChip(
+                    selected = categoryKey != null && activeQuery == null,
+                    onClick = { showCategories = true },
+                    label = { Text(if (categoryKey != null) categoryTitle else S.categories, maxLines = 1) },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_category), null, Modifier.size(16.dp)) },
+                    trailingIcon = if (categoryKey != null) {
+                        { Icon(painterResource(R.drawable.ic_close), S.clearCategory, Modifier.size(16.dp).clickable { categoryKey = null }) }
+                    } else null,
+                )
+            }
             feeds.forEach { f ->
                 FilterChip(
-                    selected = activeQuery == null && f.key == feed?.key,
+                    selected = browsingFeed && f.key == feed?.key,
                     onClick = {
-                        activeQuery = null; query = ""
-                        if (f.key == feed?.key) reload++ else feedKey = f.key
+                        activeQuery = null; query = ""; categoryKey = null
+                        if (f.key == feed?.key && browsingFeed) reload++ else feedKey = f.key
                     },
                     label = { Text(f.title) },
                 )
             }
         }
-        when (val l = load) {
-            LoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            is LoadState.Failed -> Column(Modifier.fillMaxWidth().padding(24.dp)) {
-                Text(l.message, color = MaterialTheme.colorScheme.error)
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = { reload++ }) { Text(S.retry) }
-            }
-            is LoadState.Loaded -> if (l.items.isEmpty()) {
-                Text(S.noVideos, Modifier.padding(24.dp))
-            } else {
-                LazyColumn(Modifier.fillMaxSize()) {
-                    itemsIndexed(l.items, key = { i, it -> "$i:${it.id}" }) { i, item ->
-                        val openCreator = item.authorId?.takeIf { source.supportsCreators }?.let { id ->
-                            { creatorId = id; creatorName = item.author.orEmpty() }
-                        }
-                        val onClick = if (source.isFolder(item)) {
-                            { openFolders = openFolders + item }
-                        } else {
-                            {
-                                val tracks = l.items.filterNot(source::isFolder)
-                                graph.hub.playQueue(tracks, tracks.indexOf(item))
-                            }
-                        }
-                        VideoRow(graph, item, onClick = onClick, onAuthor = openCreator) {
-                            IconButton(onClick = { adding = item }) {
-                                Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist)
-                            }
-                        }
-                    }
-                    if (l.next != null) item(key = "more") {
-                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            if (l.moreFailed != null) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(l.moreFailed, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                                    Button(onClick = { load = l.copy(moreFailed = null); moreTry++ }) { Text(S.retry) }
-                                }
-                            } else {
-                                CircularProgressIndicator(Modifier.size(28.dp))
-                                LaunchedEffect(l.next, moreTry) { loadMore(l) }
-                            }
-                        }
-                    }
+        val q = activeQuery
+        val cat = categoryKey?.let { Category(it, categoryTitle).asFeed() }
+        PagedVideoList(
+            graph, source,
+            loadKey = listOf(source.id, q, cat?.key, feed?.key, reload, refreshKey),
+            page = { cursor ->
+                when {
+                    q != null -> source.searchPage(q, cursor)
+                    cat != null -> source.loadFeedPage(cat, cursor)
+                    feed != null -> source.loadFeedPage(feed, cursor)
+                    else -> FeedPage(emptyList())
                 }
-            }
-        }
+            },
+            onFolder = { openFolders = openFolders + it },
+            onCreator = { item -> creatorId = item.authorId; creatorName = item.author.orEmpty() },
+            onAdd = { adding = it },
+        )
     }
 }
 

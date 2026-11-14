@@ -1,5 +1,6 @@
 package app.pitstop.video.live
 
+import app.pitstop.video.core.Category
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
@@ -10,6 +11,7 @@ import app.pitstop.video.core.StreamPolicy
 import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
+import app.pitstop.video.core.categoryKey
 import app.pitstop.video.core.getString
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -28,8 +30,10 @@ import java.net.URLEncoder
  * Twitch live channels through the public web GraphQL endpoint with the web player's public Client-ID
  * (the same approach as streamlink / yt-dlp). No account needed.
  *
- * Twitch refuses cursor paging (`after:`) without a browser integrity token, so "Popular" pages
- * without cursors: page 0 is the top streams overall, page n the top streams of the n-th most watched category.
+ * Twitch refuses cursor paging (`after:`) on `streams` / `games` without a browser integrity token, so
+ * feeds page without cursors: "Popular" page 0 is the top streams overall, page n the top streams of the
+ * n-th most watched category; a category's page 0 is its top 100 streams, page n its top 100 streams in
+ * the n-th of [TwitchParse.LANGUAGES]. Search pages with `searchFor`'s own cursor, which needs no token.
  */
 class TwitchSource(private val http: OkHttpClient) : VideoSource {
     override val id = SourceId.TWITCH
@@ -39,12 +43,15 @@ class TwitchSource(private val http: OkHttpClient) : VideoSource {
     private var topGames: List<String> = emptyList()
     private var topGamesAt = 0L
     private val shown = mutableSetOf<String>()
+    /** Channels already listed in the category being paged (language pages overlap the top page). */
+    private var catShown: Pair<String, MutableSet<String>> = "" to mutableSetOf()
 
     override fun feeds(): List<Feed> = listOf(Feed(FEED_POPULAR, I18n.s.popular))
 
     override suspend fun load(feed: Feed): List<VideoItem> = loadPage(feed, null).items
 
     override suspend fun loadPage(feed: Feed, cursor: String?): FeedPage {
+        feed.categoryKey()?.let { return categoryPage(it, cursor) }
         val page = cursor?.toIntOrNull() ?: 0
         val items: List<VideoItem>
         val games: List<String>
@@ -65,6 +72,34 @@ class TwitchSource(private val http: OkHttpClient) : VideoSource {
         return FeedPage(items, (page + 1).toString().takeIf { page < games.size })
     }
 
+    /** The 100 most watched categories (Twitch gives no more without an integrity token). */
+    override suspend fun categories(): List<Category> =
+        TwitchParse.categories(gql(TwitchParse.categoriesQuery()).optJSONObject("games"))
+
+    /**
+     * One page of a category: page 0 = its top streams, page n = its top streams in language n.
+     * Languages with nothing new are skipped (a few per call) so the list doesn't stall.
+     */
+    private suspend fun categoryPage(game: String, cursor: String?): FeedPage {
+        var page = cursor?.toIntOrNull() ?: 0
+        val seen = lock.withLock {
+            if (page == 0 || catShown.first != game) catShown = game to mutableSetOf()
+            catShown.second
+        }
+        var tries = 0
+        while (true) {
+            val lang = if (page == 0) null else TwitchParse.LANGUAGES.getOrNull(page - 1) ?: return FeedPage(emptyList())
+            val all = TwitchParse.streams(
+                gql(TwitchParse.gameStreamsQuery(game, lang, first = 100)).optJSONObject("game")?.optJSONObject("streams"),
+                I18n.s::viewers,
+            )
+            val fresh = lock.withLock { all.filter { seen.add(it.id) } }
+            val next = TwitchParse.nextCategoryPage(page, all.size)
+            if (fresh.isNotEmpty() || next == null || ++tries >= 4) return FeedPage(fresh, next?.toString())
+            page = next
+        }
+    }
+
     /** The most watched categories, cached for ten minutes. */
     private suspend fun games(): List<String> {
         lock.withLock { if (topGames.isNotEmpty() && System.currentTimeMillis() - topGamesAt < 600_000) return topGames }
@@ -76,8 +111,18 @@ class TwitchSource(private val http: OkHttpClient) : VideoSource {
         }
     }
 
-    override suspend fun search(query: String): List<VideoItem> =
-        TwitchParse.searchResults(gql(TwitchParse.searchQuery(query)).optJSONObject("searchFor"), I18n.s::viewers)
+    override suspend fun search(query: String): List<VideoItem> = searchPage(query, null).items
+
+    /** Live channels matching [query], 50 per page; offline channels are dropped from each page. */
+    override suspend fun searchPage(query: String, cursor: String?): FeedPage {
+        val result = gql(TwitchParse.searchQuery(query, cursor)).optJSONObject("searchFor")
+        return FeedPage(TwitchParse.searchResults(result, I18n.s::viewers), TwitchParse.searchCursor(result))
+    }
+
+    override suspend fun suggestions(query: String): List<String> {
+        if (query.isBlank()) return emptyList()
+        return TwitchParse.suggestions(gql(TwitchParse.suggestionsQuery(query.trim())).optJSONObject("searchSuggestions"))
+    }
 
     override suspend fun resolve(item: VideoItem): PlayableStream {
         val login = item.id.lowercase()
@@ -151,14 +196,48 @@ object TwitchParse {
 
     fun topGamesQuery() = query("query{games(first:30){edges{node{name}}}}")
 
-    fun gameStreamsQuery(game: String) = query(
-        "query(\$name:String!){game(name:\$name){streams(first:30){edges{node{$STREAM_FIELDS}}}}}",
-        JSONObject().put("name", game),
+    /**
+     * Broadcaster languages a category is paged through after its top page (GQL `Language` enum
+     * values, verified Nov 2026; an unknown value fails the whole request), roughly by stream count.
+     */
+    val LANGUAGES = listOf(
+        "EN", "ES", "PT", "DE", "FR", "RU", "JA", "ZH", "IT", "AR", "KO", "PL", "UK", "TR",
+        "NL", "SV", "DA", "CS", "NO", "HU", "TH", "FI", "EL", "ID", "VI", "OTHER",
     )
 
-    fun searchQuery(text: String) = query(
-        "query(\$q:String!){searchFor(userQuery:\$q,platform:\"web\"){channels{edges{item{... on User{" +
+    /** Top categories with box art; `first` is capped at 100 and `after:` needs an integrity token. */
+    fun categoriesQuery() =
+        query("query{games(first:100){edges{node{name displayName boxArtURL(width:144,height:192)}}}}")
+
+    /** Top streams of one category, optionally only in one broadcaster [language] (see [LANGUAGES]). */
+    fun gameStreamsQuery(game: String, language: String? = null, first: Int = 30): JSONObject {
+        val vars = JSONObject().put("name", game)
+        if (language != null) vars.put("langs", JSONArray().put(language))
+        return query(
+            "query(\$name:String!,\$langs:[Language!]){game(name:\$name){streams(first:$first," +
+                "options:{broadcasterLanguages:\$langs}){edges{node{$STREAM_FIELDS}}}}}",
+            vars,
+        )
+    }
+
+    /** Page after [page] of a category feed given how many streams it returned; null at the end. */
+    fun nextCategoryPage(page: Int, returned: Int): Int? = when {
+        // A short top page: the category has no more live streams than that.
+        page == 0 && returned < 25 -> null
+        page >= LANGUAGES.size -> null
+        else -> page + 1
+    }
+
+    /** Channel search; [cursor] is the previous page's `channels.cursor` (an offset; no token needed). */
+    fun searchQuery(text: String, cursor: String? = null, limit: Int = 50) = query(
+        "query(\$q:String!,\$c:String!,\$n:Int!){searchFor(userQuery:\$q,platform:\"web\"," +
+            "target:{index:CHANNEL,cursor:\$c,limit:\$n}){channels{cursor pageInfo{hasNextPage} edges{item{... on User{" +
             "login displayName stream{title viewersCount previewImageURL(width:440,height:248)}}}}}}}",
+        JSONObject().put("q", text).put("c", cursor ?: "").put("n", limit),
+    )
+
+    fun suggestionsQuery(text: String) = query(
+        "query(\$q:String!){searchSuggestions(queryFragment:\$q){edges{node{text}}}}",
         JSONObject().put("q", text),
     )
 
@@ -183,6 +262,28 @@ object TwitchParse {
             val user = e.optJSONObject("item") ?: return@mapNotNull null
             val stream = user.optJSONObject("stream") ?: return@mapNotNull null
             item(user.optString("login"), user.optString("displayName"), stream, viewers)
+        }
+
+    /** `searchFor` → the next page's cursor, null when there is none. */
+    fun searchCursor(searchFor: JSONObject?): String? {
+        val ch = searchFor?.optJSONObject("channels") ?: return null
+        if (ch.optJSONObject("pageInfo")?.optBoolean("hasNextPage", false) != true) return null
+        if (ch.optJSONArray("edges").objects().isEmpty()) return null
+        return ch.str("cursor")
+    }
+
+    /** `searchSuggestions` → distinct texts (case-insensitively). */
+    fun suggestions(conn: JSONObject?): List<String> =
+        conn?.optJSONArray("edges").objects()
+            .mapNotNull { it.optJSONObject("node")?.str("text")?.trim()?.ifEmpty { null } }
+            .distinctBy { it.lowercase() }
+
+    /** `games` connection → categories; the key is the name `game(name:)` takes. */
+    fun categories(games: JSONObject?): List<Category> =
+        games?.optJSONArray("edges").objects().mapNotNull { e ->
+            val node = e.optJSONObject("node") ?: return@mapNotNull null
+            val name = node.str("name") ?: return@mapNotNull null
+            Category(name, node.str("displayName") ?: name, thumbnailUrl = node.str("boxArtURL"))
         }
 
     fun gameNames(games: JSONObject?): List<String> =

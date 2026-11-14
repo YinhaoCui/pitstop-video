@@ -1,5 +1,6 @@
 package app.pitstop.video.live
 
+import app.pitstop.video.core.Category
 import org.json.JSONObject
 import java.security.MessageDigest
 
@@ -68,6 +69,56 @@ object DouyuParse {
             )
         }
     }
+
+    /**
+     * Categories from `m.douyu.com/api/cate/list`: per parent area (cate1Info, in the site's order) an
+     * "all of it" entry (key `1_<cate1Id>`, titled by [allOf]) and then its child categories (cate2Info,
+     * key `2_<cate2Id>`) with the most live rooms first. Keys are the path part of [directoryPath].
+     */
+    fun parseCategories(json: String, allOf: (String) -> String): List<Category> {
+        val data = JSONObject(json).optJSONObject("data") ?: return emptyList()
+        val parents = data.optJSONArray("cate1Info") ?: return emptyList()
+        val children = data.optJSONArray("cate2Info")
+        val kids = (0 until (children?.length() ?: 0)).mapNotNull { children?.optJSONObject(it) }
+        val out = mutableListOf<Category>()
+        for (i in 0 until parents.length()) {
+            val p = parents.optJSONObject(i) ?: continue
+            val pid = p.optInt("cate1Id", 0).takeIf { it > 0 } ?: continue
+            val group = p.optString("cate1Name").trim()
+            if (group.isEmpty()) continue
+            out += Category("1_$pid", allOf(group), group)
+            kids.filter { it.optInt("cate1Id") == pid }
+                .sortedByDescending { it.optInt("count") }
+                .forEach { c ->
+                    val cid = c.optInt("cate2Id", 0).takeIf { it > 0 } ?: return@forEach
+                    val name = c.optString("cate2Name").trim()
+                    if (name.isEmpty()) return@forEach
+                    out += Category("2_$cid", name, group, httpsUrl(c.optString("icon").ifEmpty { c.optString("pic") }))
+                }
+        }
+        return out.distinctBy { it.key }
+    }
+
+    /** True for keys made by [parseCategories] (`1_<id>` parent area, `2_<id>` category). */
+    fun isCategoryKey(key: String) =
+        key.length > 2 && key[0] in "12" && key[1] == '_' && key.drop(2).all { it.isDigit() }
+
+    /** Room list of a category (key from [parseCategories]); same JSON shape as [parseListPage] plus `pgcnt`. */
+    fun directoryPath(key: String, page: Int) = "/gapi/rkc/directory/mixList/$key/$page"
+
+    /** `data.pgcnt` of a list page: how many pages the list has (0 when missing). */
+    fun pageCount(json: String): Int = JSONObject(json).optJSONObject("data")?.optInt("pgcnt", 0) ?: 0
+
+    /** Next page of a paged list, or null: stops at an empty page or past [pageCount] (when known). */
+    fun nextPage(page: Int, returned: Int, pageCount: Int, maxPages: Int): Int? = when {
+        returned == 0 -> null
+        pageCount in 1..page -> null
+        page >= maxPages -> null
+        else -> page + 1
+    }
+
+    /** `data.total` of a searchShow response (rooms matching, live or not). */
+    fun searchTotal(json: String): Int = JSONObject(json).optJSONObject("data")?.optInt("total", 0) ?: 0
 
     /** Rooms from `/japi/search/api/searchShow` (data.relateShow). */
     fun parseSearch(json: String): List<DouyuRoom> {

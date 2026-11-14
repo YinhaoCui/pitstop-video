@@ -1,6 +1,7 @@
 package app.pitstop.video.live
 
 import android.content.Context
+import app.pitstop.video.core.Category
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
@@ -11,6 +12,7 @@ import app.pitstop.video.core.StreamPolicy
 import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
+import app.pitstop.video.core.categoryKey
 import app.pitstop.video.core.getString
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -19,7 +21,8 @@ import okhttp3.Request
 import java.security.SecureRandom
 
 /**
- * Douyu (斗鱼) live rooms. Lists popular rooms, searches rooms, and plays the web player's FLV stream.
+ * Douyu (斗鱼) live rooms. Lists popular rooms and every category's rooms, searches rooms (endlessly),
+ * and plays the web player's FLV stream.
  * The play URL is signed in pure Kotlin from the site's getEncryption endpoint (see [DouyuParse]); no JS engine.
  */
 class DouyuSource(private val context: Context, private val http: OkHttpClient) : VideoSource {
@@ -33,19 +36,37 @@ class DouyuSource(private val context: Context, private val http: OkHttpClient) 
 
     override suspend fun load(feed: Feed): List<VideoItem> = loadPage(feed, null).items
 
+    override suspend fun categories(): List<Category> =
+        DouyuParse.parseCategories(get("$MOBILE/api/cate/list", "$MOBILE/"), I18n.s::douyuAllOf)
+
     override suspend fun loadPage(feed: Feed, cursor: String?): FeedPage {
         val page = cursor?.toIntOrNull() ?: 1
+        feed.categoryKey()?.let { key ->
+            if (!DouyuParse.isCategoryKey(key)) return FeedPage(emptyList())
+            val json = get(BASE + DouyuParse.directoryPath(key, page), "$BASE/")
+            val rooms = DouyuParse.parseListPage(json)
+            val next = DouyuParse.nextPage(page, rooms.size, DouyuParse.pageCount(json), MAX_PAGES)
+            return FeedPage(rooms.map(::toItem), next?.toString())
+        }
         val rooms = DouyuParse.parseListPage(get("$BASE/japi/weblist/apinc/allpage/6/$page", "$BASE/"))
         return FeedPage(rooms.map(::toItem), next = if (rooms.isEmpty() || page >= MAX_PAGES) null else (page + 1).toString())
     }
 
-    override suspend fun search(query: String): List<VideoItem> {
+    override suspend fun search(query: String): List<VideoItem> = searchPage(query, null).items
+
+    /** Live rooms matching [query], [SEARCH_PAGE] per page (cursor = page number from 1). */
+    override suspend fun searchPage(query: String, cursor: String?): FeedPage {
+        val page = cursor?.toIntOrNull() ?: 1
         val url = "$BASE/japi/search/api/searchShow".toHttpUrl().newBuilder()
             .addQueryParameter("kw", query)
-            .addQueryParameter("page", "1")
-            .addQueryParameter("pageSize", "20")
+            .addQueryParameter("page", page.toString())
+            .addQueryParameter("pageSize", SEARCH_PAGE.toString())
             .build().toString()
-        return DouyuParse.parseSearch(get(url, "$BASE/search/", cookie = "dy_did=$did; acf_did=$did")).map(::toItem)
+        val json = get(url, "$BASE/search/", cookie = "dy_did=$did; acf_did=$did")
+        val rooms = DouyuParse.parseSearch(json)
+        val total = DouyuParse.searchTotal(json)
+        val pages = if (total > 0) (total + SEARCH_PAGE - 1) / SEARCH_PAGE else 0
+        return FeedPage(rooms.map(::toItem), DouyuParse.nextPage(page, rooms.size, pages, MAX_PAGES)?.toString())
     }
 
     override suspend fun resolve(item: VideoItem): PlayableStream {
@@ -123,6 +144,8 @@ class DouyuSource(private val context: Context, private val http: OkHttpClient) 
     companion object {
         const val FEED_POPULAR = "popular"
         private const val BASE = "https://www.douyu.com"
+        private const val MOBILE = "https://m.douyu.com"
+        private const val SEARCH_PAGE = 20
         /** The all-rooms list ends with an empty page well before this; a guard against endless loops. */
         private const val MAX_PAGES = 150
     }

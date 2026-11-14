@@ -7,6 +7,7 @@ import android.content.Intent
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.GoogleScopedAccount
 import app.pitstop.video.core.COLLECTION_PREFIX
+import app.pitstop.video.core.FeedPage
 import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.getString
@@ -40,16 +41,26 @@ class YouTubeAccount(context: Context, private val http: OkHttpClient) :
         return JSONObject(http.getString(req))
     }
 
+    /** `&pageToken=...` for a Data API cursor (cursors are the API's own page tokens). */
+    private fun pageParam(pageToken: String?) =
+        pageToken?.let { "&pageToken=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
+
     /** Latest uploads from the user's subscribed channels. */
-    suspend fun subscriptionFeed(): List<VideoItem> = coroutineScope {
+    suspend fun subscriptionFeed(): List<VideoItem> = subscriptionPage(null).items
+
+    /**
+     * Latest uploads from 25 subscribed channels per page (newest first within the page); the next
+     * page covers the next 25 subscriptions. ~26 quota units per page, as before.
+     */
+    suspend fun subscriptionPage(pageToken: String?): FeedPage = coroutineScope {
         val token = token()
-        val subs = api("subscriptions?part=snippet&mine=true&maxResults=25&order=relevance", token)
-            .optJSONArray("items") ?: return@coroutineScope emptyList()
+        val page = api("subscriptions?part=snippet&mine=true&maxResults=25&order=relevance" + pageParam(pageToken), token)
+        val subs = page.optJSONArray("items") ?: return@coroutineScope FeedPage(emptyList())
         val channelIds = (0 until subs.length()).mapNotNull {
             subs.getJSONObject(it).optJSONObject("snippet")?.optJSONObject("resourceId")?.optString("channelId")
         }.filter { it.startsWith("UC") }
 
-        channelIds.map { ch ->
+        val items = channelIds.map { ch ->
             async {
                 runCatching {
                     val uploads = "UU" + ch.substring(2)
@@ -72,13 +83,17 @@ class YouTubeAccount(context: Context, private val http: OkHttpClient) :
                 }.getOrDefault(emptyList())
             }
         }.awaitAll().flatten().sortedByDescending { it.first }.map { it.second }.take(60)
+        FeedPage(items, page.optString("nextPageToken").ifEmpty { null })
     }
 
-    suspend fun likedVideos(): List<VideoItem> {
-        val items = api("videos?part=snippet,contentDetails&myRating=like&maxResults=50", token()).optJSONArray("items")
-            ?: return emptyList()
-        return (0 until items.length()).map { i ->
-            val o = items.getJSONObject(i)
+    suspend fun likedVideos(): List<VideoItem> = likedPage(null).items
+
+    /** Liked videos, 50 per page (1 quota unit each). */
+    suspend fun likedPage(pageToken: String?): FeedPage {
+        val j = api("videos?part=snippet,contentDetails&myRating=like&maxResults=50" + pageParam(pageToken), token())
+        val items = j.optJSONArray("items")
+        val list = (0 until (items?.length() ?: 0)).map { i ->
+            val o = items!!.getJSONObject(i)
             val sn = o.getJSONObject("snippet")
             VideoItem(
                 source = SourceId.YOUTUBE,
@@ -90,32 +105,50 @@ class YouTubeAccount(context: Context, private val http: OkHttpClient) :
                 authorId = sn.optString("channelId").ifEmpty { null }?.let(YouTubeSource::channelUrl),
             )
         }
+        return FeedPage(list, j.optString("nextPageToken").ifEmpty { null })
     }
 
     /** Liked videos in YouTube's Music category (what YouTube Music shows as liked songs). */
-    suspend fun likedMusic(): List<VideoItem> {
-        val items = api("videos?part=snippet,contentDetails&myRating=like&maxResults=50", token()).optJSONArray("items")
-            ?: return emptyList()
-        return (0 until items.length()).map { items.getJSONObject(it) }
-            .filter { it.optJSONObject("snippet")?.optString("categoryId") == "10" }
-            .map { o ->
-                val sn = o.getJSONObject("snippet")
-                VideoItem(
-                    source = SourceId.YT_MUSIC,
-                    id = YouTubeSource.watchUrl(o.getString("id")),
-                    title = sn.optString("title"),
-                    author = sn.optString("channelTitle").removeSuffix(" - Topic"),
-                    thumbnailUrl = thumb(sn),
-                    durationSec = parseIsoDuration(o.optJSONObject("contentDetails")?.optString("duration")),
-                )
-            }
+    suspend fun likedMusic(): List<VideoItem> = likedMusicPage(null).items
+
+    /**
+     * Liked music, endlessly. Most liked videos may be non-music, so one page reads up to 4 API pages
+     * (50 each) until it has at least 10 songs, so the UI doesn't see a run of empty pages.
+     */
+    suspend fun likedMusicPage(pageToken: String?): FeedPage {
+        val token = token()
+        val out = mutableListOf<VideoItem>()
+        var next = pageToken
+        var reads = 0
+        do {
+            val j = api("videos?part=snippet,contentDetails&myRating=like&maxResults=50" + pageParam(next), token)
+            val items = j.optJSONArray("items")
+            out += (0 until (items?.length() ?: 0)).map { items!!.getJSONObject(it) }
+                .filter { it.optJSONObject("snippet")?.optString("categoryId") == "10" }
+                .map { o ->
+                    val sn = o.getJSONObject("snippet")
+                    VideoItem(
+                        source = SourceId.YT_MUSIC,
+                        id = YouTubeSource.watchUrl(o.getString("id")),
+                        title = sn.optString("title"),
+                        author = sn.optString("channelTitle").removeSuffix(" - Topic"),
+                        thumbnailUrl = thumb(sn),
+                        durationSec = parseIsoDuration(o.optJSONObject("contentDetails")?.optString("duration")),
+                    )
+                }
+            next = j.optString("nextPageToken").ifEmpty { null }
+            reads++
+        } while (next != null && out.size < 10 && reads < 4)
+        return FeedPage(out, next)
     }
 
     /** The user's own playlists (including ones made in YouTube Music), as collection rows. */
-    suspend fun myPlaylists(source: SourceId): List<VideoItem> {
-        val items = api("playlists?part=snippet,contentDetails&mine=true&maxResults=50", token()).optJSONArray("items")
-            ?: return emptyList()
-        return (0 until items.length()).map { items.getJSONObject(it) }.map { o ->
+    suspend fun myPlaylists(source: SourceId): List<VideoItem> = playlistsPage(source, null).items
+
+    suspend fun playlistsPage(source: SourceId, pageToken: String?): FeedPage {
+        val j = api("playlists?part=snippet,contentDetails&mine=true&maxResults=50" + pageParam(pageToken), token())
+        val items = j.optJSONArray("items")
+        val list = (0 until (items?.length() ?: 0)).map { items!!.getJSONObject(it) }.map { o ->
             val sn = o.getJSONObject("snippet")
             VideoItem(
                 source = source,
@@ -125,6 +158,7 @@ class YouTubeAccount(context: Context, private val http: OkHttpClient) :
                 thumbnailUrl = thumb(sn),
             )
         }
+        return FeedPage(list, j.optString("nextPageToken").ifEmpty { null })
     }
 
     suspend fun playlistItems(playlistId: String, source: SourceId): List<VideoItem> {
