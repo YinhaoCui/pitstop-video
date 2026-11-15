@@ -664,11 +664,13 @@ fun VideoRow(
     item: VideoItem,
     onClick: () -> Unit,
     onAuthor: (() -> Unit)? = null,
-    /** Long-press: the item's menu (play next, add to queue, playlists, download). */
+    /** Long-press: usually starts multi-select (see [ItemSelection]); some lists open the item's menu. */
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     /** Shown before the cover, e.g. a drag handle; the row's left padding shrinks to make room. */
     leading: (@Composable () -> Unit)? = null,
+    /** Multi-select: null = not selecting, else a checkbox (the row's tap toggles it). */
+    selected: Boolean? = null,
     trailing: @Composable () -> Unit = {},
 ) {
     val thumb by produceState(graph.thumbnails.cached(item), item) { value = graph.thumbnails.load(item) }
@@ -679,10 +681,11 @@ fun VideoRow(
                 onClick = onClick,
                 onLongClick = onLongClick?.let { l -> { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); l() } },
             )
-            .padding(start = if (leading != null) 0.dp else 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = if (leading != null || selected != null) 0.dp else 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        leading?.invoke()
+        if (selected != null) androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = null, Modifier.padding(horizontal = 12.dp))
+        else leading?.invoke()
         Box(
             // Songs and playlists get square covers; videos 16:9.
             Modifier.width(if (item.source.music) 76.dp else 140.dp).aspectRatio(if (item.source.music) 1f else 16f / 9f)

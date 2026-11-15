@@ -134,12 +134,16 @@ internal fun PagedVideoList(
         }
         is LoadState.Loaded -> {
           val shown = remember(l.items, view) { view.apply(l.items, source::isFolder) }
+          // Long-press any video / song to select several (folders open their own menu instead).
+          val selection = rememberItemSelection(loadKey, view)
           if (shown.isEmpty() && l.next == null) {
             Column(modifier.padding(24.dp)) {
                 Text(S.noVideos)
                 if (l.items.isNotEmpty()) Text(S.hiddenByFilters(l.items.size), style = MaterialTheme.typography.bodySmall)
             }
-          } else LazyColumn(modifier.fillMaxSize()) {
+          } else Column(modifier.fillMaxSize()) {
+           ItemSelectionHeader(graph, selection, shown.mapIndexedNotNull { i, it -> if (source.isFolder(it)) null else "$i:${it.id}" to it })
+           LazyColumn(Modifier.fillMaxSize()) {
             val hidden = l.items.size - shown.size
             if (hidden > 0) item(key = "hidden") {
                 Text(
@@ -147,19 +151,27 @@ internal fun PagedVideoList(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            itemsIndexed(shown, key = { i, it -> "$i:${it.id}" }) { _, item ->
-                val onClick = if (source.isFolder(item)) {
-                    { onFolder(item) }
+            itemsIndexed(shown, key = { i, it -> "$i:${it.id}" }) { i, item ->
+                val key = "$i:${item.id}"
+                val isFolder = source.isFolder(item)
+                val onClick: () -> Unit = if (isFolder) {
+                    { if (!selection.active) onFolder(item) }
                 } else {
                     {
-                        // The queue follows what's shown: the sorted / filtered order.
-                        val tracks = shown.filterNot(source::isFolder)
-                        graph.hub.playQueue(tracks, tracks.indexOf(item))
+                        selection.click(key) {
+                            // The queue follows what's shown: the sorted / filtered order.
+                            val tracks = shown.filterNot(source::isFolder)
+                            graph.hub.playQueue(tracks, tracks.indexOf(item))
+                        }
                     }
                 }
                 val openCreator = onCreator?.takeIf { item.authorId != null && source.supportsCreators }?.let { { it(item) } }
-                VideoRow(graph, item, onClick = onClick, onAuthor = openCreator, onLongClick = onAdd?.let { a -> { a(item) } }) {
-                    if (onAdd != null) IconButton(onClick = { onAdd(item) }) {
+                VideoRow(
+                    graph, item, onClick = onClick, onAuthor = openCreator,
+                    onLongClick = if (isFolder) onAdd?.let { a -> { if (!selection.active) a(item) } } else ({ selection.longPress(key) }),
+                    selected = if (selection.active && !isFolder) selection.isSelected(key) else null,
+                ) {
+                    if (onAdd != null && !selection.active) IconButton(onClick = { onAdd(item) }) {
                         Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist)
                     }
                 }
@@ -177,6 +189,7 @@ internal fun PagedVideoList(
                     }
                 }
             }
+           }
           }
         }
     }
@@ -363,6 +376,13 @@ internal fun EverywhereResults(
             }
         }
     }
+    // Long-press to select results from several platforms at once.
+    val selection = rememberItemSelection(query, sources)
+    val selectable = sources.filter { it.supportsSearch }.flatMap { s ->
+        results[s.id]?.getOrNull().orEmpty().mapIndexedNotNull { i, it -> if (s.isFolder(it)) null else "${s.id}:$i:${it.id}" to it }
+    }
+    Column(Modifier.fillMaxSize()) {
+    ItemSelectionHeader(graph, selection, selectable)
     LazyColumn(Modifier.fillMaxSize()) {
         sources.filter { it.supportsSearch }.forEach { s ->
             item(key = "h:${s.id}") {
@@ -384,17 +404,25 @@ internal fun EverywhereResults(
                 }
                 else -> {
                     val items = r.getOrDefault(emptyList())
-                    itemsIndexed(items, key = { i, it -> "${s.id}:$i:${it.id}" }) { _, item ->
-                        VideoRow(graph, item, onClick = {
-                            if (s.isFolder(item)) onFolder(s, item)
-                            else {
-                                val tracks = items.filterNot(s::isFolder)
-                                graph.hub.playQueue(tracks, tracks.indexOf(item))
-                            }
-                        })
+                    itemsIndexed(items, key = { i, it -> "${s.id}:$i:${it.id}" }) { i, item ->
+                        val key = "${s.id}:$i:${item.id}"
+                        val isFolder = s.isFolder(item)
+                        VideoRow(
+                            graph, item,
+                            onClick = {
+                                if (isFolder) { if (!selection.active) onFolder(s, item) }
+                                else selection.click(key) {
+                                    val tracks = items.filterNot(s::isFolder)
+                                    graph.hub.playQueue(tracks, tracks.indexOf(item))
+                                }
+                            },
+                            onLongClick = if (isFolder) null else ({ selection.longPress(key) }),
+                            selected = if (selection.active && !isFolder) selection.isSelected(key) else null,
+                        )
                     }
                 }
             }
         }
+    }
     }
 }

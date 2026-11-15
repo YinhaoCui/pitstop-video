@@ -265,6 +265,20 @@ class PlaybackHub(
         }
     }
 
+    /** Removes several queue entries (a multi-selection); see [removeFromQueue]. */
+    fun removeAllFromQueue(at: Set<Int>) {
+        val s = _state.value
+        val gone = at.mapNotNull { s.queue.getOrNull(it) }
+        if (gone.isEmpty()) return
+        val r = QueueOps.removeAll(s.queue, s.index, at)
+        unshuffled = gone.fold(unshuffled) { acc, item -> acc - item }
+        when {
+            r.queue.isEmpty() -> stopAll()
+            r.currentRemoved -> playAt(r.queue, r.index)
+            else -> applyQueue(r)
+        }
+    }
+
     fun moveInQueue(from: Int, to: Int) = applyQueue(QueueOps.move(_state.value.queue, _state.value.index, from, to))
 
     /** Plays [items] right after the current one; starts them when nothing is playing. */

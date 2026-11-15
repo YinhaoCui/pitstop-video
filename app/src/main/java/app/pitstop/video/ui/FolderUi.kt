@@ -58,6 +58,7 @@ fun FolderPage(
     var adding by remember { mutableStateOf<VideoItem?>(null) }
     adding?.let { AddToPlaylistDialog(graph, it) { adding = null } }
     var view by remember(folder.id) { mutableStateOf(ListView()) }
+    val selection = rememberItemSelection(folder.id, view)
     var showSortFilter by remember { mutableStateOf(false) }
     if (showSortFilter) SortFilterDialog(
         null, emptyList(), emptyMap(), view, onApply = { _, v -> view = v }, onDismiss = { showSortFilter = false },
@@ -90,8 +91,10 @@ fun FolderPage(
                 val items = view.apply(r.getOrDefault(emptyList()), source::isFolder)
                 val tracks = items.filterNot(source::isFolder)
                 if (items.isEmpty()) Text(S.noVideos, Modifier.padding(24.dp))
-                else LazyColumn(Modifier.fillMaxSize()) {
-                    if (tracks.isNotEmpty()) item(key = "actions") {
+                else Column(Modifier.fillMaxSize()) {
+                ItemSelectionHeader(graph, selection, items.mapIndexedNotNull { i, it -> if (source.isFolder(it)) null else "$i:${it.id}" to it })
+                LazyColumn(Modifier.fillMaxSize()) {
+                    if (tracks.isNotEmpty() && !selection.active) item(key = "actions") {
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { graph.hub.playQueue(tracks) }) {
                                 Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.size(6.dp)); Text(S.playAll)
@@ -106,18 +109,25 @@ fun FolderPage(
                             }
                         }
                     }
-                    itemsIndexed(items, key = { i, it -> "$i:${it.id}" }) { _, item ->
+                    itemsIndexed(items, key = { i, it -> "$i:${it.id}" }) { i, item ->
+                        val key = "$i:${item.id}"
                         val isFolder = source.isFolder(item)
                         VideoRow(
                             graph, item,
-                            onClick = { if (isFolder) onOpen(item) else graph.hub.playQueue(tracks, tracks.indexOf(item)) },
-                            onLongClick = { adding = item },
+                            onClick = {
+                                if (isFolder) { if (!selection.active) onOpen(item) }
+                                else selection.click(key) { graph.hub.playQueue(tracks, tracks.indexOf(item)) }
+                            },
+                            // A subfolder's long-press still opens its menu (save it, queue its songs).
+                            onLongClick = { if (isFolder) { if (!selection.active) adding = item } else selection.longPress(key) },
+                            selected = if (selection.active && !isFolder) selection.isSelected(key) else null,
                         ) {
-                            if (!isFolder) IconButton(onClick = { adding = item }) {
+                            if (!isFolder && !selection.active) IconButton(onClick = { adding = item }) {
                                 Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist)
                             }
                         }
                     }
+                }
                 }
             }
         }

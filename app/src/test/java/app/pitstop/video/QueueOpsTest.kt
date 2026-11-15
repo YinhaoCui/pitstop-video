@@ -22,6 +22,17 @@ class QueueOpsTest {
         QueueOps.remove(queue, 3, 3).let { assertEquals(2, it.index); assertTrue(it.currentRemoved) }
     }
 
+    @Test fun removeAllKeepsOrFollowsThePlayingItem() {
+        val queue = q("a", "b", "c", "d", "e") // playing c (index 2)
+        QueueOps.removeAll(queue, 2, setOf(0, 4)).let { assertEquals("bcd", ids(it)); assertEquals(1, it.index); assertFalse(it.currentRemoved) }
+        // The playing item and the next go: the first kept item after them plays.
+        QueueOps.removeAll(queue, 2, setOf(1, 2, 3)).let { assertEquals("ae", ids(it)); assertEquals(1, it.index); assertTrue(it.currentRemoved) }
+        // Nothing kept after it: the last kept item.
+        QueueOps.removeAll(queue, 2, setOf(2, 3, 4)).let { assertEquals("ab", ids(it)); assertEquals(1, it.index); assertTrue(it.currentRemoved) }
+        QueueOps.removeAll(queue, 2, setOf(9)).let { assertEquals("abcde", ids(it)); assertEquals(2, it.index) }
+        assertEquals("", ids(QueueOps.removeAll(queue, 2, (0..4).toSet())))
+    }
+
     @Test fun moveFollowsThePlayingItem() {
         val queue = q("a", "b", "c", "d") // playing b (index 1)
         QueueOps.move(queue, 1, 3, 0).let { assertEquals("dabc", ids(it)); assertEquals(2, it.index) }
