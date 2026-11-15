@@ -10,6 +10,8 @@
     <!-- Downloads keep running in the background, with a progress notification -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Settings → Check for updates: installs a newer APK from the app's GitHub releases (user confirms) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Offline videos stored on the phone -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission
@@ -95,6 +97,10 @@
 
         <activity
             android:name=".ui.YouTubeLoginActivity"
+            android:exported="false" />
+
+        <receiver
+            android:name=".update.InstallResultReceiver"
             android:exported="false" />
 
         <service

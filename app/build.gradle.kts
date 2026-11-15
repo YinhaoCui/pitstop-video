@@ -31,6 +31,9 @@ android {
         versionName = "0.6.3"
         buildConfigField("boolean", "YOUTUBE_DOWNLOADS", optIn("pitstop.youtubeDownloads").toString())
         buildConfigField("boolean", "DRIVE_FULL_ACCESS", optIn("pitstop.driveFullAccess").toString())
+        // Settings → Check for updates reads this GitHub repository's latest release (owner/name).
+        val updateRepo = (findProperty("pitstop.updateRepo") ?: localProps.getProperty("pitstop.updateRepo") ?: "YinhaoCui/pitstop-video").toString()
+        buildConfigField("String", "UPDATE_REPO", "\"$updateRepo\"")
         // -Ppitstop.idSuffix=.dev installs a test copy next to the release (different signing key, own data);
         // -Ppitstop.appLabel=... names it.
         findProperty("pitstop.idSuffix")?.let { applicationIdSuffix = it.toString() }

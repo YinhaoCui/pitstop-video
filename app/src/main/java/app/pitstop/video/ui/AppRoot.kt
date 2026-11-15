@@ -177,6 +177,7 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
     }
 
     DriveSafelyReminder()
+    UpdatePrompt(graph)
     // Only the platforms the user chose to show (Settings → Platforms, or the button after the chips).
     val hidden by Settings.hiddenSources.collectAsStateWithLifecycle()
     val videoSources = remember(hidden) { graph.shownVideoSources }
