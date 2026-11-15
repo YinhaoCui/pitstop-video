@@ -130,7 +130,7 @@ fun PlaylistsTab(graph: AppGraph) {
                     Spacer(Modifier.size(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(p.name, style = MaterialTheme.typography.titleMedium)
-                        Text(S.videoCount(p.items.size), style = MaterialTheme.typography.bodySmall)
+                        Text(S.itemCount(p.items), style = MaterialTheme.typography.bodySmall)
                     }
                     if (sel == null) IconButton(onClick = { graph.hub.playQueue(p.items) }, enabled = p.items.isNotEmpty()) {
                         Icon(painterResource(R.drawable.ic_play), S.playAll)
@@ -364,9 +364,9 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
         status = if (!isFolder) null else tracks.let { t ->
             when {
                 t == null -> S.loading
-                t.isFailure -> t.exceptionOrNull()?.message ?: S.noVideos
-                songs.isEmpty() -> S.noVideos
-                else -> S.songsInFolder(songs.size)
+                t.isFailure -> t.exceptionOrNull()?.message ?: S.nothingHere
+                songs.isEmpty() -> S.nothingHere
+                else -> S.inFolder(songs)
             } to (t?.isFailure == true)
         },
         songs = songs, newName = if (isFolder) item.title else "",

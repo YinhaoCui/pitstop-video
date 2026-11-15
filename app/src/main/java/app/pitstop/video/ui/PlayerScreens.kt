@@ -140,7 +140,7 @@ fun PlayerScreen(graph: AppGraph, onClose: () -> Unit, onFullscreen: () -> Unit)
             } else {
                 items(playlists, key = { "p" + it.id }) { p ->
                     PickRow(
-                        title = p.name, subtitle = S.videoCount(p.items.size), current = false,
+                        title = p.name, subtitle = S.itemCount(p.items), current = false,
                         onClick = { if (p.items.isNotEmpty()) { graph.hub.playQueue(p.items); tab = 0 } },
                     )
                 }

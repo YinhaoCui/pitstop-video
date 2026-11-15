@@ -90,7 +90,7 @@ fun FolderPage(
             else -> {
                 val items = view.apply(r.getOrDefault(emptyList()), source::isFolder)
                 val tracks = items.filterNot(source::isFolder)
-                if (items.isEmpty()) Text(S.noVideos, Modifier.padding(24.dp))
+                if (items.isEmpty()) Text(S.nothingHere, Modifier.padding(24.dp))
                 else Column(Modifier.fillMaxSize()) {
                 ItemSelectionHeader(graph, selection, items.mapIndexedNotNull { i, it -> if (source.isFolder(it)) null else "$i:${it.id}" to it })
                 LazyColumn(Modifier.fillMaxSize()) {

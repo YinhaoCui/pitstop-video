@@ -138,7 +138,7 @@ internal fun PagedVideoList(
           val selection = rememberItemSelection(loadKey, view)
           if (shown.isEmpty() && l.next == null) {
             Column(modifier.padding(24.dp)) {
-                Text(S.noVideos)
+                Text(S.nothingHere)
                 if (l.items.isNotEmpty()) Text(S.hiddenByFilters(l.items.size), style = MaterialTheme.typography.bodySmall)
             }
           } else Column(modifier.fillMaxSize()) {
@@ -397,10 +397,10 @@ internal fun EverywhereResults(
                     Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
                 }
                 r.isFailure -> item(key = "e:${s.id}") {
-                    Text(r.exceptionOrNull()?.message ?: S.noVideos, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(r.exceptionOrNull()?.message ?: S.nothingHere, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 r.getOrNull().isNullOrEmpty() -> item(key = "n:${s.id}") {
-                    Text(S.noVideos, Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
+                    Text(S.nothingHere, Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
                 }
                 else -> {
                     val items = r.getOrDefault(emptyList())

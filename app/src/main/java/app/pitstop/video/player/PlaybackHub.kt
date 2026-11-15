@@ -397,7 +397,7 @@ class PlaybackHub(
                 // A collection (playlist / folder) must expand; never try to play the folder itself.
                 val parts = if (q[i].id.startsWith(COLLECTION_PREFIX)) {
                     withContext(Dispatchers.IO) { source.expand(q[i]) }
-                        .takeUnless { it.isNullOrEmpty() } ?: throw UserFacingException(I18n.s.noVideos)
+                        .takeUnless { it.isNullOrEmpty() } ?: throw UserFacingException(I18n.s.nothingHere)
                 } else runCatching { withContext(Dispatchers.IO) { source.expand(q[i]) } }.getOrNull()
                 if (!parts.isNullOrEmpty()) {
                     q = q.take(i) + parts + q.drop(i + 1)
