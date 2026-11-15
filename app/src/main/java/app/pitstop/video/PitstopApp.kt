@@ -1,5 +1,6 @@
 package app.pitstop.video
 
+import app.pitstop.video.update.AppUpdater
 import android.app.Application
 import android.content.ComponentName
 import android.content.Context
@@ -85,6 +86,7 @@ class AppGraph(app: Application) {
     val thumbnails = ThumbnailLoader(app, http)
     val driving = DrivingMonitor(app)
     val playlists = PlaylistStore(File(app.filesDir, "playlists.json"))
+    val updater = AppUpdater(app, http)
     val creators = CreatorStore(File(app.filesDir, "creators.json"))
 
     val sources: List<VideoSource> = listOf(

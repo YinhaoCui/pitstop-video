@@ -641,6 +641,42 @@ class Strings(val language: AppLanguage) {
     val choosePicture get() = t("Choose picture", "选择图片")
     val removePicture get() = t("Remove", "移除")
     fun versionLine(v: String) = t("Pitstop Video $v", "Pitstop 视频 $v")
+
+    // App updates (GitHub releases)
+    val appUpdates get() = t("App updates", "应用更新")
+    fun installedVersion(v: String) = t("Installed version: $v", "当前版本：$v")
+    val checkForUpdates get() = t("Check for updates", "检查更新")
+    val checkingUpdates get() = t("Checking…", "正在检查…")
+    val upToDate get() = t("You have the latest version.", "已是最新版本。")
+    fun updateAvailable(v: String) = t("Version $v is available.", "新版本 $v 可以更新。")
+    val updateTitle get() = t("Update available", "发现新版本")
+    val updateNow get() = t("Download and install", "下载并安装")
+    val later get() = t("Later", "稍后")
+    fun downloadingUpdate(pct: Int?) = t("Downloading… ${pct?.let { "$it%" } ?: ""}", "正在下载… ${pct?.let { "$it%" } ?: ""}")
+    val installingUpdate get() = t(
+        "Confirm the install on the system screen. The app closes and opens again on the new version.",
+        "请在系统界面确认安装。应用会关闭，并以新版本重新打开。",
+    )
+    val updatePermission get() = t(
+        "Android needs your permission for Pitstop Video to install updates. Turn on \"Allow from this source\", then come back and tap Continue.",
+        "安卓需要你允许 Pitstop 视频安装更新。请打开“允许来自此来源的应用”，然后返回并点“继续”。",
+    )
+    val openSettings get() = t("Open settings", "打开设置")
+    val continueLabel get() = t("Continue", "继续")
+    val updateAuto get() = t("Check automatically", "自动检查")
+    val updateAutoText get() = t("Once a day when the app opens; a new version is offered, never installed without you.", "每天打开应用时检查一次；有新版本时会提示，不会自动安装。")
+    fun updateCheckFailed(m: String) = t("Couldn't check for updates: $m", "检查更新失败：$m")
+    val updateDownloadIncomplete get() = t("The download was incomplete. Try again.", "下载不完整，请重试。")
+    val updateBadApk get() = t("The downloaded file isn't a valid app package.", "下载的文件不是有效的安装包。")
+    fun updateOtherPackage(p: String) = t("The release is for another app ($p); this copy can't be updated from it.", "该版本属于另一个应用（$p），无法用它更新当前应用。")
+    val updateNotNewer get() = t("The release isn't newer than the installed app.", "该版本不比已安装的版本新。")
+    val updateWrongKey get() = t(
+        "The new version is signed with a different key than the installed app, so Android won't install it over this one. Uninstall the app, then install the new version from the release page.",
+        "新版本的签名与已安装的应用不同，安卓不允许覆盖安装。请先卸载应用，再从发布页面安装新版本。",
+    )
+    val updateNoSpace get() = t("Not enough storage to install the update.", "存储空间不足，无法安装更新。")
+    fun updateInstallFailed(m: String) = t("The install failed: $m", "安装失败：$m")
+    val releasePage get() = t("Release page", "发布页面")
     val phonePlayback get() = t("Phone playback", "手机播放")
     val carVideoOnly get() = t("Car screen: video only", "车机屏幕：仅显示视频")
     val carVideoOnlyText get() = t("The car screen shows just the video, as large as it fits; pick and control from the phone. Turn off to show the whole app on the car screen.", "车机屏幕只显示视频，画面尽可能大；在手机上选择和控制。关闭后车机屏幕显示完整应用。")

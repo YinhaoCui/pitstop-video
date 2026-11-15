@@ -87,6 +87,8 @@ fun AccountScreen(graph: AppGraph) {
             if (graph.isAutomotiveOs) S.aaosHelp else S.aaHelp,
             style = MaterialTheme.typography.bodyMedium,
         )
+        HorizontalDivider()
+        UpdateSection(graph)
         VersionFooter()
     }
 }
