@@ -32,6 +32,10 @@ object PlaylistOps {
     fun removeAt(p: Playlist, index: Int): Playlist =
         if (index !in p.items.indices) p else p.copy(items = p.items.filterIndexed { i, _ -> i != index })
 
+    /** Removes the items at [indices] (a multi-selection), keeping the order of the rest. */
+    fun removeAll(p: Playlist, indices: Set<Int>): Playlist =
+        if (indices.none { it in p.items.indices }) p else p.copy(items = Selection.removeSelected(p.items, indices))
+
     fun move(p: Playlist, from: Int, to: Int): Playlist {
         if (from !in p.items.indices || to !in p.items.indices || from == to) return p
         val list = p.items.toMutableList()
@@ -108,6 +112,8 @@ class PlaylistStore(private val file: File) {
 
     fun rename(id: String, name: String) = edit(id) { it.copy(name = name.trim().ifEmpty { it.name }) }
     fun delete(id: String) = mutate { list -> list.filterNot { it.id == id } }
+    fun deleteAll(ids: Set<String>) = mutate { list -> list.filterNot { it.id in ids } }
+    fun removeAll(id: String, indices: Set<Int>) = edit(id) { PlaylistOps.removeAll(it, indices) }
     fun add(id: String, item: VideoItem) = edit(id) { PlaylistOps.add(it, item) }
     fun addAll(id: String, items: List<VideoItem>) = edit(id) { PlaylistOps.addAll(it, items) }
     fun removeAt(id: String, index: Int) = edit(id) { PlaylistOps.removeAt(it, index) }

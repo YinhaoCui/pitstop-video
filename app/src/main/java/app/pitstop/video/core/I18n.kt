@@ -569,6 +569,16 @@ class Strings(val language: AppLanguage) {
     val added get() = t("added", "已添加")
     val name get() = t("Name", "名称")
     val defaultPlaylistName get() = t("Playlist", "播放列表")
+    // Multi-select (long-press a row, or the Select button)
+    val select get() = t("Select", "多选")
+    fun selectedCount(n: Int) = t("$n selected", "已选 $n 项")
+    val selectAll get() = t("Select all", "全选")
+    val invertSelection get() = t("Invert selection", "反选")
+    val cancelSelection get() = t("Cancel selection", "取消多选")
+    val playSelected get() = t("Play", "播放")
+    fun removeSelectedConfirm(n: Int) = t("Remove $n item(s) from this playlist?", "从此列表移除 $n 项？")
+    val remove get() = t("Remove", "移除")
+    fun deletePlaylistsConfirm(n: Int) = t("Delete $n playlist(s)?", "删除 $n 个播放列表？")
 
     // Account
     val youtubeSignedIn get() = t("Signed in. Subscriptions, Liked videos, Watch later and History are on.", "已登录。可查看订阅、赞过的视频、稍后观看和观看记录。")

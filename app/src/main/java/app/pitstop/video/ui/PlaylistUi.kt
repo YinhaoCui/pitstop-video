@@ -6,6 +6,11 @@ import app.pitstop.video.core.I18n
 import androidx.compose.ui.platform.LocalContext
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.Checkbox
+import app.pitstop.video.core.Selection
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +65,9 @@ fun PlaylistsTab(graph: AppGraph) {
     var creating by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
     var exportAll by remember { mutableStateOf(false) }
+    // Multi-select of playlists (long-press one) for bulk delete.
+    var selected by rememberSaveable { mutableStateOf<List<String>?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
     if (importing) ImportDialog(graph, onDismiss = { importing = false }, onSaved = { importing = false; openId = it })
 
     val open = playlists.firstOrNull { it.id == openId }
@@ -69,8 +77,21 @@ fun PlaylistsTab(graph: AppGraph) {
         return
     }
 
+    val ids = playlists.map { it.id }
+    val sel = selected?.let { Selection.retain(it.toSet(), ids) }
+    BackHandler(enabled = sel != null) { selected = null }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (sel != null) SelectionBar(
+            count = sel.size,
+            allSelected = Selection.allSelected(sel, ids),
+            onSelectAll = { selected = ids },
+            onInvert = { selected = Selection.invert(sel, ids).toList() },
+            onCancel = { selected = null },
+        ) {
+            IconButton(onClick = { confirmDelete = true }, enabled = sel.isNotEmpty()) {
+                Icon(painterResource(R.drawable.ic_delete), S.delete)
+            }
+        } else Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(S.playlistCount(playlists.size), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
             // Import from other platforms / files; export everything as a Pitstop file.
             OutlinedButton(onClick = { importing = true }) { Text(S.importPlaylist) }
@@ -91,17 +112,22 @@ fun PlaylistsTab(graph: AppGraph) {
         }
         LazyColumn(Modifier.fillMaxSize()) {
             items(playlists, key = { it.id }) { p ->
+                val toggle = { sel?.let { selected = Selection.toggle(it, p.id).toList() }; Unit }
                 Row(
-                    Modifier.fillMaxWidth().clickable { openId = p.id }.padding(horizontal = 16.dp, vertical = 14.dp),
+                    Modifier.fillMaxWidth().combinedClickable(
+                        onClick = { if (sel != null) toggle() else { openId = p.id } },
+                        onLongClick = { if (sel != null) toggle() else { selected = listOf(p.id) } },
+                    ).padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(painterResource(R.drawable.ic_playlist_play), null)
+                    if (sel != null) Checkbox(checked = p.id in sel, onCheckedChange = { toggle() }, Modifier.size(24.dp))
+                    else Icon(painterResource(R.drawable.ic_playlist_play), null)
                     Spacer(Modifier.size(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(p.name, style = MaterialTheme.typography.titleMedium)
                         Text(S.videoCount(p.items.size), style = MaterialTheme.typography.bodySmall)
                     }
-                    IconButton(onClick = { graph.hub.playQueue(p.items) }, enabled = p.items.isNotEmpty()) {
+                    if (sel == null) IconButton(onClick = { graph.hub.playQueue(p.items) }, enabled = p.items.isNotEmpty()) {
                         Icon(painterResource(R.drawable.ic_play), S.playAll)
                     }
                 }
@@ -109,6 +135,13 @@ fun PlaylistsTab(graph: AppGraph) {
             }
         }
     }
+    if (confirmDelete && sel != null) AlertDialog(
+        onDismissRequest = { confirmDelete = false },
+        title = { Text(S.deletePlaylistsConfirm(sel.size)) },
+        text = { Text(S.deleteExplain) },
+        confirmButton = { TextButton(onClick = { graph.playlists.deleteAll(sel); selected = null; confirmDelete = false }) { Text(S.delete) } },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(S.cancel) } },
+    )
     if (creating) NameDialog(S.newPlaylist, "", onDismiss = { creating = false }) {
         openId = graph.playlists.create(it).id
         creating = false
@@ -121,8 +154,12 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
     var confirmDelete by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var view by remember(p.id) { mutableStateOf(ListView()) }
-    var menuFor by remember { mutableStateOf<VideoItem?>(null) }
+    // Multi-select: null = off, else the selected places in the playlist.
+    var selected by remember(p.id) { mutableStateOf<Set<Int>?>(null) }
+    BackHandler(enabled = selected != null) { selected = null }
+    var menuFor by remember { mutableStateOf<List<VideoItem>?>(null) }
     menuFor?.let { AddToPlaylistDialog(graph, it) { menuFor = null } }
+    var confirmRemove by remember { mutableStateOf(false) }
     var showSortFilter by remember { mutableStateOf(false) }
     if (showSortFilter) SortFilterDialog(
         null, emptyList(), emptyMap(), view, platforms = p.items.map { it.source }.distinct(),
@@ -136,9 +173,48 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
         order.map { item -> indexed.first { (i, it) -> !used[i] && it == item }.also { used[it.index] = true } }
     }
     val shownItems = shown.map { it.value }
+    val visibleKeys = shown.map { it.index }
+    // Places that no longer exist (the list changed meanwhile) drop out.
+    val sel = selected?.let { Selection.retain(it, p.items.indices.toList()) }
+    val picked = sel?.let { Selection.picked(p.items, it) }.orEmpty()
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (sel != null) {
+            SelectionBar(
+                count = sel.size,
+                allSelected = Selection.allSelected(sel, visibleKeys),
+                onSelectAll = { selected = Selection.selectAll(visibleKeys) },
+                onInvert = { selected = Selection.invert(sel, visibleKeys) },
+                onCancel = { selected = null },
+            )
+            val context = LocalContext.current
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                val any = picked.isNotEmpty()
+                Button(onClick = { graph.hub.playQueue(picked); selected = null }, enabled = any) {
+                    Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.size(6.dp)); Text(S.playSelected)
+                }
+                listOf(
+                    Triple(R.drawable.ic_skip_next, S.playNext) { graph.hub.playNext(picked) },
+                    Triple(R.drawable.ic_playlist_play, S.addToQueue) { graph.hub.addToQueue(picked) },
+                ).forEach { (icon, label, action) ->
+                    OutlinedButton(onClick = {
+                        action()
+                        android.widget.Toast.makeText(context, I18n.s.addedToQueue(picked.size), android.widget.Toast.LENGTH_SHORT).show()
+                        selected = null
+                    }, enabled = any) { Icon(painterResource(icon), null); Spacer(Modifier.size(6.dp)); Text(label) }
+                }
+                // Keeps the selection, so "copy, then remove" moves items to another playlist.
+                OutlinedButton(onClick = { menuFor = picked }, enabled = any) {
+                    Icon(painterResource(R.drawable.ic_playlist_add), null); Spacer(Modifier.size(6.dp)); Text(S.addToPlaylist)
+                }
+                OutlinedButton(onClick = { confirmRemove = true }, enabled = any) {
+                    Icon(painterResource(R.drawable.ic_delete), null); Spacer(Modifier.size(6.dp)); Text(S.remove)
+                }
+            }
+        } else Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_back), S.back) }
             Text(
                 p.name, Modifier.weight(1f).clickable { renaming = true },
@@ -150,7 +226,7 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
             }
             IconButton(onClick = { confirmDelete = true }) { Icon(painterResource(R.drawable.ic_delete), S.deletePlaylist) }
         }
-        Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (sel == null) Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { graph.hub.playQueue(shownItems) }, enabled = shownItems.isNotEmpty()) {
                 Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.size(6.dp)); Text(S.playAll)
             }
@@ -158,8 +234,9 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
                 Icon(painterResource(R.drawable.ic_shuffle), null); Spacer(Modifier.size(6.dp)); Text(S.shuffle)
             }
         }
-        Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (sel == null) Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             SortFilterChip(active = !view.isDefault) { showSortFilter = true }
+            TextButton(onClick = { selected = emptySet() }, enabled = shownItems.isNotEmpty()) { Text(S.select) }
             // Sorted but nothing filtered out: the new order can be kept.
             if (view.sort != ListSort.DEFAULT && shownItems.size == p.items.size) {
                 TextButton(onClick = { graph.playlists.reorder(p.id, shownItems); view = view.copy(sort = ListSort.DEFAULT) }) { Text(S.keepThisOrder) }
@@ -181,8 +258,17 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
             itemsIndexed(shown, key = { _, it -> "${it.index}:${it.value.source}:${it.value.id}" }) { pos, entry ->
                 val i = entry.index
                 val item = entry.value
+                if (sel != null) {
+                    val toggle = { selected = Selection.toggle(sel, i) }
+                    VideoRow(
+                        graph, item, onClick = toggle, onLongClick = toggle,
+                        leading = { Checkbox(checked = i in sel, onCheckedChange = { toggle() }) },
+                    ) { PlatformBadge(S.sourceName(item.source)) }
+                    return@itemsIndexed
+                }
                 VideoRow(
-                    graph, item, onClick = { graph.hub.playQueue(shownItems, pos) }, onLongClick = { menuFor = item },
+                    // Long-press starts multi-select; its bar has the item menu (Add to playlist) too.
+                    graph, item, onClick = { graph.hub.playQueue(shownItems, pos) }, onLongClick = { selected = setOf(i) },
                     modifier = if (view.isDefault) Modifier.reorderable(reorder, i, MaterialTheme.colorScheme.surfaceContainerHigh) else Modifier,
                     // Moving only makes sense in the playlist's own order.
                     leading = if (view.isDefault) { { DragHandle(reorder, i, p.items.size) } } else null,
@@ -196,6 +282,14 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
             }
         }
     }
+    if (confirmRemove) AlertDialog(
+        onDismissRequest = { confirmRemove = false },
+        title = { Text(S.removeSelectedConfirm(picked.size)) },
+        confirmButton = {
+            TextButton(onClick = { sel?.let { graph.playlists.removeAll(p.id, it) }; selected = null; confirmRemove = false }) { Text(S.remove) }
+        },
+        dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text(S.cancel) } },
+    )
     if (renaming) NameDialog(S.renamePlaylist, p.name, onDismiss = { renaming = false }) {
         graph.playlists.rename(p.id, it)
         renaming = false
@@ -241,8 +335,6 @@ fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
  */
 @Composable
 fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit) {
-    val playlists by graph.playlists.playlists.collectAsStateWithLifecycle()
-    var creating by remember { mutableStateOf(false) }
     val source = remember(item.source) { graph.source(item.source) }
     val isFolder = source.isFolder(item)
     // null while a folder's songs are still loading.
@@ -250,15 +342,54 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
         if (isFolder) value = runCatching { source.folderTracks(item) }
     }
     val songs = tracks?.getOrNull().orEmpty()
-    val ready = songs.isNotEmpty()
     var downloading by remember { mutableStateOf(false) }
     if (downloading) {
         DownloadDialog(graph, item, onDismiss = onDismiss)
         return
     }
 
+    ItemMenuDialog(
+        graph, title = item.title, author = item.author,
+        status = if (!isFolder) null else tracks.let { t ->
+            when {
+                t == null -> S.loading
+                t.isFailure -> t.exceptionOrNull()?.message ?: S.noVideos
+                songs.isEmpty() -> S.noVideos
+                else -> S.songsInFolder(songs.size)
+            } to (t?.isFailure == true)
+        },
+        songs = songs, newName = if (isFolder) item.title else "",
+        onDownload = if (!isFolder && graph.downloads.canDownload(item)) ({ downloading = true }) else null,
+        onDismiss = onDismiss,
+    )
+}
+
+/** The menu for several items at once (a multi-selection): queue them or add them to a playlist. */
+@Composable
+fun AddToPlaylistDialog(graph: AppGraph, items: List<VideoItem>, onDismiss: () -> Unit) {
+    // One item keeps its full menu (download, folder songs).
+    if (items.size == 1) AddToPlaylistDialog(graph, items[0], onDismiss)
+    else ItemMenuDialog(graph, title = S.selectedCount(items.size), author = null, status = null, songs = items, newName = "", onDownload = null, onDismiss = onDismiss)
+}
+
+/** Shared body of the item menu: queue actions, optional download, then the playlists. */
+@Composable
+private fun ItemMenuDialog(
+    graph: AppGraph,
+    title: String,
+    author: String?,
+    /** A status line under the title and whether it is an error. */
+    status: Pair<String, Boolean>?,
+    songs: List<VideoItem>,
+    newName: String,
+    onDownload: (() -> Unit)?,
+    onDismiss: () -> Unit,
+) {
+    val playlists by graph.playlists.playlists.collectAsStateWithLifecycle()
+    var creating by remember { mutableStateOf(false) }
+    val ready = songs.isNotEmpty()
     if (creating) {
-        NameDialog(S.newPlaylist, if (isFolder) item.title else "", onDismiss = onDismiss) {
+        NameDialog(S.newPlaylist, newName, onDismiss = onDismiss) {
             graph.playlists.create(it, songs)
             onDismiss()
         }
@@ -267,21 +398,14 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
     AlertDialog(
         onDismissRequest = onDismiss,
         // The item's menu: queue, download, then the playlists to add it to.
-        title = { Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium) },
+        title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium) },
         text = {
             Column {
-                item.author?.let { Text(it, maxLines = 1, style = MaterialTheme.typography.bodySmall) }
-                if (isFolder) {
-                    val t = tracks
+                author?.let { Text(it, maxLines = 1, style = MaterialTheme.typography.bodySmall) }
+                status?.let { (text, isError) ->
                     Text(
-                        when {
-                            t == null -> S.loading
-                            t.isFailure -> t.exceptionOrNull()?.message ?: S.noVideos
-                            songs.isEmpty() -> S.noVideos
-                            else -> S.songsInFolder(songs.size)
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (t?.isFailure == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        text, style = MaterialTheme.typography.bodySmall,
+                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     )
                 }
                 // Queue: a folder queues the songs inside it.
@@ -303,9 +427,9 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
                         Text(label, color = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                if (!isFolder && graph.downloads.canDownload(item)) {
+                if (onDownload != null) {
                     Row(
-                        Modifier.fillMaxWidth().clickable { downloading = true }.padding(vertical = 12.dp),
+                        Modifier.fillMaxWidth().clickable(onClick = onDownload).padding(vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(painterResource(R.drawable.ic_download), null, tint = MaterialTheme.colorScheme.primary)
@@ -331,6 +455,25 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
         confirmButton = { TextButton(onClick = { creating = true }, enabled = ready) { Text(S.newPlaylist) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(S.cancel) } },
     )
+}
+
+/** Top bar while multi-selecting: cancel, the count, Select all / Invert, then any extra [actions]. */
+@Composable
+private fun SelectionBar(
+    count: Int,
+    allSelected: Boolean,
+    onSelectAll: () -> Unit,
+    onInvert: () -> Unit,
+    onCancel: () -> Unit,
+    actions: @Composable () -> Unit = {},
+) {
+    Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onCancel) { Icon(painterResource(R.drawable.ic_close), S.cancelSelection) }
+        Text(S.selectedCount(count), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        TextButton(onClick = onSelectAll, enabled = !allSelected) { Text(S.selectAll, maxLines = 1) }
+        TextButton(onClick = onInvert) { Text(S.invertSelection, maxLines = 1) }
+        actions()
+    }
 }
 
 @Composable
