@@ -31,3 +31,19 @@ fun retryDelayMs(attempt: Int): Long = (1_000L shl attempt.coerceIn(0, 4))
 
 /** Network-type failures worth a reconnect (rather than a hard error): ExoPlayer error codes 2000-2008. */
 fun isNetworkErrorCode(code: Int): Boolean = code in 2000..2008
+
+/** What to do when a stream's server answered with an HTTP error instead of the media. */
+enum class HttpFailure {
+    /** The link or its sign-in token expired / was refused: resolve the item again (fresh token / URL). */
+    REFRESH,
+    /** A busy or failing server: retry like a dropped connection. */
+    RETRY,
+    /** Gone for good (not found, bad request ...): show the error, retrying won't help. */
+    FAIL,
+}
+
+fun httpFailure(status: Int): HttpFailure = when {
+    status == 401 || status == 403 || status == 410 -> HttpFailure.REFRESH
+    status == 408 || status == 429 || status >= 500 -> HttpFailure.RETRY
+    else -> HttpFailure.FAIL
+}

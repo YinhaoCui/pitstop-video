@@ -94,14 +94,15 @@ fun MusicTab(graph: AppGraph) {
             else -> false
         }
         if (needsLogin) MusicLoginCard(graph, source.id)
-        // Without sign-in, Drive songs can still be picked one by one in the system file picker.
+        // Without sign-in: Google's Drive picker, whole folders, or songs from the system file picker.
         val googlePicked by graph.driveSource.picker.files.collectAsStateWithLifecycle()
+        val driveFolders by graph.driveSource.trees.collectAsStateWithLifecycle()
         if (source.id == SourceId.GDRIVE) {
-            DrivePickerCard(graph, hasFiles = drivePicked.isNotEmpty(), hasGooglePicked = googlePicked.isNotEmpty())
+            DrivePickerCard(graph, hasFiles = drivePicked.isNotEmpty() || driveFolders.isNotEmpty(), hasGooglePicked = googlePicked.isNotEmpty())
         }
         SourceTab(
             graph, source,
-            refreshKey = "$ytSignedIn/$biliLoggedIn/$neteaseSignedIn/$driveSignedIn/${drivePicked.size}/${googlePicked.size}",
+            refreshKey = "$ytSignedIn/$biliLoggedIn/$neteaseSignedIn/$driveSignedIn/${drivePicked.size}/${googlePicked.size}/${driveFolders.size}",
             siblings = sources, pendingQuery = pendingQuery, onPendingConsumed = { pendingQuery = null },
             onSearchIn = { s, q -> selected = s.id; pendingQuery = q },
         )
@@ -116,16 +117,34 @@ fun MusicTab(graph: AppGraph) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked: Boolean) {
-    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) graph.driveSource.addPicked(uris)
-    }
     val drivePicker = graph.driveSource.picker
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) {
+            val lost = graph.driveSource.addPicked(uris)
+            if (lost > 0) message = I18n.s.filesNoAccess(lost) to true
+        }
+    }
+    // A whole folder at once: one grant covers every song in it (no tapping each file, no 512 limit).
+    val folderPick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            graph.driveSource.addTree(uri)
+            message = I18n.s.driveFolderAdded to false
+        }
+    }
+    // Songs added with the file picker whose access Android dropped (it keeps 512 per app).
+    val picked by graph.driveSource.picked.collectAsStateWithLifecycle()
+    val lost = remember(picked) { graph.driveSource.withoutAccess().size }
     val googleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
         scope.launch {
             message = runCatching { I18n.s.drivePickerAdded(drivePicker.completePick(res.data)) to false }
-                .getOrElse { I18n.s.drivePickerFailed(it.message) to true }
+                .getOrElse {
+                    // Closing the account chooser or the picker (Back, a tap outside it) isn't an error.
+                    val cancelled = res.resultCode == android.app.Activity.RESULT_CANCELED ||
+                        (it as? com.google.android.gms.common.api.ApiException)?.statusCode == com.google.android.gms.common.api.CommonStatusCodes.CANCELED
+                    if (cancelled) null else I18n.s.drivePickerFailed(it.message) to true
+                }
         }
     }
     Column(
@@ -146,7 +165,25 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
                         .onFailure { message = I18n.s.drivePickerFailed(it.message) to true }
                 }
             }) { Text(S.driveGooglePick, maxLines = 1) }
+            OutlinedButton(contentPadding = tight, onClick = { folderPick.launch(null) }) { Text(S.driveAddFolder, maxLines = 1) }
             OutlinedButton(contentPadding = tight, onClick = { files.launch(arrayOf("audio/*")) }) { Text(S.driveAddSongs, maxLines = 1) }
+        }
+        if (lost > 0) {
+            Text(I18n.s.filesNoAccess(lost), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            val folders by graph.driveSource.trees.collectAsStateWithLifecycle()
+            var fixing by remember { mutableStateOf(false) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Songs that are also in an added folder: point playlists at the folder copies.
+                if (folders.isNotEmpty()) Button(enabled = !fixing, onClick = {
+                    fixing = true
+                    scope.launch {
+                        val n = runCatching { graph.driveSource.repairWithFolders(graph.playlists) }.getOrDefault(0)
+                        message = I18n.s.repairedFromFolders(n) to false
+                        fixing = false
+                    }
+                }) { Text(if (fixing) S.loading else S.fixWithFolders, maxLines = 1) }
+                TextButton(onClick = { graph.driveSource.removeWithoutAccess(); message = null }) { Text(S.removeNoAccess) }
+            }
         }
         if (hasGooglePicked || hasFiles) TextButton(onClick = { drivePicker.clear(); graph.driveSource.clearPicked() }) { Text(S.driveClear) }
         message?.let { (text, error) ->

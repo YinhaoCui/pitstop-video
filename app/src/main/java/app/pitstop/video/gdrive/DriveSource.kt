@@ -4,11 +4,20 @@ import app.pitstop.video.BuildConfig
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import app.pitstop.video.core.AudioFiles
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import app.pitstop.video.core.PlaylistStore
 import app.pitstop.video.core.COLLECTION_PREFIX
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.GoogleScopedAccount
 import app.pitstop.video.core.I18n
+import app.pitstop.video.core.PickedFiles
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.UserFacingException
@@ -45,18 +54,26 @@ class DriveSource(
     private val prefs = context.getSharedPreferences("gdrive_files", Context.MODE_PRIVATE)
     private val _picked = MutableStateFlow(readPicked())
     val picked: StateFlow<List<VideoItem>> = _picked
+    private val _trees = MutableStateFlow(readTrees())
+    /** Folders added with the system folder picker ("Add a folder"). */
+    val trees: StateFlow<List<VideoItem>> = _trees
 
     /** Whole-Drive access (restricted drive.readonly scope): personal builds only, once signed in. */
     private val apiSignedIn get() = BuildConfig.DRIVE_FULL_ACCESS && account.signedIn.value
 
     override fun feeds(): List<Feed> = buildList {
         if (apiSignedIn) { add(Feed(FEED_ALL, I18n.s.allMusic)); add(Feed(FEED_FOLDERS, I18n.s.folders)) }
+        if (_trees.value.isNotEmpty()) add(Feed(FEED_TREES, I18n.s.driveFolders))
         if (picker.files.value.isNotEmpty()) add(Feed(FEED_GPICKER, I18n.s.driveGooglePicked))
         if (!apiSignedIn || _picked.value.isNotEmpty()) add(Feed(FEED_PICKED, I18n.s.drivePicked))
     }
 
     override suspend fun load(feed: Feed): List<VideoItem> = when (feed.key) {
-        FEED_PICKED -> _picked.value
+        // Songs whose file grant Android dropped (over its 512-file limit) say so instead of failing to play.
+        FEED_PICKED -> withoutAccess().toSet().let { lost ->
+            _picked.value.map { if (it.id in lost) it.copy(author = I18n.s.fileNoAccess) else it }
+        }
+        FEED_TREES -> _trees.value
         FEED_GPICKER -> picker.files.value.map { f ->
             if (f.isFolder) gpFolder(f) else gpItem(f)
         }
@@ -75,6 +92,10 @@ class DriveSource(
     override fun isFolder(item: VideoItem) = item.id.startsWith(COLLECTION_PREFIX)
 
     override suspend fun browse(item: VideoItem): List<VideoItem> {
+        PickedFiles.parseTreeFolder(item.id)?.let { (tree, doc) ->
+            val (dirs, songs) = treeChildren(tree, doc)
+            return dirs + songs
+        }
         val folder = item.id.removePrefix(COLLECTION_PREFIX)
         if (folder.startsWith(GP)) {
             val (dirs, songs) = picker.children(folder.removePrefix(GP)).partition { it.isFolder }
@@ -103,6 +124,9 @@ class DriveSource(
     /** A folder added to a playlist plays the audio files directly inside it, in name order. */
     override suspend fun expand(item: VideoItem): List<VideoItem>? {
         if (!item.id.startsWith(COLLECTION_PREFIX)) return null
+        PickedFiles.parseTreeFolder(item.id)?.let { (tree, doc) ->
+            return treeChildren(tree, doc).second.ifEmpty { throw UserFacingException(I18n.s.noVideos) }
+        }
         val folder = item.id.removePrefix(COLLECTION_PREFIX)
         if (folder.startsWith(GP)) {
             return picker.children(folder.removePrefix(GP)).filter { !it.isFolder }.map(::gpItem).ifEmpty { throw UserFacingException(I18n.s.drivePickerFolderEmpty) }
@@ -111,12 +135,17 @@ class DriveSource(
     }
 
     override suspend fun resolve(item: VideoItem) =
-        if (item.id.startsWith("content://")) PlayableStream(item.id)
-        else if (item.id.startsWith(GP)) {
+        if (item.id.startsWith("content://")) {
+            // A song added with "Add from files" whose grant Android dropped: play the same file from an
+            // added folder instead (the queue and playlists keep pointing at the old copy).
+            val use = if (hasAccess(item.id)) item.id else replacement(item)?.id ?: item.id
+            PlayableStream(use)
+        } else if (item.id.startsWith(GP)) {
             val id = item.id.removePrefix(GP)
             PlayableStream(picker.mediaUrl(id), headers = mapOf("Authorization" to "Bearer ${picker.token()}"))
         } else PlayableStream(
-            "https://www.googleapis.com/drive/v3/files/${item.id}?alt=media&acknowledgeAbuse=true",
+            // supportsAllDrives: listings include shared drives, whose files answer 404 without it.
+            "https://www.googleapis.com/drive/v3/files/${item.id}?alt=media&acknowledgeAbuse=true&supportsAllDrives=true",
             headers = mapOf("Authorization" to "Bearer ${token()}"),
         )
 
@@ -174,8 +203,72 @@ class DriveSource(
 
     // ---- Without sign-in: files picked in the system picker ----
 
-    /** Adds files returned by the picker; newest picks go first, duplicates move to the top. */
-    fun addPicked(uris: List<Uri>) {
+    /** Picked files Android no longer lets the app read (see [PickedFiles]). */
+    fun withoutAccess(): List<String> =
+        PickedFiles.withoutAccess(_picked.value.filter { it.id.startsWith("content://") }.map { it.id }, granted())
+
+    private fun granted(): Set<String> = runCatching {
+        context.contentResolver.persistedUriPermissions.filter { it.isReadPermission }.mapTo(HashSet()) { it.uri.toString() }
+    }.getOrDefault(emptySet())
+
+    private fun hasAccess(uri: String) = PickedFiles.hasAccess(uri, granted())
+
+    // ---- Songs from added folders, by file name (to stand in for picked songs that lost access) ----
+
+    private val indexLock = Mutex()
+    @Volatile private var folderIndex: Pair<Long, Map<String, VideoItem>>? = null
+
+    /** Every song in the added folders and their subfolders, by [PickedFiles.matchKey]; cached 10 minutes. */
+    private suspend fun folderSongs(): Map<String, VideoItem> = indexLock.withLock {
+        val now = android.os.SystemClock.elapsedRealtime()
+        folderIndex?.let { (at, map) -> if (now - at < 10 * 60_000L) return@withLock map }
+        val out = HashMap<String, VideoItem>()
+        val pending = ArrayDeque(_trees.value.mapNotNull { PickedFiles.parseTreeFolder(it.id) })
+        var folders = 0
+        while (pending.isNotEmpty() && folders++ < 300) {
+            val (tree, doc) = pending.removeFirst()
+            val (dirs, songs) = runCatching { treeChildren(tree, doc) }.getOrNull() ?: continue
+            songs.forEach { s -> out.putIfAbsent(PickedFiles.matchKey(s.extra ?: s.title), s) }
+            dirs.forEach { d -> PickedFiles.parseTreeFolder(d.id)?.let(pending::addLast) }
+        }
+        folderIndex = now to out
+        out
+    }
+
+    private fun keyOf(item: VideoItem) = PickedFiles.matchKey(PickedFiles.fileName(item.title, item.author, item.extra))
+
+    /** The same song (same file name) in one of the added folders, if any. */
+    suspend fun replacement(item: VideoItem): VideoItem? =
+        if (_trees.value.isEmpty()) null else folderSongs()[keyOf(item)]
+
+    /**
+     * Points playlists at the folder copies of songs that lost access, and drops those songs from the
+     * picked list (the folder has them). Returns how many playlist entries were fixed.
+     */
+    suspend fun repairWithFolders(playlists: PlaylistStore): Int {
+        val songs = folderSongs()
+        if (songs.isEmpty()) return 0
+        val granted = granted()
+        fun fix(item: VideoItem): VideoItem? =
+            if (item.source == SourceId.GDRIVE && item.id.startsWith("content://") && !PickedFiles.hasAccess(item.id, granted)) songs[keyOf(item)]
+            else null
+        val fixed = playlists.replaceItems(::fix)
+        val keep = _picked.value.filter { fix(it) == null }
+        if (keep.size != _picked.value.size) savePicked(keep)
+        return fixed
+    }
+
+    /** Drops the picked songs that can't be read any more, so they can be added again (or picked from Google Drive). */
+    fun removeWithoutAccess() {
+        val lost = withoutAccess().toSet()
+        if (lost.isNotEmpty()) savePicked(_picked.value.filterNot { it.id in lost })
+    }
+
+    /**
+     * Adds files returned by the picker; newest picks go first, duplicates move to the top.
+     * Returns how many picked songs can't be read afterwards (Android keeps at most 512 file grants).
+     */
+    fun addPicked(uris: List<Uri>): Int {
         val added = uris.map { uri ->
             runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             val name = runCatching {
@@ -185,9 +278,77 @@ class DriveSource(
             pickedItem(uri.toString(), name)
         }
         savePicked(added + _picked.value.filter { old -> added.none { it.id == old.id } })
+        return withoutAccess().size
+    }
+
+    /** A folder chosen with the system folder picker: one read grant covers all its files and subfolders. */
+    fun addTree(uri: Uri) {
+        runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        val doc = DocumentsContract.getTreeDocumentId(uri)
+        val name = runCatching {
+            context.contentResolver.query(
+                DocumentsContract.buildDocumentUriUsingTree(uri, doc), arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null,
+            )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull() ?: I18n.s.folder
+        val item = VideoItem(SourceId.GDRIVE, PickedFiles.treeFolderId(uri.toString(), doc), name, author = I18n.s.folder)
+        saveTrees(listOf(item) + _trees.value.filter { it.id != item.id })
+        folderIndex = null
+    }
+
+    /** Subfolders and songs directly inside a tree folder, each sorted by name. */
+    private suspend fun treeChildren(tree: String, doc: String): Pair<List<VideoItem>, List<VideoItem>> = withContext(Dispatchers.IO) {
+        val treeUri = Uri.parse(tree)
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, doc)
+        val cols = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+        )
+        val dirs = mutableListOf<VideoItem>()
+        val songs = mutableListOf<VideoItem>()
+        // The Drive app answers from its cache first and flags "still loading"; ask again until it's done.
+        for (attempt in 0 until 20) {
+            dirs.clear(); songs.clear()
+            val loading = context.contentResolver.query(children, cols, null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getString(0) ?: continue
+                    val name = c.getString(1).orEmpty()
+                    val mime = c.getString(2).orEmpty()
+                    when {
+                        mime == DocumentsContract.Document.MIME_TYPE_DIR ->
+                            dirs += VideoItem(SourceId.GDRIVE, PickedFiles.treeFolderId(tree, id), name, author = I18n.s.folder)
+                        AudioFiles.isAudio(name, mime) ->
+                            songs += pickedItem(DocumentsContract.buildDocumentUriUsingTree(treeUri, id).toString(), name)
+                    }
+                }
+                c.extras?.getBoolean(DocumentsContract.EXTRA_LOADING) == true
+            } ?: throw UserFacingException(I18n.s.fileAccessLost)
+            if (!loading) break
+            delay(750)
+        }
+        dirs.sortedBy { it.title.lowercase() } to songs.sortedBy { it.title.lowercase() }
+    }
+
+    private fun saveTrees(list: List<VideoItem>) {
+        val arr = JSONArray()
+        list.forEach { arr.put(JSONObject().put("id", it.id).put("name", it.title)) }
+        prefs.edit().putString(KEY_TREES, arr.toString()).apply()
+        _trees.value = list
+    }
+
+    private fun readTrees(): List<VideoItem> {
+        val arr = runCatching { JSONArray(prefs.getString(KEY_TREES, "[]")) }.getOrElse { JSONArray() }
+        return (0 until arr.length()).map { arr.getJSONObject(it) }
+            .map { VideoItem(SourceId.GDRIVE, it.getString("id"), it.optString("name"), author = I18n.s.folder) }
     }
 
     fun clearPicked() {
+        _trees.value.forEach { item ->
+            PickedFiles.parseTreeFolder(item.id)?.let { (tree, _) ->
+                runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(tree), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            }
+        }
+        saveTrees(emptyList())
         _picked.value.forEach { item ->
             runCatching {
                 context.contentResolver.releasePersistableUriPermission(Uri.parse(item.id), Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -220,6 +381,8 @@ class DriveSource(
         const val FEED_ALL = "all"
         const val FEED_FOLDERS = "folders"
         const val FEED_PICKED = "picked"
+        const val FEED_TREES = "trees"
+        private const val KEY_TREES = "trees"
         const val FEED_GPICKER = "gpicker"
         /** Most files listed for one feed / folder / search (Drive pages hold up to 1000). */
         const val MAX_ITEMS = 1000

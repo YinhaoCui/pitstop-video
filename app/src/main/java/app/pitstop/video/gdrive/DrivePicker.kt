@@ -143,7 +143,8 @@ class DrivePicker(private val context: Context, private val http: OkHttpClient) 
         return kept.sortedBy { !it.isFolder }
     }
 
-    fun mediaUrl(id: String) = "$API/files/$id?alt=media&acknowledgeAbuse=true"
+    // supportsAllDrives: without it, files in shared drives answer 404 even though they are listed.
+    fun mediaUrl(id: String) = "$API/files/$id?alt=media&acknowledgeAbuse=true&supportsAllDrives=true"
 
     private suspend fun metadata(id: String, token: String): PickedDriveFile {
         val o = JSONObject(http.getString(authed("$API/files/$id?fields=id,name,mimeType&supportsAllDrives=true", token)))

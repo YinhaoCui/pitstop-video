@@ -144,6 +144,21 @@ class PlaylistStore(private val file: File, starredName: String) {
     fun addAll(id: String, items: List<VideoItem>) = edit(id) { PlaylistOps.addAll(it, items) }
     fun removeAt(id: String, index: Int) = edit(id) { PlaylistOps.removeAt(it, index) }
     fun move(id: String, from: Int, to: Int) = edit(id) { PlaylistOps.move(it, from, to) }
+    /**
+     * Replaces items everywhere [f] returns a substitute (e.g. a song that moved), dropping duplicates it
+     * creates in a playlist. Returns how many items were replaced.
+     */
+    fun replaceItems(f: (VideoItem) -> VideoItem?): Int {
+        var count = 0
+        val before = _playlists.value
+        val after = before.map { p ->
+            val items = p.items.map { old -> f(old)?.also { count++ } ?: old }
+            if (items == p.items) p else p.copy(items = PlaylistOps.addAll(p.copy(items = emptyList()), items).items)
+        }
+        if (count > 0) mutate { after }
+        return count
+    }
+
     /** Saves a new order of the same items (Sort & filter → Keep this order). */
     fun reorder(id: String, items: List<VideoItem>) = edit(id) { p -> if (items.size == p.items.size) p.copy(items = items) else p }
 
