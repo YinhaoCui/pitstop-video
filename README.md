@@ -194,6 +194,13 @@ key and attaches it to a GitHub release. One-time setup:
 
 Installing the release over a debug build fails (different key): uninstall the debug build first.
 
+**Beta versions.** A tag with a pre-release part (`v0.7.0-beta.1`, `v0.7.0-rc.1`) is published as a
+GitHub pre-release. Apps with *Settings → App updates → Beta versions* on are offered it; everyone else
+only gets final releases. Merge features to `main`, tag betas as they land, and tag the final version
+(`v0.7.0`) once a batch has proven itself. Versions order like semver
+(0.7.0-beta.1 < 0.7.0-beta.2 < 0.7.0-rc.1 < 0.7.0), and every tagged build needs a higher `versionCode`
+than the one before, betas included, since Android never installs a lower one over a higher one.
+
 ### Build options
 
 Off by default, and off in the public release. Turn them on for your own build in

@@ -1,6 +1,7 @@
 package app.pitstop.video
 
 import app.pitstop.video.core.Updates
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -25,6 +26,30 @@ class UpdatesTest {
         assertFalse(Updates.isNewer("0.7", "0.7.0"))
         assertFalse(Updates.isNewer("v0.6.2", "0.6.3"))
         assertFalse(Updates.isNewer("nightly", "0.6.3"))
+    }
+
+    @Test fun preReleasesComeBeforeTheirFinalVersion() {
+        assertTrue(Updates.isNewer("v0.7.0-beta.1", "0.6.4"))
+        assertTrue(Updates.isNewer("v0.7.0-beta.2", "0.7.0-beta.1"))
+        assertTrue(Updates.isNewer("v0.7.0-beta.10", "0.7.0-beta.9"))
+        assertTrue(Updates.isNewer("v0.7.0-rc.1", "0.7.0-beta.3"))
+        assertTrue(Updates.isNewer("v0.7.0", "0.7.0-beta.3"))
+        assertFalse(Updates.isNewer("v0.7.0-beta.3", "0.7.0"))
+        assertFalse(Updates.isNewer("v0.6.4", "0.7.0-beta.1"))
+        assertFalse(Updates.isNewer("v0.7.0-beta.1", "0.7.0-beta.1"))
+        assertFalse(Updates.isNewer("v0.7.0+build5", "0.7.0"))
+        assertEquals("beta.2", Updates.preRelease("v0.7.0-beta.2+x"))
+        assertNull(Updates.preRelease("v0.7.0+build5"))
+    }
+
+    @Test fun betaChannelPicksTheNewestRelease() {
+        fun rel(tag: String, pre: Boolean) = json().put("tag_name", tag).put("prerelease", pre)
+        val list = JSONArray().put(rel("v0.7.0-beta.1", true)).put(rel("v0.7.0-beta.2", true))
+            .put(rel("v0.6.4", false)).put(json().put("tag_name", "v0.8.0-beta.1").put("draft", true))
+        assertEquals("0.7.0-beta.2", Updates.newest(list, allowPreRelease = true)!!.version)
+        assertEquals("0.6.4", Updates.newest(list, allowPreRelease = false)!!.version)
+        assertEquals("0.7.0", Updates.newest(list.put(rel("v0.7.0", false)), allowPreRelease = true)!!.version)
+        assertNull(Updates.newest(JSONArray(), allowPreRelease = true))
     }
 
     private fun json(extra: String = "", assets: String = APK) = JSONObject(
