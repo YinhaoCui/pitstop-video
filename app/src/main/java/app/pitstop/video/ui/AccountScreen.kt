@@ -11,7 +11,17 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.res.painterResource
+import app.pitstop.video.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,46 +60,115 @@ import com.google.zxing.qrcode.QRCodeWriter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/** The categories of Settings; each opens its own page. */
+private enum class SettingsPage(val icon: Int) {
+    ACCOUNTS(R.drawable.ic_person),
+    PLAYBACK(R.drawable.ic_play),
+    SUBTITLES(R.drawable.ic_subtitles),
+    PLATFORMS(R.drawable.ic_category),
+    CAR(R.drawable.ic_car),
+    APPEARANCE(R.drawable.ic_palette),
+    DOWNLOADS(R.drawable.ic_download),
+    ABOUT(R.drawable.ic_info),
+}
+
+@Composable
+private fun SettingsPage.title() = when (this) {
+    SettingsPage.ACCOUNTS -> S.accounts
+    SettingsPage.PLAYBACK -> S.settingsPlayback
+    SettingsPage.SUBTITLES -> S.subtitlesTitle
+    SettingsPage.PLATFORMS -> S.platforms
+    SettingsPage.CAR -> S.settingsCar
+    SettingsPage.APPEARANCE -> S.settingsAppearance
+    SettingsPage.DOWNLOADS -> S.downloads
+    SettingsPage.ABOUT -> S.settingsAbout
+}
+
+@Composable
+private fun SettingsPage.summary() = when (this) {
+    SettingsPage.ACCOUNTS -> S.settingsAccountsText
+    SettingsPage.PLAYBACK -> S.settingsPlaybackText
+    SettingsPage.SUBTITLES -> S.settingsSubtitlesText
+    SettingsPage.PLATFORMS -> S.settingsPlatformsText
+    SettingsPage.CAR -> S.settingsCarText
+    SettingsPage.APPEARANCE -> S.settingsAppearanceText
+    SettingsPage.DOWNLOADS -> S.settingsDownloadsText
+    SettingsPage.ABOUT -> S.settingsAboutText
+}
+
+/** Settings: a short list of categories; each one opens its own page (Back returns to the list). */
 @Composable
 fun AccountScreen(graph: AppGraph) {
-    Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        DownloadsSection(graph)
-        HorizontalDivider()
-        LanguageSection()
-        HorizontalDivider()
-        AppearanceSection()
-        HorizontalDivider()
-        SubtitleSettingsSection()
-        HorizontalDivider()
-        Text(S.accounts, style = MaterialTheme.typography.titleLarge)
-        YouTubeSection(graph)
-        HorizontalDivider()
-        BilibiliSection(graph)
-        HorizontalDivider()
-        NeteaseSection(graph)
-        HorizontalDivider()
-        // Whole-Drive sign-in uses the restricted drive.readonly scope: personal builds only.
-        if (BuildConfig.DRIVE_FULL_ACCESS) {
-            DriveSection(graph)
-            HorizontalDivider()
+    var open by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
+    val page = open
+    if (page == null) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+            SettingsPage.entries.forEach { p ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { open = p }.padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(painterResource(p.icon), null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(20.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(p.title(), style = MaterialTheme.typography.titleMedium)
+                        Text(p.summary(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(painterResource(R.drawable.ic_chevron_right), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            VersionFooter()
         }
-        SafetySection(graph)
-        PhonePlaybackSection()
-        DataSaverSection()
-        PlatformsSection()
-        DrivingAudioSection()
-        HorizontalDivider()
-        Text(S.usingInCar, style = MaterialTheme.typography.titleMedium)
-        Text(
-            if (graph.isAutomotiveOs) S.aaosHelp else S.aaHelp,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        HorizontalDivider()
-        UpdateSection(graph)
-        VersionFooter()
+        return
+    }
+    BackHandler { open = null }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { open = null }) { Icon(painterResource(R.drawable.ic_back), S.back) }
+            Text(page.title(), style = MaterialTheme.typography.titleLarge)
+        }
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            when (page) {
+                SettingsPage.ACCOUNTS -> {
+                    YouTubeSection(graph)
+                    HorizontalDivider()
+                    BilibiliSection(graph)
+                    HorizontalDivider()
+                    NeteaseSection(graph)
+                    // Whole-Drive sign-in uses the restricted drive.readonly scope: personal builds only.
+                    if (BuildConfig.DRIVE_FULL_ACCESS) {
+                        HorizontalDivider()
+                        DriveSection(graph)
+                    }
+                }
+                SettingsPage.PLAYBACK -> {
+                    PhonePlaybackSection()
+                    DataSaverSection()
+                }
+                SettingsPage.SUBTITLES -> SubtitleSettingsSection()
+                SettingsPage.PLATFORMS -> PlatformsSection()
+                SettingsPage.CAR -> {
+                    SafetySection(graph)
+                    DrivingAudioSection()
+                    HorizontalDivider()
+                    Text(S.usingInCar, style = MaterialTheme.typography.titleMedium)
+                    Text(if (graph.isAutomotiveOs) S.aaosHelp else S.aaHelp, style = MaterialTheme.typography.bodyMedium)
+                }
+                SettingsPage.APPEARANCE -> {
+                    LanguageSection()
+                    HorizontalDivider()
+                    AppearanceSection()
+                }
+                SettingsPage.DOWNLOADS -> DownloadsSection(graph)
+                SettingsPage.ABOUT -> {
+                    UpdateSection(graph)
+                    VersionFooter()
+                }
+            }
+        }
     }
 }
 
