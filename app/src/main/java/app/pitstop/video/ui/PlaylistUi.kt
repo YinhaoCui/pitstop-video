@@ -167,6 +167,8 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
     val builtIn = p.id == PlaylistOps.STARRED
     menuFor?.let { AddToPlaylistDialog(graph, it) { menuFor = null } }
     var confirmRemove by remember { mutableStateOf(false) }
+    var showDuplicates by remember { mutableStateOf(false) }
+    if (showDuplicates) DuplicatesDialog(graph, p) { showDuplicates = false }
     var showSortFilter by remember { mutableStateOf(false) }
     if (showSortFilter) SortFilterDialog(
         null, emptyList(), emptyMap(), view, platforms = p.items.map { it.source }.distinct(),
@@ -244,6 +246,7 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
         if (sel == null) Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             SortFilterChip(active = !view.isDefault) { showSortFilter = true }
             TextButton(onClick = { selected = emptySet() }, enabled = shownItems.isNotEmpty()) { Text(S.select) }
+            TextButton(onClick = { showDuplicates = true }, enabled = p.items.size > 1) { Text(S.findDuplicates) }
             // Sorted but nothing filtered out: the new order can be kept.
             if (view.sort != ListSort.DEFAULT && shownItems.size == p.items.size) {
                 TextButton(onClick = { graph.playlists.reorder(p.id, shownItems); view = view.copy(sort = ListSort.DEFAULT) }) { Text(S.keepThisOrder) }
