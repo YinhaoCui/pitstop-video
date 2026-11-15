@@ -85,7 +85,7 @@ class AppGraph(app: Application) {
     val youTubeAccount = YouTubeAccount(app, http)
     val thumbnails = ThumbnailLoader(app, http)
     val driving = DrivingMonitor(app)
-    val playlists = PlaylistStore(File(app.filesDir, "playlists.json"))
+    val playlists = PlaylistStore(File(app.filesDir, "playlists.json"), I18n.s.starred)
     val updater = AppUpdater(app, http)
     val creators = CreatorStore(File(app.filesDir, "creators.json"))
 
