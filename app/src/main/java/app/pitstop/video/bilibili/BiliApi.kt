@@ -13,11 +13,18 @@ import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.getString
 import app.pitstop.video.core.parseClock
 import app.pitstop.video.player.StreamSelector
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -231,11 +238,14 @@ class BiliApi(
         if (BiliPaid.isPreview(d)) throw UserFacingException(I18n.s.paidContent)
         val headers = mapOf("Referer" to "https://www.bilibili.com/", "User-Agent" to DESKTOP_UA)
         val overseas = isOverseas()
+        // Every server of each track, keyed by its best-guess URL, for the speed test of the picked ones.
+        val servers = HashMap<String, List<String>>()
         fun url(o: JSONObject): String {
             val all = listOf(o.optString("baseUrl").ifEmpty { o.optString("base_url") }) +
                 (o.optJSONArray("backupUrl") ?: o.optJSONArray("backup_url")).strings()
-            return BiliCdn.choose(all, overseas) ?: all.first()
+            return (BiliCdn.choose(all, overseas) ?: all.first()).also { servers[it] = all }
         }
+        suspend fun fastest(url: String) = fastestServer(servers[url] ?: listOf(url), overseas, headers) ?: url
         val dash = d.optJSONObject("dash")
         if (dash != null) {
             val videos = dash.optJSONArray("video").objects().map {
@@ -251,14 +261,22 @@ class BiliApi(
                 StreamSelector.AudioTrack(url(it), it.optLong("bandwidth"))
             }
             if (StreamPolicy.audioOnly) StreamSelector.pickAudio(audios, StreamPolicy.audioMaxBps)?.let {
-                return PlayableStream(it.url, headers = headers, subtitles = subtitles(bvid, cid), audioOnly = true)
+                return PlayableStream(fastest(it.url), headers = headers, subtitles = subtitles(bvid, cid), audioOnly = true)
             }
             val v = StreamSelector.pickVideo(videos, StreamPolicy.maxHeight, DeviceCodecs::canPlay)
-            if (v != null) return PlayableStream(v.url, StreamSelector.pickAudio(audios, StreamPolicy.audioMaxBps)?.url, headers, subtitles = subtitles(bvid, cid))
+            if (v != null) {
+                val audio = StreamSelector.pickAudio(audios, StreamPolicy.audioMaxBps)?.url
+                // Both speed tests (and the subtitles) at once.
+                return coroutineScope {
+                    val audioServer = async { audio?.let { fastest(it) } }
+                    val subs = async { subtitles(bvid, cid) }
+                    PlayableStream(fastest(v.url), audioServer.await(), headers, subtitles = subs.await())
+                }
+            }
         }
         val durl = d.optJSONArray("durl").objects().firstOrNull()?.let { o ->
             val all = listOf(o.optString("url")) + o.optJSONArray("backup_url").strings()
-            BiliCdn.choose(all, overseas)
+            fastestServer(all, overseas, headers)
         }
             ?: throw UserFacingException("No playable stream for $bvid (it may need a Bilibili login or be region-locked)")
         return PlayableStream(durl, headers = headers, subtitles = subtitles(bvid, cid))
@@ -423,10 +441,11 @@ class BiliApi(
         if (BiliPaid.isPreview(d)) throw UserFacingException(I18n.s.paidContent)
         val headers = mapOf("Referer" to "https://www.bilibili.com/", "User-Agent" to DESKTOP_UA)
         val overseas = isOverseas()
+        val servers = HashMap<String, List<String>>()
         fun url(o: JSONObject): String {
             val all = listOf(o.optString("baseUrl").ifEmpty { o.optString("base_url") }) +
                 (o.optJSONArray("backupUrl") ?: o.optJSONArray("backup_url")).strings()
-            return BiliCdn.choose(all, overseas) ?: all.first()
+            return (BiliCdn.choose(all, overseas) ?: all.first()).also { servers[it] = all }
         }
         val dash = d.optJSONObject("dash")
             ?: throw UserFacingException("No audio stream for $bvid (it may need a Bilibili login or be region-locked)")
@@ -434,13 +453,55 @@ class BiliApi(
         if (StreamPolicy.metered) {
             // Data saver: skip lossless / Dolby and take the best normal track within the mobile cap.
             val tracks = plain.map { StreamSelector.AudioTrack(url(it), it.optLong("bandwidth")) }
-            StreamSelector.pickAudio(tracks, StreamPolicy.audioMaxBps)?.let { return PlayableStream(it.url, headers = headers) }
+            StreamSelector.pickAudio(tracks, StreamPolicy.audioMaxBps)?.let { t ->
+                return PlayableStream(fastestServer(servers[t.url] ?: listOf(t.url), overseas, headers) ?: t.url, headers = headers)
+            }
         }
         val flac = dash.optJSONObject("flac")?.optJSONObject("audio")
         val dolby = dash.optJSONObject("dolby")?.optJSONArray("audio").objects().firstOrNull()
         val best = flac ?: dolby ?: plain.maxByOrNull { it.optLong("bandwidth") }
             ?: throw UserFacingException("No audio stream for $bvid")
-        return PlayableStream(url(best), headers = headers)
+        val chosen = url(best)
+        return PlayableStream(fastestServer(servers[chosen] ?: listOf(chosen), overseas, headers) ?: chosen, headers = headers)
+    }
+
+    /**
+     * The fastest of a stream's servers. Which CDN is quick depends on the file: one not cached yet at a
+     * CDN's edge can arrive slower than the video plays (seen Nov 2026: 0.3 MB/s on Akamai, 1.4 MB/s on
+     * cosov for the same 1080p file), and the stream then stalls over and over. Each candidate sends its
+     * first [SPEED_TEST_BYTES] at once and the first to finish wins, usually in under a second; after
+     * [SPEED_TEST_MS] (or if all fail) the best guess is used. Null when there is no usable URL.
+     */
+    private suspend fun fastestServer(urls: List<String>, overseas: Boolean, headers: Map<String, String>): String? {
+        val guess = BiliCdn.choose(urls, overseas) ?: return null
+        val candidates = BiliCdn.speedTestCandidates(urls, overseas)
+        if (candidates.size < 2) return guess
+        val winner = CompletableDeferred<String>()
+        val failed = java.util.concurrent.atomic.AtomicInteger()
+        val calls = candidates.map { url ->
+            val request = Request.Builder().url(url).header("Range", "bytes=0-${SPEED_TEST_BYTES - 1}")
+                .apply { headers.forEach { (k, v) -> header(k, v) } }.build()
+            http.newCall(request).also { call ->
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: java.io.IOException) {
+                        if (failed.incrementAndGet() == candidates.size) winner.complete(guess)
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        // Reads up to SPEED_TEST_BYTES (less for a tiny file), even when the server ignores Range.
+                        val ok = runCatching {
+                            response.use { r -> r.isSuccessful && r.body?.source()?.let { it.request(SPEED_TEST_BYTES); true } == true }
+                        }.getOrDefault(false)
+                        if (ok) winner.complete(url) else onFailure(call, java.io.IOException("speed test"))
+                    }
+                })
+            }
+        }
+        return try {
+            withTimeoutOrNull(SPEED_TEST_MS) { winner.await() } ?: guess
+        } finally {
+            calls.forEach(Call::cancel)
+        }
     }
 
     private fun archiveToItem(o: JSONObject, source: SourceId = SourceId.BILIBILI) = VideoItem(
@@ -455,6 +516,8 @@ class BiliApi(
     )
 
     companion object {
+        private const val SPEED_TEST_BYTES = 512L * 1024
+        private const val SPEED_TEST_MS = 4_000L
         private const val UPLOADER_PAGE_SIZE = 30
         private const val COLLECTED_PAGES = 5
         private const val MUSIC_CENTER = "https://api.bilibili.com/x/centralization/interface"

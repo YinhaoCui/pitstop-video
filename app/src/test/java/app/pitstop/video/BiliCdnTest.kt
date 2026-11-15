@@ -25,4 +25,14 @@ class BiliCdnTest {
         assertEquals(pcdn, BiliCdn.choose(listOf(pcdn), overseas = true))
 
     @Test fun noUsableUrls() = assertNull(BiliCdn.choose(listOf("", "ftp://x"), overseas = true))
+
+    @Test fun speedTestsEachRealServerOnce() {
+        val upos2 = upos.replace("e=abc", "e=def")
+        assertEquals(
+            listOf(akamai, upos),
+            BiliCdn.speedTestCandidates(listOf(pcdn, upos, upos2, akamai, ip), overseas = true),
+        )
+        assertEquals(listOf(akamai), BiliCdn.speedTestCandidates(listOf(upos, akamai), overseas = true, max = 1))
+        assertEquals(emptyList<String>(), BiliCdn.speedTestCandidates(listOf(pcdn, ip), overseas = true))
+    }
 }
