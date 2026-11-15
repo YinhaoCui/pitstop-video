@@ -72,7 +72,8 @@ import kotlinx.coroutines.delay
 @Composable
 fun MusicTab(graph: AppGraph) {
     val hidden by Settings.hiddenSources.collectAsStateWithLifecycle()
-    val sources = remember(hidden) { graph.shownMusicSources }
+    val order by Settings.sourceOrder.collectAsStateWithLifecycle()
+    val sources = remember(hidden, order) { graph.shownMusicSources }
     var selected by rememberSaveable { mutableStateOf(sources.first().id) }
     val source = sources.firstOrNull { it.id == selected } ?: sources.first()
     var pendingQuery by remember { mutableStateOf<String?>(null) }

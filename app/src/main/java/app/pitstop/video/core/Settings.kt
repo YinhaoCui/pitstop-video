@@ -107,6 +107,10 @@ object Settings {
         _searchHistory.value = p.getString("search_history", null).orEmpty().split('\n').filter { it.isNotBlank() }
         _hiddenSources.value = p.getStringSet("hidden_sources", emptySet()).orEmpty()
             .mapNotNull { n -> SourceId.entries.firstOrNull { it.name == n } }.toSet()
+        _sourceOrder.value = fullSourceOrder(
+            p.getString("source_order", null).orEmpty().split(',')
+                .mapNotNull { n -> SourceId.entries.firstOrNull { it.name == n } }
+        )
         _qualityWifi.value = runCatching { VideoQuality.valueOf(p.getString("quality_wifi", null)!!) }.getOrDefault(VideoQuality.AUTO)
         _qualityMobile.value = runCatching { VideoQuality.valueOf(p.getString("quality_mobile", null)!!) }.getOrDefault(VideoQuality.AUTO)
     }
@@ -148,6 +152,17 @@ object Settings {
         val s = if (shown) _hiddenSources.value - id else _hiddenSources.value + id
         _hiddenSources.value = s
         prefs?.edit()?.putStringSet("hidden_sources", s.mapTo(HashSet()) { it.name })?.apply()
+    }
+
+    private val _sourceOrder = MutableStateFlow(SourceId.entries.toList())
+    /** Every platform in the user's order (Settings → Platforms); each bar lists its platforms in this order. */
+    val sourceOrder: StateFlow<List<SourceId>> = _sourceOrder.asStateFlow()
+
+    /** Moves a platform one step up (-1) or down (+1) within its own bar (Video, Music or Live). */
+    fun moveSource(id: SourceId, delta: Int) {
+        val o = app.pitstop.video.core.moveSource(_sourceOrder.value, id, delta) { id.sameBar(it) }
+        _sourceOrder.value = o
+        prefs?.edit()?.putString("source_order", o.joinToString(",") { it.name })?.apply()
     }
 
     private val _searchHistory = MutableStateFlow<List<String>>(emptyList())

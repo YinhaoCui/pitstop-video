@@ -180,11 +180,12 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
     UpdatePrompt(graph)
     // Only the platforms the user chose to show (Settings → Platforms, or the button after the chips).
     val hidden by Settings.hiddenSources.collectAsStateWithLifecycle()
-    val videoSources = remember(hidden) { graph.shownVideoSources }
+    val order by Settings.sourceOrder.collectAsStateWithLifecycle()
+    val videoSources = remember(hidden, order) { graph.shownVideoSources }
     // Top level: Video or Music (each with its sources below), plus Playlists and Settings.
     var page by rememberSaveable { mutableStateOf(Page.VIDEO) }
     var videoSourceId by rememberSaveable { mutableStateOf(videoSources.first().id) }
-    val liveSources = remember(hidden) { graph.shownLiveSources }
+    val liveSources = remember(hidden, order) { graph.shownLiveSources }
     var liveSourceId by rememberSaveable { mutableStateOf(liveSources.firstOrNull()?.id) }
     // Search everywhere → More: switch platform and run the same search there.
     var pendingQuery by remember { mutableStateOf<String?>(null) }

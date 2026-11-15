@@ -16,6 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.res.painterResource
+import app.pitstop.video.R
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -167,23 +171,33 @@ fun PhonePlaybackSection() {
     }
 }
 
-/** Platform switches for the Video and Music bars; a bar's last shown platform can't be turned off. */
+/**
+ * Platform switches for the Video, Music and Live bars, in the user's order, with up / down buttons to
+ * reorder each bar; a bar's last shown platform can't be turned off.
+ */
 @Composable
 fun PlatformToggles() {
     val hidden by Settings.hiddenSources.collectAsStateWithLifecycle()
+    val order by Settings.sourceOrder.collectAsStateWithLifecycle()
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         listOf(
-            S.video to SourceId.entries.filter { !it.music && !it.live },
-            S.music to SourceId.entries.filter { it.music },
-            S.live to SourceId.entries.filter { it.live },
+            S.video to order.filter { !it.music && !it.live },
+            S.music to order.filter { it.music },
+            S.live to order.filter { it.live },
         )
             .forEach { (title, ids) ->
                 Text(title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                 val shownCount = ids.count { it !in hidden }
-                ids.forEach { id ->
+                ids.forEachIndexed { i, id ->
                     val shown = id !in hidden
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(S.sourceName(id), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                        IconButton(onClick = { Settings.moveSource(id, -1) }, enabled = i > 0) {
+                            Icon(painterResource(R.drawable.ic_arrow_up), contentDescription = S.movePlatformUp(S.sourceName(id)))
+                        }
+                        IconButton(onClick = { Settings.moveSource(id, 1) }, enabled = i < ids.lastIndex) {
+                            Icon(painterResource(R.drawable.ic_arrow_down), contentDescription = S.movePlatformDown(S.sourceName(id)))
+                        }
                         Switch(
                             checked = shown,
                             enabled = !shown || shownCount > 1,
