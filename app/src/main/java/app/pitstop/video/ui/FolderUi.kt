@@ -1,6 +1,8 @@
 package app.pitstop.video.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -90,12 +92,17 @@ fun FolderPage(
                 if (items.isEmpty()) Text(S.noVideos, Modifier.padding(24.dp))
                 else LazyColumn(Modifier.fillMaxSize()) {
                     if (tracks.isNotEmpty()) item(key = "actions") {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { graph.hub.playQueue(tracks) }) {
                                 Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.size(6.dp)); Text(S.playAll)
                             }
                             OutlinedButton(onClick = { graph.hub.playShuffled(tracks) }, enabled = tracks.size > 1) {
                                 Icon(painterResource(R.drawable.ic_shuffle), null); Spacer(Modifier.size(6.dp)); Text(S.shuffle)
+                            }
+                            // The whole folder (account playlist / favourites) into a playlist of this app.
+                            OutlinedButton(onClick = { adding = folder }) {
+                                Icon(painterResource(R.drawable.ic_playlist_add), S.saveToPlaylistHint)
+                                Spacer(Modifier.size(6.dp)); Text(S.saveToPlaylist)
                             }
                         }
                     }

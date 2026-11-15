@@ -92,7 +92,7 @@ class AppGraph(app: Application) {
         BiliSource(biliApi, biliCookies),
         PeerTubeSource(),
         LocalSource(app),
-        BiliMusicSource(biliApi) { song -> playElsewhere(song) },
+        BiliMusicSource(biliApi, biliCookies) { song -> playElsewhere(song) },
         YouTubeMusicSource(youTubeAccount),
         NeteaseSource(neteaseApi, neteaseCookies),
         SoundCloudSource(),

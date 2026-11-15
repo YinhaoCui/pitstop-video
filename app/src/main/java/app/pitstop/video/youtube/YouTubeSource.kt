@@ -1,5 +1,6 @@
 package app.pitstop.video.youtube
 
+import app.pitstop.video.core.COLLECTION_PREFIX
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
@@ -55,6 +56,7 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
         if (account.signedIn.value) {
             add(Feed(FEED_LIKED, I18n.s.liked))
             add(Feed(FEED_WATCH_LATER, I18n.s.watchLater))
+            add(Feed(FEED_PLAYLISTS, I18n.s.myVideoPlaylists))
             add(Feed(FEED_HISTORY, I18n.s.history))
         }
     }
@@ -76,6 +78,9 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
             FEED_LIKED -> return account.likedPage(cursor)
             FEED_WATCH_LATER -> return account.watchLaterPage(cursor)
             FEED_HISTORY -> return account.historyPage(cursor)
+            FEED_PLAYLISTS -> return account.playlistsPage(
+                SourceId.YOUTUBE, cursor, listOf("LL" to I18n.s.liked, "WL" to I18n.s.watchLater),
+            )
         }
         val category = feed.categoryKey()
         if (category == null && feed.key != FEED_POPULAR) return FeedPage(emptyList())
@@ -121,6 +126,14 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
         }
         trending + CategoryKeys.named(CategoryKeys.YT_TOPICS, s::ytCategory, s.catTopics) { CategoryKeys.TOPIC + it }
     }
+
+    /** The account's playlists open like folders; their videos can be saved to a playlist here. */
+    override fun isFolder(item: VideoItem) = item.id.startsWith(COLLECTION_PREFIX)
+
+    override suspend fun browse(item: VideoItem): List<VideoItem> = expand(item).orEmpty()
+
+    override suspend fun expand(item: VideoItem): List<VideoItem>? =
+        if (isFolder(item)) account.playlistItems(item.id.removePrefix(COLLECTION_PREFIX), SourceId.YOUTUBE) else null
 
     override val supportsCreators get() = true
 
@@ -265,6 +278,7 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
         const val FEED_LIKED = "liked"
         const val FEED_WATCH_LATER = "watch_later"
         const val FEED_HISTORY = "history"
+        const val FEED_PLAYLISTS = "playlists"
         fun watchUrl(videoId: String) = "https://www.youtube.com/watch?v=$videoId"
         fun channelUrl(channelId: String) = "https://www.youtube.com/channel/$channelId"
 

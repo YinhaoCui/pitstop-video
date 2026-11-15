@@ -18,21 +18,26 @@ import app.pitstop.video.core.categoryKey
 /** Bilibili's music zone, played audio-only (best stream: Hi-Res / Dolby when the account allows). */
 class BiliMusicSource(
     private val api: BiliApi,
+    private val cookies: BiliCookieJar,
     /** The same song on another platform, for songs Bilibili won't play here; null when none matches. */
     private val elsewhere: suspend (VideoItem) -> PlayableStream? = { null },
 ) : VideoSource {
     override val id = SourceId.BILI_MUSIC
     override val displayName get() = I18n.s.biliMusic
 
-    override fun feeds() = listOf(
-        Feed(FEED_RANKING, I18n.s.musicRanking),
-        Feed(FEED_RECOMMENDED, I18n.s.recommended),
-    )
+    override fun feeds() = buildList {
+        add(Feed(FEED_RANKING, I18n.s.musicRanking))
+        add(Feed(FEED_RECOMMENDED, I18n.s.recommended))
+        if (cookies.loggedIn.value) add(Feed(FEED_FAVOURITES, I18n.s.favourites))
+    }
 
     override suspend fun load(feed: Feed) = loadPage(feed, null).items
 
-    /** Every feed and category is endless; the cursor is always the next page number. */
+    /** Every feed and category is endless (cursor = next page number), except Favourites (one page). */
     override suspend fun loadPage(feed: Feed, cursor: String?): FeedPage {
+        if (feed.key == FEED_FAVOURITES) {
+            return FeedPage(if (cursor == null) api.myFavourites(SourceId.BILI_MUSIC) else emptyList())
+        }
         val page = cursor?.toIntOrNull() ?: 1
         val cat = feed.categoryKey()?.let(BiliMusicKeys::parse)
         return when {
@@ -81,8 +86,14 @@ class BiliMusicSource(
     override suspend fun creatorPage(authorId: String, cursor: String?): FeedPage =
         api.uploaderPage(authorId, cursor?.toIntOrNull() ?: 1, SourceId.BILI_MUSIC)
 
-    /** Albums / concerts uploaded as one video with many parts: one track per part. */
+    /** Favourites folders and 合集 open like folders; their songs can be saved to a playlist. */
+    override fun isFolder(item: VideoItem) = BiliFavs.parse(item.id) != null
+
+    override suspend fun browse(item: VideoItem): List<VideoItem> = api.favouriteItems(item.id, SourceId.BILI_MUSIC).orEmpty()
+
+    /** Albums / concerts uploaded as one video with many parts: one track per part; a favourites row plays its songs. */
     override suspend fun expand(item: VideoItem): List<VideoItem>? {
+        api.favouriteItems(item.id, SourceId.BILI_MUSIC)?.let { return it }
         if (item.part != null) return null
         val v = api.view(item.id)
         if (v.pages.size <= 1) return null
@@ -116,6 +127,7 @@ class BiliMusicSource(
     companion object {
         const val FEED_RANKING = "ranking"
         const val FEED_RECOMMENDED = "recommended"
+        const val FEED_FAVOURITES = "favourites"
         /** Not found / region-locked / copyright-blocked here. */
         private val UNAVAILABLE = setOf(-404, -403, -10403, 62002, 62004, 62012)
     }

@@ -19,12 +19,16 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
     override fun feeds(): List<Feed> = buildList {
         add(Feed(FEED_RECOMMENDED, I18n.s.recommended))
         add(Feed(FEED_POPULAR, I18n.s.popular))
-        if (cookies.loggedIn.value) add(Feed(FEED_FOLLOWING, I18n.s.following))
+        if (cookies.loggedIn.value) {
+            add(Feed(FEED_FOLLOWING, I18n.s.following))
+            add(Feed(FEED_FAVOURITES, I18n.s.favourites))
+        }
     }
 
     override suspend fun load(feed: Feed): List<VideoItem> = when (feed.key) {
         FEED_POPULAR -> api.popular()
         FEED_FOLLOWING -> api.following().items
+        FEED_FAVOURITES -> api.myFavourites(SourceId.BILIBILI)
         else -> feed.categoryKey()?.toIntOrNull()?.let { api.zonePage(it, 1).items } ?: api.recommended()
     }
 
@@ -35,6 +39,7 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
             FEED_POPULAR -> return api.popularPage(n)
             FEED_RECOMMENDED -> return api.recommendedPage(n)
             FEED_FOLLOWING -> {}
+            FEED_FAVOURITES -> return super.loadPage(feed, cursor)
             else -> {
                 // A zone (分区) picked in Categories: its recommendation feed, endless.
                 val tid = feed.categoryKey()?.toIntOrNull() ?: return super.loadPage(feed, cursor)
@@ -74,8 +79,14 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
     override suspend fun creatorPage(authorId: String, cursor: String?): FeedPage =
         api.uploaderPage(authorId, cursor?.toIntOrNull() ?: 1, SourceId.BILIBILI)
 
-    /** 分P: a video with several parts becomes one queue entry per part. */
+    /** Favourites folders and 合集 open like folders; their videos can be saved to a playlist. */
+    override fun isFolder(item: VideoItem) = BiliFavs.parse(item.id) != null
+
+    override suspend fun browse(item: VideoItem): List<VideoItem> = api.favouriteItems(item.id, SourceId.BILIBILI).orEmpty()
+
+    /** 分P: a video with several parts becomes one queue entry per part; a favourites row plays its videos. */
     override suspend fun expand(item: VideoItem): List<VideoItem>? {
+        api.favouriteItems(item.id, SourceId.BILIBILI)?.let { return it }
         if (item.part != null) return null
         val v = api.view(item.id)
         if (v.pages.size <= 1) return null
@@ -102,5 +113,6 @@ class BiliSource(private val api: BiliApi, private val cookies: BiliCookieJar) :
         const val FEED_RECOMMENDED = "recommended"
         const val FEED_POPULAR = "popular"
         const val FEED_FOLLOWING = "following"
+        const val FEED_FAVOURITES = "favourites"
     }
 }
