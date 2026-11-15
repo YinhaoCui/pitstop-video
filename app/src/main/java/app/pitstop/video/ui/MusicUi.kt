@@ -138,7 +138,12 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
     val googleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
         scope.launch {
             message = runCatching { I18n.s.drivePickerAdded(drivePicker.completePick(res.data)) to false }
-                .getOrElse { I18n.s.drivePickerFailed(it.message) to true }
+                .getOrElse {
+                    // Closing the account chooser or the picker (Back, a tap outside it) isn't an error.
+                    val cancelled = res.resultCode == android.app.Activity.RESULT_CANCELED ||
+                        (it as? com.google.android.gms.common.api.ApiException)?.statusCode == com.google.android.gms.common.api.CommonStatusCodes.CANCELED
+                    if (cancelled) null else I18n.s.drivePickerFailed(it.message) to true
+                }
         }
     }
     Column(
