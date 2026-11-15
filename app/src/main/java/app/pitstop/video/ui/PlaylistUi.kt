@@ -77,7 +77,8 @@ fun PlaylistsTab(graph: AppGraph) {
         return
     }
 
-    val ids = playlists.map { it.id }
+    // Starred can't be deleted, so it is never part of a selection.
+    val ids = playlists.map { it.id }.filter { it != PlaylistOps.STARRED }
     val sel = selected?.let { Selection.retain(it.toSet(), ids) }
     BackHandler(enabled = sel != null) { selected = null }
     Column(Modifier.fillMaxSize()) {
@@ -112,16 +113,20 @@ fun PlaylistsTab(graph: AppGraph) {
         }
         LazyColumn(Modifier.fillMaxSize()) {
             items(playlists, key = { it.id }) { p ->
-                val toggle = { sel?.let { selected = Selection.toggle(it, p.id).toList() }; Unit }
+                val toggle = { if (p.id != PlaylistOps.STARRED) sel?.let { selected = Selection.toggle(it, p.id).toList() }; Unit }
                 Row(
                     Modifier.fillMaxWidth().combinedClickable(
                         onClick = { if (sel != null) toggle() else { openId = p.id } },
-                        onLongClick = { if (sel != null) toggle() else { selected = listOf(p.id) } },
+                        onLongClick = { if (sel != null) toggle() else if (p.id != PlaylistOps.STARRED) { selected = listOf(p.id) } },
                     ).padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (sel != null) Checkbox(checked = p.id in sel, onCheckedChange = { toggle() }, Modifier.size(24.dp))
-                    else Icon(painterResource(R.drawable.ic_playlist_play), null)
+                    val starred = p.id == PlaylistOps.STARRED
+                    if (sel != null && !starred) Checkbox(checked = p.id in sel, onCheckedChange = { toggle() }, Modifier.size(24.dp))
+                    else Icon(
+                        painterResource(if (starred) R.drawable.ic_star else R.drawable.ic_playlist_play), null,
+                        tint = if (starred) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Unspecified,
+                    )
                     Spacer(Modifier.size(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(p.name, style = MaterialTheme.typography.titleMedium)
@@ -158,6 +163,8 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
     var selected by remember(p.id) { mutableStateOf<Set<Int>?>(null) }
     BackHandler(enabled = selected != null) { selected = null }
     var menuFor by remember { mutableStateOf<List<VideoItem>?>(null) }
+    // The built-in Starred playlist can't be renamed or deleted.
+    val builtIn = p.id == PlaylistOps.STARRED
     menuFor?.let { AddToPlaylistDialog(graph, it) { menuFor = null } }
     var confirmRemove by remember { mutableStateOf(false) }
     var showSortFilter by remember { mutableStateOf(false) }
@@ -217,14 +224,14 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
         } else Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_back), S.back) }
             Text(
-                p.name, Modifier.weight(1f).clickable { renaming = true },
+                p.name, Modifier.weight(1f).clickable(enabled = !builtIn) { renaming = true },
                 style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Box {
                 IconButton(onClick = { exporting = true }) { Icon(painterResource(R.drawable.ic_share), S.exportPlaylist) }
                 ExportMenu(graph, p, exporting) { exporting = false }
             }
-            IconButton(onClick = { confirmDelete = true }) { Icon(painterResource(R.drawable.ic_delete), S.deletePlaylist) }
+            if (!builtIn) IconButton(onClick = { confirmDelete = true }) { Icon(painterResource(R.drawable.ic_delete), S.deletePlaylist) }
         }
         if (sel == null) Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { graph.hub.playQueue(shownItems) }, enabled = shownItems.isNotEmpty()) {
@@ -360,6 +367,7 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
         },
         songs = songs, newName = if (isFolder) item.title else "",
         onDownload = if (!isFolder && graph.downloads.canDownload(item)) ({ downloading = true }) else null,
+        star = item.takeIf { !isFolder },
         onDismiss = onDismiss,
     )
 }
@@ -383,6 +391,8 @@ private fun ItemMenuDialog(
     songs: List<VideoItem>,
     newName: String,
     onDownload: (() -> Unit)?,
+    /** A single item (not a folder): offer Star / Remove star. */
+    star: VideoItem? = null,
     onDismiss: () -> Unit,
 ) {
     val playlists by graph.playlists.playlists.collectAsStateWithLifecycle()
@@ -427,6 +437,21 @@ private fun ItemMenuDialog(
                         Text(label, color = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                star?.let { item ->
+                    val starred = playlists.firstOrNull { it.id == PlaylistOps.STARRED }?.let { PlaylistOps.contains(it, item) } == true
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            val now = graph.playlists.toggleStar(item)
+                            android.widget.Toast.makeText(context, if (now) I18n.s.starAdded else I18n.s.starRemoved, android.widget.Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        }.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(painterResource(if (starred) R.drawable.ic_star else R.drawable.ic_star_border), null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Text(if (starred) S.unstar else S.star, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
                 if (onDownload != null) {
                     Row(
                         Modifier.fillMaxWidth().clickable(onClick = onDownload).padding(vertical = 12.dp),
@@ -440,7 +465,8 @@ private fun ItemMenuDialog(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(S.addToPlaylist, style = MaterialTheme.typography.titleSmall)
-                playlists.forEach { p ->
+                // A single item stars with the row above; folders and selections can still add to Starred here.
+                playlists.filter { star == null || it.id != PlaylistOps.STARRED }.forEach { p ->
                     val already = ready && songs.all { PlaylistOps.contains(p, it) }
                     Row(
                         Modifier.fillMaxWidth().clickable(enabled = ready && !already) { graph.playlists.addAll(p.id, songs); onDismiss() }

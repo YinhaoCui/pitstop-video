@@ -86,6 +86,7 @@ import androidx.media3.ui.PlayerView
 import app.pitstop.video.AppGraph
 import app.pitstop.video.R
 import app.pitstop.video.core.VideoItem
+import app.pitstop.video.core.PlaylistOps
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.VideoQuality
 import app.pitstop.video.core.VideoSource
@@ -393,6 +394,14 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
             }
             IconButton(onClick = { showQueue = true }) { Icon(painterResource(R.drawable.ic_playlist_play), S.queue) }
             s.current?.let { cur ->
+                val lists by graph.playlists.playlists.collectAsStateWithLifecycle()
+                val starred = lists.firstOrNull { it.id == PlaylistOps.STARRED }?.let { PlaylistOps.contains(it, cur) } == true
+                IconButton(onClick = { graph.playlists.toggleStar(cur) }) {
+                    Icon(
+                        painterResource(if (starred) R.drawable.ic_star else R.drawable.ic_star_border),
+                        if (starred) S.unstar else S.star, tint = if (starred) on else off,
+                    )
+                }
                 IconButton(onClick = { adding = cur }) { Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist) }
                 if (graph.downloads.canDownload(cur)) {
                     IconButton(onClick = { downloading = cur }) { Icon(painterResource(R.drawable.ic_download), S.download) }
