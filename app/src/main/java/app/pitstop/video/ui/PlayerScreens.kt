@@ -106,6 +106,7 @@ fun PlayerScreen(graph: AppGraph, onClose: () -> Unit, onFullscreen: () -> Unit)
     val s by graph.hub.state.collectAsStateWithLifecycle()
     val playlists by graph.playlists.playlists.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(0) }
+    val queueSelection = rememberItemSelection(tab)
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) { Icon(painterResource(R.drawable.ic_arrow_down), S.back) }
@@ -127,16 +128,19 @@ fun PlayerScreen(graph: AppGraph, onClose: () -> Unit, onFullscreen: () -> Unit)
                 }
             }
             if (tab == 0) {
-                item(key = "qhead") { QueueHeader(graph, s.index, s.queue.size) }
+                item(key = "qhead") {
+                    if (queueSelection.active) QueueSelectionHeader(graph, queueSelection, s.queue)
+                    else QueueHeader(graph, s.index, s.queue.size)
+                }
                 itemsIndexed(s.queue, key = { i, it -> "q$i:${it.id}:${it.part}" }) { i, item ->
-                    QueueRow(graph, item, i, s.index, s.queue.size, reorder, onPlay = { graph.hub.jumpTo(i) })
+                    QueueRow(graph, item, i, s.index, s.queue.size, reorder, onPlay = { graph.hub.jumpTo(i) }, selection = queueSelection)
                 }
             } else if (playlists.isEmpty()) {
                 item(key = "none") { Text(S.noPlaylists, Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium) }
             } else {
                 items(playlists, key = { "p" + it.id }) { p ->
                     PickRow(
-                        title = p.name, subtitle = S.videoCount(p.items.size), current = false,
+                        title = p.name, subtitle = S.itemCount(p.items), current = false,
                         onClick = { if (p.items.isNotEmpty()) { graph.hub.playQueue(p.items); tab = 0 } },
                     )
                 }

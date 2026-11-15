@@ -265,6 +265,20 @@ class PlaybackHub(
         }
     }
 
+    /** Removes several queue entries (a multi-selection); see [removeFromQueue]. */
+    fun removeAllFromQueue(at: Set<Int>) {
+        val s = _state.value
+        val gone = at.mapNotNull { s.queue.getOrNull(it) }
+        if (gone.isEmpty()) return
+        val r = QueueOps.removeAll(s.queue, s.index, at)
+        unshuffled = gone.fold(unshuffled) { acc, item -> acc - item }
+        when {
+            r.queue.isEmpty() -> stopAll()
+            r.currentRemoved -> playAt(r.queue, r.index)
+            else -> applyQueue(r)
+        }
+    }
+
     fun moveInQueue(from: Int, to: Int) = applyQueue(QueueOps.move(_state.value.queue, _state.value.index, from, to))
 
     /** Plays [items] right after the current one; starts them when nothing is playing. */
@@ -383,7 +397,7 @@ class PlaybackHub(
                 // A collection (playlist / folder) must expand; never try to play the folder itself.
                 val parts = if (q[i].id.startsWith(COLLECTION_PREFIX)) {
                     withContext(Dispatchers.IO) { source.expand(q[i]) }
-                        .takeUnless { it.isNullOrEmpty() } ?: throw UserFacingException(I18n.s.noVideos)
+                        .takeUnless { it.isNullOrEmpty() } ?: throw UserFacingException(I18n.s.nothingHere)
                 } else runCatching { withContext(Dispatchers.IO) { source.expand(q[i]) } }.getOrNull()
                 if (!parts.isNullOrEmpty()) {
                     q = q.take(i) + parts + q.drop(i + 1)
@@ -410,6 +424,11 @@ class PlaybackHub(
                 player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                     .setMaxVideoSize(Int.MAX_VALUE, if (StreamPolicy.maxHeight > 0) StreamPolicy.maxHeight else Int.MAX_VALUE)
                     .build()
+                // Mixed playlists: tell Android whether this item is music or a video (audio focus, ducking).
+                val contentType = if (item.source.music || stream.audioOnly) C.AUDIO_CONTENT_TYPE_MUSIC else C.AUDIO_CONTENT_TYPE_MOVIE
+                if (player.audioAttributes.contentType != contentType) {
+                    player.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(contentType).build(), true)
+                }
                 player.setMediaSource(buildMediaSource(stream, item))
                 player.prepare()
                 // Live: rejoin at the live edge, not at the old position.
@@ -745,7 +764,7 @@ class PlaybackHub(
                 MediaMetadata.Builder().setTitle(item.title).setArtist(item.author)
                     // Notification / lock screen / car media artwork.
                     .setArtworkUri(item.thumbnailUrl?.let(Uri::parse))
-                    .setMediaType(if (item.source.music) MediaMetadata.MEDIA_TYPE_MUSIC else MediaMetadata.MEDIA_TYPE_VIDEO)
+                    .setMediaType(if (item.source.music || stream.audioOnly) MediaMetadata.MEDIA_TYPE_MUSIC else MediaMetadata.MEDIA_TYPE_VIDEO)
                     .build()
             )
             .build()

@@ -58,12 +58,18 @@ fun QueueHeader(graph: AppGraph, current: Int, size: Int) {
 }
 
 /**
- * One queue entry: ⋮⋮ drag handle, small cover, title, creator. Tap plays it; long-press (or the ⋮ button) opens
- * Play next / Move up / Move down / Move to top / Remove / Add to playlist.
+ * One queue entry: ⋮⋮ drag handle, small cover, title, creator. Tap plays it; long-press selects it (see
+ * [selection]); the ⋮ button opens Play next / Move up / Move down / Move to top / Remove / Add to playlist.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun QueueRow(graph: AppGraph, item: VideoItem, i: Int, current: Int, size: Int, reorder: ReorderState, onPlay: () -> Unit) {
+fun QueueRow(
+    graph: AppGraph, item: VideoItem, i: Int, current: Int, size: Int, reorder: ReorderState, onPlay: () -> Unit,
+    /** Long-press selects (several entries can then be removed or saved at once); null = menu only. */
+    selection: ItemSelection? = null,
+) {
+    val selecting = selection?.active == true
+    val key = "$i"
     var menu by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     if (adding) AddToPlaylistDialog(graph, item) { adding = false }
@@ -73,11 +79,18 @@ fun QueueRow(graph: AppGraph, item: VideoItem, i: Int, current: Int, size: Int, 
     Box(Modifier.reorderable(reorder, i, MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Row(
             Modifier.fillMaxWidth()
-                .combinedClickable(onClick = onPlay, onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); menu = true })
+                .combinedClickable(
+                    onClick = { if (selecting) selection?.toggle(key) else onPlay() },
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (selection != null) selection.longPress(key) else menu = true
+                    },
+                )
                 .padding(start = 0.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            DragHandle(reorder, i, size)
+            if (selecting) androidx.compose.material3.Checkbox(checked = selection?.isSelected(key) == true, onCheckedChange = null, Modifier.padding(horizontal = 12.dp))
+            else DragHandle(reorder, i, size)
             Box(
                 Modifier.width(if (item.source.music) 44.dp else 72.dp).aspectRatio(if (item.source.music) 1f else 16f / 9f)
                     .clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainerHighest),
@@ -101,7 +114,7 @@ fun QueueRow(graph: AppGraph, item: VideoItem, i: Int, current: Int, size: Int, 
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = { menu = true }) { Icon(painterResource(R.drawable.ic_more), S.queueOptions) }
+            if (!selecting) IconButton(onClick = { menu = true }) { Icon(painterResource(R.drawable.ic_more), S.queueOptions) }
         }
         val hub = graph.hub
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.padding(end = 8.dp)) {

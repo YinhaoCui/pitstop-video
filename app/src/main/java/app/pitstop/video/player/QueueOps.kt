@@ -20,6 +20,19 @@ object QueueOps {
         }
     }
 
+    /**
+     * Removes the entries at [at] (a multi-selection). When the playing item goes, the first kept item
+     * after it plays (or the last one, when nothing follows).
+     */
+    fun removeAll(queue: List<VideoItem>, index: Int, at: Set<Int>): Result {
+        val gone = at.filterTo(HashSet()) { it in queue.indices }
+        if (gone.isEmpty()) return Result(queue, index)
+        val q = queue.filterIndexed { i, _ -> i !in gone }
+        val before = (0 until index.coerceAtLeast(0)).count { it !in gone }
+        return if (index in gone) Result(q, if (before < q.size) before else q.lastIndex, currentRemoved = true)
+        else Result(q, before)
+    }
+
     fun move(queue: List<VideoItem>, index: Int, from: Int, to: Int): Result {
         if (from !in queue.indices || from == to) return Result(queue, index)
         val target = to.coerceIn(0, queue.lastIndex)

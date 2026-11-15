@@ -130,7 +130,7 @@ fun PlaylistsTab(graph: AppGraph) {
                     Spacer(Modifier.size(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(p.name, style = MaterialTheme.typography.titleMedium)
-                        Text(S.videoCount(p.items.size), style = MaterialTheme.typography.bodySmall)
+                        Text(S.itemCount(p.items), style = MaterialTheme.typography.bodySmall)
                     }
                     if (sel == null) IconButton(onClick = { graph.hub.playQueue(p.items) }, enabled = p.items.isNotEmpty()) {
                         Icon(painterResource(R.drawable.ic_play), S.playAll)
@@ -324,10 +324,14 @@ fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
                 val listState = rememberLazyListState()
                 val reorder = rememberReorderState(listState)
                 reorder.bind(first = 1, count = s.queue.size, onMove = graph.hub::moveInQueue)
-                LazyColumn(Modifier.heightIn(max = 480.dp), state = listState) {
-                    item(key = "head") { QueueHeader(graph, s.index, s.queue.size) }
-                    itemsIndexed(s.queue, key = { i, it -> "$i:${it.id}:${it.part}" }) { i, item ->
-                        QueueRow(graph, item, i, s.index, s.queue.size, reorder, onPlay = { graph.hub.jumpTo(i); onDismiss() })
+                val selection = rememberItemSelection()
+                Column {
+                    QueueSelectionHeader(graph, selection, s.queue)
+                    LazyColumn(Modifier.heightIn(max = 480.dp), state = listState) {
+                        item(key = "head") { if (!selection.active) QueueHeader(graph, s.index, s.queue.size) }
+                        itemsIndexed(s.queue, key = { i, it -> "$i:${it.id}:${it.part}" }) { i, item ->
+                            QueueRow(graph, item, i, s.index, s.queue.size, reorder, onPlay = { graph.hub.jumpTo(i); onDismiss() }, selection = selection)
+                        }
                     }
                 }
             }
@@ -360,9 +364,9 @@ fun AddToPlaylistDialog(graph: AppGraph, item: VideoItem, onDismiss: () -> Unit)
         status = if (!isFolder) null else tracks.let { t ->
             when {
                 t == null -> S.loading
-                t.isFailure -> t.exceptionOrNull()?.message ?: S.noVideos
-                songs.isEmpty() -> S.noVideos
-                else -> S.songsInFolder(songs.size)
+                t.isFailure -> t.exceptionOrNull()?.message ?: S.nothingHere
+                songs.isEmpty() -> S.nothingHere
+                else -> S.inFolder(songs)
             } to (t?.isFailure == true)
         },
         songs = songs, newName = if (isFolder) item.title else "",
@@ -481,25 +485,6 @@ private fun ItemMenuDialog(
         confirmButton = { TextButton(onClick = { creating = true }, enabled = ready) { Text(S.newPlaylist) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(S.cancel) } },
     )
-}
-
-/** Top bar while multi-selecting: cancel, the count, Select all / Invert, then any extra [actions]. */
-@Composable
-private fun SelectionBar(
-    count: Int,
-    allSelected: Boolean,
-    onSelectAll: () -> Unit,
-    onInvert: () -> Unit,
-    onCancel: () -> Unit,
-    actions: @Composable () -> Unit = {},
-) {
-    Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onCancel) { Icon(painterResource(R.drawable.ic_close), S.cancelSelection) }
-        Text(S.selectedCount(count), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        TextButton(onClick = onSelectAll, enabled = !allSelected) { Text(S.selectAll, maxLines = 1) }
-        TextButton(onClick = onInvert) { Text(S.invertSelection, maxLines = 1) }
-        actions()
-    }
 }
 
 @Composable

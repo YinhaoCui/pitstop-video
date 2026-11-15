@@ -107,7 +107,7 @@ class DriveSource(
         if (folder.startsWith(GP)) {
             return picker.children(folder.removePrefix(GP)).filter { !it.isFolder }.map(::gpItem).ifEmpty { throw UserFacingException(I18n.s.drivePickerFolderEmpty) }
         }
-        return audio("'$folder' in parents", order = "name").ifEmpty { throw UserFacingException(I18n.s.noVideos) }
+        return audio("'$folder' in parents", order = "name").ifEmpty { throw UserFacingException(I18n.s.nothingHere) }
     }
 
     override suspend fun resolve(item: VideoItem) =

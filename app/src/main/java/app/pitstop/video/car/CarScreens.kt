@@ -307,7 +307,7 @@ class ResultsScreen(
         val loaded = items
             ?: return carContext.panel(ListTemplate.Builder().setHeader(backHeader(title)).setLoading(true).build(), hub)
 
-        val list = ItemList.Builder().setNoItemsMessage(I18n.s.noVideos)
+        val list = ItemList.Builder().setNoItemsMessage(I18n.s.nothingHere)
         val shown = loaded.take(carContext.listLimit())
         shown.forEachIndexed { i, item ->
             val row = Row.Builder()
@@ -327,7 +327,7 @@ class ResultsScreen(
     }
 }
 
-/** The user's playlists (created on the phone). Picking one lists its videos; tapping a video plays from there. */
+/** The user's playlists (created on the phone). Picking one lists its videos and songs; tapping one plays from there. */
 class CarPlaylistsScreen(carContext: CarContext, private val hub: PlaybackHub) : Screen(carContext) {
     init {
         refreshOn(hub) { it.wantsToPlay }
@@ -338,7 +338,7 @@ class CarPlaylistsScreen(carContext: CarContext, private val hub: PlaybackHub) :
         val store = carContext.graph.playlists
         val list = ItemList.Builder().setNoItemsMessage(t.noPlaylistsCar)
         store.playlists.value.take(carContext.listLimit()).forEach { p ->
-            val row = Row.Builder().setTitle(p.name).addText(t.videoCount(p.items.size))
+            val row = Row.Builder().setTitle(p.name).addText(t.itemCount(p.items))
             if (p.items.isEmpty()) {
                 row.setOnClickListener { }
             } else {

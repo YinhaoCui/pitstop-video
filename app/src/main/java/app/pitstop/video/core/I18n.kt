@@ -111,7 +111,7 @@ class Strings(val language: AppLanguage) {
     val importStart get() = t("Import", "开始导入")
     val importReading get() = t("Reading the playlist…", "正在读取歌单…")
     fun importMatching(done: Int, total: Int) = t("Finding songs: $done / $total", "正在匹配歌曲：$done / $total")
-    fun importSummary(found: Int, total: Int) = t("Found $found of $total", "找到 $found / $total 首")
+    fun importSummary(found: Int, total: Int) = t("Found $found of $total", "找到 $found / $total")
     val importNotMatched get() = t("Not found", "未找到")
     val importSave get() = t("Save playlist", "保存歌单")
     val importName get() = t("Playlist name", "歌单名称")
@@ -326,7 +326,7 @@ class Strings(val language: AppLanguage) {
     val mostLiked get() = t("Most liked", "最多点赞")
     val peertubeLocal get() = t("This instance", "本站")
     val noAudioStream get() = t("No playable audio for this track.", "这首歌没有可播放的音频。")
-    val noVideoStream get() = t("No playable stream for this video.", "这个视频没有可播放的流。")
+    val noVideoStream get() = t("No playable stream was found.", "没有找到可播放的流。")
 
     // Music
     val video get() = t("Video", "视频")
@@ -411,7 +411,7 @@ class Strings(val language: AppLanguage) {
     val downloadToDrive get() = t("Google Drive (Pitstop folder)", "Google Drive（Pitstop 文件夹）")
     val downloadStart get() = t("Download", "开始下载")
     val downloadStarted get() = t("Download started. Progress is in Settings → Downloads and in the notification.", "已开始下载，进度见 设置 → 下载 和通知栏。")
-    val downloadNothing get() = t("Nothing downloaded yet. Use the download button in the player or in a video's + menu.", "还没有下载。可在播放器或视频的 + 菜单中点击下载。")
+    val downloadNothing get() = t("Nothing downloaded yet. Use the download button in the player, or in the + menu of a video or song.", "还没有下载。可在播放器中，或在视频、歌曲的 + 菜单中点击下载。")
     val downloadClearFinished get() = t("Clear finished", "清除已完成")
     val downloadOpen get() = t("Open", "打开")
     val downloadPreparing get() = t("Preparing download…", "正在准备下载…")
@@ -470,8 +470,6 @@ class Strings(val language: AppLanguage) {
     // Creators
     val saveCreator get() = t("Save", "收藏")
     val savedCreator get() = t("Saved", "已收藏")
-    fun creatorVideos(name: String) = t("Videos from $name", "$name 的视频")
-    val creatorHint get() = t("Tap a creator's name to see their videos.", "点击作者名可查看其所有视频。")
 
     // Common
     val playlists get() = t("Playlists", "播放列表")
@@ -501,7 +499,7 @@ class Strings(val language: AppLanguage) {
     val full get() = t("Full", "全屏")
     val upNext get() = t("Up next", "接下来")
     fun upNextCount(n: Int) = t("Up next ($n)", "接下来（$n）")
-    val noVideos get() = t("No videos", "没有视频")
+    val nothingHere get() = t("Nothing here", "这里没有内容")
     val nothingPlaying get() = t("Nothing playing", "未在播放")
     val loading get() = t("Loading…", "加载中…")
     val buffering get() = t("Buffering…", "缓冲中…")
@@ -519,9 +517,9 @@ class Strings(val language: AppLanguage) {
     fun cc(label: String?) = t("CC: ${label ?: "Off"}", "字幕：${label ?: "关"}")
 
     // Car screen
-    val tapBrowse get() = t("Tap Browse to pick a video,\nor choose one on your phone.", "点击“浏览”选择视频，\n或在手机上选择。")
+    val tapBrowse get() = t("Tap Browse to pick a video or song,\nor choose one on your phone.", "点击“浏览”选择视频或歌曲，\n或在手机上选择。")
     val pausedMoving get() = t("Video is paused while the car is moving.\nPark to keep watching.", "车辆行驶中，视频已暂停。\n停车后可继续观看。")
-    val nothingQueued get() = t("Nothing queued. Pick videos in Browse.", "队列为空。请在“浏览”中选择视频。")
+    val nothingQueued get() = t("Nothing queued. Pick videos or songs in Browse.", "队列为空。请在“浏览”中选择视频或歌曲。")
     val noPlaylistsCar get() = t("No playlists yet. Create them in the phone app.", "还没有播放列表。请在手机上创建。")
 
     // Phone player
@@ -551,8 +549,17 @@ class Strings(val language: AppLanguage) {
     // Playlists
     fun playlistCount(n: Int) = t("$n playlist(s)", "$n 个播放列表")
     fun videoCount(n: Int) = t("$n video(s)", "$n 个视频")
+    /** "3 videos · 5 songs", "1 song", "Empty": counts a list that may mix videos and songs. */
+    fun mediaCount(videos: Int, songs: Int): String = when {
+        videos == 0 && songs == 0 -> t("Empty", "空")
+        else -> listOfNotNull(
+            videos.takeIf { it > 0 }?.let { t(if (it == 1) "1 video" else "$it videos", "$it 个视频") },
+            songs.takeIf { it > 0 }?.let { t(if (it == 1) "1 song" else "$it songs", "$it 首歌曲") },
+        ).joinToString(" · ")
+    }
+    fun itemCount(items: List<VideoItem>) = mediaCount(items.count { !it.source.music }, items.count { it.source.music })
     val newPlaylist get() = t("New playlist", "新建播放列表")
-    val noPlaylists get() = t("No playlists yet. Tap + next to any video to add it to a playlist, or create one here.", "还没有播放列表。点击视频旁的 + 添加，或在此新建。")
+    val noPlaylists get() = t("No playlists yet. Tap + next to any video or song to add it to a playlist, or create one here.", "还没有播放列表。点击视频或歌曲旁的 + 添加，或在此新建。")
     val playAll get() = t("Play all", "全部播放")
     val shuffle get() = t("Shuffle", "随机播放")
     val saveToPlaylist get() = t("Save", "保存")
@@ -561,19 +568,19 @@ class Strings(val language: AppLanguage) {
     val playerStylePage get() = t("Separate page", "独立页面")
     val playerStyleFloating get() = t("Floating window", "悬浮窗")
     val playerStyleText get() = t("On phones in portrait: open the player as its own page, or keep it in a small window you can drag around.", "竖屏手机上：播放器作为独立页面打开，或显示为可拖动的小悬浮窗。")
-    fun songsInFolder(n: Int) = t("$n song(s) in this folder", "此文件夹中有 $n 首歌曲")
+    fun inFolder(items: List<VideoItem>) = t("${itemCount(items)} in this folder", "此文件夹中有 ${itemCount(items)}")
     val repeatOff get() = t("Repeat off", "不循环")
     val repeatAll get() = t("Repeat all", "列表循环")
     val repeatOne get() = t("Repeat one", "单曲循环")
-    val playlistEmpty get() = t("Empty. Tap + next to a video in any tab to add it here.", "列表为空。点击任意视频旁的 + 添加到这里。")
+    val playlistEmpty get() = t("Empty. Tap + next to a video or song in any tab to add it here.", "列表为空。点击任意视频或歌曲旁的 + 添加到这里。")
     val queueOptions get() = t("Queue options", "队列选项")
     val playNow get() = t("Play now", "立即播放")
-    val playNext get() = t("Play next", "下一首播放")
+    val playNext get() = t("Play next", "接下来播放")
     val addToQueue get() = t("Add to queue", "加入队列")
     val moveToTop get() = t("Move to top", "移到最前")
     val removeFromQueue get() = t("Remove from queue", "从队列移除")
     val clearUpcoming get() = t("Clear upcoming", "清空后续")
-    val queueEditHint get() = t("Drag ⋮⋮ to reorder. Long-press an item for more.", "拖动 ⋮⋮ 调整顺序，长按条目查看更多操作。")
+    val queueEditHint get() = t("Drag ⋮⋮ to reorder. Long-press to select several; ⋮ for more.", "拖动 ⋮⋮ 调整顺序。长按可多选，点 ⋮ 查看更多操作。")
     val dragToReorder get() = t("Drag to reorder", "拖动以调整顺序")
     fun addedToQueue(n: Int) = t(if (n == 1) "Added to queue" else "$n added to queue", "已加入队列（$n）")
     val moveUp get() = t("Move up", "上移")
@@ -582,12 +589,12 @@ class Strings(val language: AppLanguage) {
     val renamePlaylist get() = t("Rename playlist", "重命名播放列表")
     val deletePlaylist get() = t("Delete playlist", "删除播放列表")
     fun deleteConfirm(name: String) = t("Delete “$name”?", "删除“$name”？")
-    val deleteExplain get() = t("Only the playlist goes. Your videos stay.", "只删除列表，视频不受影响。")
+    val deleteExplain get() = t("Only the playlist goes. The videos and songs in it aren't deleted.", "只删除列表，其中的视频和歌曲不受影响。")
     val nothingQueuedPhone get() = t("Nothing queued.", "队列为空。")
     val added get() = t("added", "已添加")
     val name get() = t("Name", "名称")
     val defaultPlaylistName get() = t("Playlist", "播放列表")
-    // Multi-select (long-press a row, or the Select button)
+    // Multi-select (long-press a row in any list)
     val select get() = t("Select", "多选")
     fun selectedCount(n: Int) = t("$n selected", "已选 $n 项")
     val selectAll get() = t("Select all", "全选")
