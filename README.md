@@ -21,8 +21,8 @@ Not supported: Apple CarPlay / iOS (CarPlay does not allow third-party video app
 ## Features
 
 The app has three tabs, **Video**, **Music** and **Live**, each with a row of platforms. A button
-at the end of the row (or *Settings → Platforms*) hides the ones you don't use; the car's browse
-list follows the same choice.
+at the end of the row (or *Settings → Platforms*) hides the ones you don't use and sets their order;
+the car's browse list follows the same choice.
 
 ### Platforms
 
@@ -61,12 +61,20 @@ or NetEase instead.
 
 ### Queue and playlists
 
-- Long-press any item: *Play next*, *Add to queue*, *Download*, add to a playlist.
+- Long-press any item in any list (feeds, search, folders, playlists, the queue) to select several:
+  *Select all*, *Invert*, then play, queue, add to a playlist or remove them together. Each item's
+  + button opens its own menu: *Play next*, *Add to queue*, *Star*, *Download*, add to a playlist.
 - Queue rows show thumbnails. Drag the ⋮⋮ grip on the left of a row to reorder; the list scrolls
-  when you hold a row near the edge. Long-press a row to move it to the top or remove it;
+  when you hold a row near the edge. The ⋮ menu moves a row to the top or removes it;
   *Clear upcoming* empties what's left. Screen readers get *Move up* / *Move down* actions.
-- Playlists mix every platform. Reorder them by dragging (in their own order), sort them and keep
-  a sorted order, play or shuffle from the phone or the car.
+- Playlists mix every platform, videos and songs alike (a song after a video shows its cover, even
+  in full screen). Reorder them by dragging (in their own order), sort them and keep a sorted
+  order, play or shuffle from the phone or the car.
+- **Starred**: star anything from the player or an item's menu; it lands in the built-in *Starred*
+  playlist, always first, newest star on top.
+- **Duplicates** in a playlist groups items that are probably the same song or video (same item,
+  same title, or the same title once tags like "(Official Video)" are ignored) so the extra copies
+  can be removed in one go.
 - **Import** (Playlists tab): paste a link or a song list, or open a file. NetEase, YouTube /
   YouTube Music playlists and Bilibili favourites import as they are. QQ Music, Kugou, Spotify and
   Apple Music playlists, CSV files (Exportify, TuneMyMusic…) and "Artist - Title" text are matched
@@ -197,7 +205,7 @@ key and attaches it to a GitHub release. One-time setup:
 Installing the release over a debug build fails (different key): uninstall the debug build first.
 
 **Beta versions.** A tag with a pre-release part (`v0.7.0-beta.1`, `v0.7.0-rc.1`) is published as a
-GitHub pre-release. Apps with *Settings → App updates → Beta versions* on are offered it; everyone else
+GitHub pre-release. Apps with *Settings → Updates & about → Beta versions* on are offered it; everyone else
 only gets final releases. Merge features to `main`, tag betas as they land, and tag the final version
 (`v0.7.0`) once a batch has proven itself. Versions order like semver
 (0.7.0-beta.1 < 0.7.0-beta.2 < 0.7.0-rc.1 < 0.7.0), and every tagged build needs a higher `versionCode`
@@ -270,11 +278,19 @@ remembered channels while signed out.
 
 ## Google Drive
 
-*Music → Google Drive → Pick from Google Drive* opens Google's own Drive picker: open a folder and
-select its songs (several at once). The app can see only the songs you picked (the non-sensitive
-`drive.file` scope) and doesn't need the Google Drive app. Downloads can also be saved to Drive.
-*Add from files* (the phone's file picker) stays as an alternative; it lists Drive only when the
-Drive app is installed.
+Three ways to add your songs in *Music → Google Drive*:
+
+- **Add a folder** (best for a big library): pick a Drive folder in the phone's folder picker once;
+  every song in it and its subfolders is added, through a single permission. Needs the Google Drive
+  app on the phone.
+- **Pick from Google Drive**: Google's own Drive picker. Select songs (several at once); the app sees
+  only those (the non-sensitive `drive.file` scope) and doesn't need the Google Drive app. Folders
+  can't be picked here: that permission covers a folder but not the songs inside it.
+- **Add from files**: the phone's file picker. Android keeps access to at most 512 files added this
+  way per app and silently drops the oldest; songs that lost access are marked, and *Fix with my
+  folders* points playlists at the same files in an added folder.
+
+Downloads can also be saved to Drive.
 
 Publishing your own build? The picker needs a one-time Google Cloud setup for your signing key:
 see [docs/google-drive-setup.md](docs/google-drive-setup.md).
