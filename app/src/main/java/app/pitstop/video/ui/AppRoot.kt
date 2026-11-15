@@ -158,8 +158,11 @@ private fun CarVideoOnly(graph: AppGraph) {
 
 @Composable
 fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenChange: (Boolean) -> Unit) {
+    // A queue can mix videos and songs: whatever is playing now decides between picture and cover.
+    val playingMusic = graph.hub.state.collectAsStateWithLifecycle().value.isMusic
     if (inPip) {
-        PhonePlayer(graph, Modifier.fillMaxSize(), showControls = false)
+        if (playingMusic) MusicStage(graph, Modifier.fillMaxSize())
+        else PhonePlayer(graph, Modifier.fillMaxSize(), showControls = false)
         return
     }
     if (LocalCarInstance.current && Settings.carVideoOnly.collectAsStateWithLifecycle().value) {
@@ -169,7 +172,9 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
     if (fullscreen) {
         BackHandler { onFullscreenChange(false) }
         Box(Modifier.fillMaxSize().background(Color.Black)) {
-            PhonePlayer(graph, Modifier.fillMaxSize(), showControls = true)
+            // A song after a video in a mixed playlist: its cover, not a black video surface.
+            if (playingMusic) MusicStage(graph, Modifier.fillMaxSize())
+            else PhonePlayer(graph, Modifier.fillMaxSize(), showControls = true)
             IconButton(onClick = { onFullscreenChange(false) }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
                 Icon(painterResource(R.drawable.ic_split), contentDescription = S.exitFullScreen, tint = Color.White)
             }

@@ -63,7 +63,8 @@ open class MainActivity : ComponentActivity() {
         // Android 12+: swipe home while a video plays -> smooth automatic picture-in-picture.
         if (Build.VERSION.SDK_INT >= 31) {
             lifecycleScope.launch {
-                graph.hub.state.map { it.isPlaying && !it.carActive && !it.onCarDisplay && !carInstance }.distinctUntilChanged().collect { auto ->
+                // Songs keep playing in the background: a picture-in-picture window would only show a cover.
+                graph.hub.state.map { it.isPlaying && !it.isMusic && !it.carActive && !it.onCarDisplay && !carInstance }.distinctUntilChanged().collect { auto ->
                     runCatching {
                         setPictureInPictureParams(
                             PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9))
@@ -120,7 +121,7 @@ open class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val s = graph.hub.state.value
-        if (Build.VERSION.SDK_INT < 31 && graph.hub.player.isPlaying && !s.carActive && !s.onCarDisplay && !carInstance) {
+        if (Build.VERSION.SDK_INT < 31 && graph.hub.player.isPlaying && !s.isMusic && !s.carActive && !s.onCarDisplay && !carInstance) {
             enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build())
         }
     }

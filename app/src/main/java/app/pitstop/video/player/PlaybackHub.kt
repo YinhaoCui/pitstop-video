@@ -424,6 +424,11 @@ class PlaybackHub(
                 player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
                     .setMaxVideoSize(Int.MAX_VALUE, if (StreamPolicy.maxHeight > 0) StreamPolicy.maxHeight else Int.MAX_VALUE)
                     .build()
+                // Mixed playlists: tell Android whether this item is music or a video (audio focus, ducking).
+                val contentType = if (item.source.music || stream.audioOnly) C.AUDIO_CONTENT_TYPE_MUSIC else C.AUDIO_CONTENT_TYPE_MOVIE
+                if (player.audioAttributes.contentType != contentType) {
+                    player.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(contentType).build(), true)
+                }
                 player.setMediaSource(buildMediaSource(stream, item))
                 player.prepare()
                 // Live: rejoin at the live edge, not at the old position.
@@ -759,7 +764,7 @@ class PlaybackHub(
                 MediaMetadata.Builder().setTitle(item.title).setArtist(item.author)
                     // Notification / lock screen / car media artwork.
                     .setArtworkUri(item.thumbnailUrl?.let(Uri::parse))
-                    .setMediaType(if (item.source.music) MediaMetadata.MEDIA_TYPE_MUSIC else MediaMetadata.MEDIA_TYPE_VIDEO)
+                    .setMediaType(if (item.source.music || stream.audioOnly) MediaMetadata.MEDIA_TYPE_MUSIC else MediaMetadata.MEDIA_TYPE_VIDEO)
                     .build()
             )
             .build()
