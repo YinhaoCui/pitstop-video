@@ -603,6 +603,16 @@ class Strings(val language: AppLanguage) {
     val playSelected get() = t("Play", "播放")
     fun removeSelectedConfirm(n: Int) = t("Remove $n item(s) from this playlist?", "从此列表移除 $n 项？")
     val remove get() = t("Remove", "移除")
+    // Duplicates in a playlist
+    val findDuplicates get() = t("Duplicates", "查找重复")
+    val noDuplicates get() = t("No duplicates found", "没有发现重复项")
+    fun duplicateGroups(n: Int) = t(if (n == 1) "1 group of similar items" else "$n groups of similar items", "$n 组相似内容")
+    val duplicatesHint get() = t(
+        "The first of each group is kept. Exact copies are ticked; items that only look alike aren't, so check them before removing.",
+        "每组保留第一项。完全相同的副本已勾选；只是相似的未勾选，请确认后再移除。",
+    )
+    val duplicateKept get() = t("Kept", "保留")
+    fun removeCount(n: Int) = t("Remove $n", "移除 $n 项")
     fun deletePlaylistsConfirm(n: Int) = t("Delete $n playlist(s)?", "删除 $n 个播放列表？")
 
     // Account
