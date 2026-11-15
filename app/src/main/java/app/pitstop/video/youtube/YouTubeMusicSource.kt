@@ -49,7 +49,7 @@ class YouTubeMusicSource(private val account: YouTubeAccount) : VideoSource {
         // Account feeds: the cursor is YouTube's own continuation token.
         when (feed.key) {
             FEED_LIKED -> return account.likedMusicPage(cursor)
-            FEED_PLAYLISTS -> return account.playlistsPage(SourceId.YT_MUSIC, cursor)
+            FEED_PLAYLISTS -> return account.playlistsPage(SourceId.YT_MUSIC, cursor, listOf("LM" to I18n.s.likedMusic))
         }
         val genre = feed.categoryKey()
         return withContext(Dispatchers.IO) {
@@ -90,8 +90,13 @@ class YouTubeMusicSource(private val account: YouTubeAccount) : VideoSource {
     override suspend fun creatorPage(authorId: String, cursor: String?): FeedPage =
         YouTubeSource.channelPage(pager, authorId, SourceId.YT_MUSIC, cursor)
 
+    /** The account's playlists open like folders; their songs can be saved to a playlist here. */
+    override fun isFolder(item: VideoItem) = item.id.startsWith(COLLECTION_PREFIX)
+
+    override suspend fun browse(item: VideoItem): List<VideoItem> = expand(item).orEmpty()
+
     override suspend fun expand(item: VideoItem): List<VideoItem>? =
-        if (item.id.startsWith(COLLECTION_PREFIX)) account.playlistItems(item.id.removePrefix(COLLECTION_PREFIX), SourceId.YT_MUSIC) else null
+        if (isFolder(item)) account.playlistItems(item.id.removePrefix(COLLECTION_PREFIX), SourceId.YT_MUSIC) else null
 
     /** First page of a YouTube Music song search; the cursor follows its pages. Blocking. */
     private fun songsFirst(query: String): FeedPage = pager.pages(

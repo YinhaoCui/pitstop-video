@@ -329,6 +329,8 @@ class BiliApi(
             name = d.optJSONObject("info")?.optString("title").orEmpty().ifEmpty { name }
             d.optJSONArray("medias").objects().forEach { m ->
                 val bvid = m.optString("bvid").ifEmpty { return@forEach }
+                // attr bit 0: the video is gone (失效), shown greyed out on the site; unplayable.
+                if (m.optInt("attr") and 1 != 0) return@forEach
                 out += VideoItem(
                     source = source, id = bvid, title = BiliText.clean(m.optString("title")),
                     author = m.optJSONObject("upper")?.optString("name"),
@@ -341,6 +343,37 @@ class BiliApi(
             page++
         }
         return name to out
+    }
+
+    /**
+     * The signed-in user's favourites as folder rows: own folders (默认收藏夹 first, private ones
+     * included), then collected folders and 合集 (at most [COLLECTED_PAGES] pages of 20).
+     */
+    suspend fun myFavourites(source: SourceId): List<VideoItem> {
+        if (!cookies.loggedIn.value) throw UserFacingException(I18n.s.needBiliLogin)
+        val mid = cookies.get("DedeUserID")?.toLongOrNull()
+            ?: raw("https://api.bilibili.com/x/web-interface/nav").optJSONObject("data")?.optLong("mid")?.takeIf { it > 0 }
+            ?: throw UserFacingException(I18n.s.needBiliLogin)
+        val count = I18n.s::videoCount
+        val own = BiliFavs.created(data("https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid=$mid&platform=web"), source, count)
+        val collected = mutableListOf<VideoItem>()
+        runCatching {
+            var page = 1
+            while (page <= COLLECTED_PAGES) {
+                val d = data("https://api.bilibili.com/x/v3/fav/folder/collected/list?up_mid=$mid&pn=$page&ps=20&platform=web")
+                collected += BiliFavs.collected(d, source, count)
+                if (!d.optBoolean("has_more")) break
+                page++
+            }
+        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+        return (own + collected).distinctBy { it.id }
+    }
+
+    /** Every video in a favourites row from [myFavourites]; null when [id] isn't one. */
+    suspend fun favouriteItems(id: String, source: SourceId): List<VideoItem>? = when (val ref = BiliFavs.parse(id)) {
+        is BiliFavs.Ref.Folder -> favFolder(ref.mediaId, source).second
+        is BiliFavs.Ref.Season -> season(ref.mid, ref.seasonId, source).second
+        null -> null
     }
 
     /** An uploader's collection (合集) for playlist import: (collection name, every video), 30 per request. */
@@ -423,6 +456,7 @@ class BiliApi(
 
     companion object {
         private const val UPLOADER_PAGE_SIZE = 30
+        private const val COLLECTED_PAGES = 5
         private const val MUSIC_CENTER = "https://api.bilibili.com/x/centralization/interface"
         const val MUSIC_HOT = "music/hot/rank?plat=2"
         const val MUSIC_NEW = "new/music?plat=2"

@@ -5,6 +5,7 @@ import android.util.Log
 import android.webkit.CookieManager
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.AppLanguage
+import app.pitstop.video.core.COLLECTION_PREFIX
 import app.pitstop.video.core.FeedPage
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.SiteCookieJar
@@ -102,10 +103,18 @@ class YouTubeAccount(context: Context, private val http: OkHttpClient) {
     /** YouTube Music's "Liked music" (the LM auto playlist). */
     suspend fun likedMusicPage(cursor: String?) = browsePage("VLLM", cursor, SourceId.YT_MUSIC)
 
-    /** The user's playlists (made on YouTube or YouTube Music), as collection rows. */
-    suspend fun playlistsPage(source: SourceId, cursor: String?): FeedPage {
+    /**
+     * The user's playlists (made on YouTube or YouTube Music, saved ones too), as collection rows.
+     * The first page starts with the [pinned] auto playlists (id to title, e.g. LL = liked videos)
+     * unless YouTube already lists them, so they can be opened and saved like any playlist.
+     */
+    suspend fun playlistsPage(source: SourceId, cursor: String?, pinned: List<Pair<String, String>> = emptyList()): FeedPage {
         val j = browse("FEplaylist_aggregation", cursor)
-        return FeedPage(InnertubeParse.playlists(j, source, I18n.s::tracks), InnertubeParse.continuation(j))
+        val lists = InnertubeParse.playlists(j, source, I18n.s::tracks)
+        val extra = if (cursor != null) emptyList() else pinned
+            .map { (id, title) -> VideoItem(source, COLLECTION_PREFIX + id, title) }
+            .filter { p -> lists.none { it.id == p.id } }
+        return FeedPage(extra + lists, InnertubeParse.continuation(j))
     }
 
     /** Every video in one playlist (up to [MAX_PLAYLIST]), for playing / adding a whole playlist. */
