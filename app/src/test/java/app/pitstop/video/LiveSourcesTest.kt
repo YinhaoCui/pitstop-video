@@ -36,21 +36,31 @@ class LiveSourcesTest {
         """,
     )
 
-    @Test fun biliPrefersHlsTsAvc() {
+    @Test fun biliPrefersFlvAvc() {
         val c = BiliLiveParse.chooseStream(playInfo)!!
-        assertTrue(c.hls)
+        assertFalse(c.hls)
         assertEquals(250, c.qn)
         assertEquals(listOf(10000, 400, 250), c.acceptQn)
-        assertEquals("https://d1--ov-gotcha105.bilivideo.com/live-bvc/3/live_2500.m3u8?expires=1&qn=250", c.urls[1])
+        assertEquals("https://d1--ov-gotcha05.bilivideo.com/live-bvc/1/live_2500.flv?expires=1&qn=250", c.urls.single())
     }
 
-    @Test fun biliFallsBackToFlv() {
-        val flvOnly = JSONObject(playInfo.toString())
-        val streams = flvOnly.getJSONObject("playurl_info").getJSONObject("playurl").getJSONArray("stream")
-        streams.remove(1)
-        val c = BiliLiveParse.chooseStream(flvOnly)!!
-        assertFalse(c.hls)
-        assertTrue(c.urls.single().contains(".flv?"))
+    @Test fun biliFallbackOrder() {
+        // FLV, then fMP4, then TS (AVC), HEVC last: the source tries them in this order until a server answers.
+        val urls = BiliLiveParse.streamChoices(playInfo).map { it.urls.last() }
+        assertEquals(4, urls.size)
+        assertTrue(urls[0].contains(".flv?"))
+        assertTrue(urls[1].contains("/4/live_2500/index.m3u8"))
+        assertTrue(urls[2].contains("/3/live_2500.m3u8"))
+        assertTrue(urls[3].contains("minihevc"))
+    }
+
+    @Test fun biliFallsBackToHlsFmp4() {
+        val hlsOnly = JSONObject(playInfo.toString())
+        val streams = hlsOnly.getJSONObject("playurl_info").getJSONObject("playurl").getJSONArray("stream")
+        streams.remove(0)
+        val c = BiliLiveParse.chooseStream(hlsOnly)!!
+        assertTrue(c.hls)
+        assertTrue(c.urls.single().contains("/4/live_2500/index.m3u8"))
     }
 
     @Test fun biliOfflineHasNoStream() =
