@@ -1,5 +1,7 @@
 # Pitstop Video
 
+**English** | [简体中文](README_zh.md)
+
 A video and music player for the car's screen. Video plays **only while parked**; music and
 audio-only playback keep going while driving. It covers YouTube, Bilibili, PeerTube and videos on
 the device, plus YouTube Music, NetEase Cloud Music, SoundCloud, Bandcamp, podcasts, radio,
