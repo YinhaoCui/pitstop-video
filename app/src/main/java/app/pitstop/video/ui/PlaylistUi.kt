@@ -159,13 +159,11 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
     var confirmDelete by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var view by remember(p.id) { mutableStateOf(ListView()) }
-    // Multi-select: null = off, else the selected places in the playlist.
-    var selected by remember(p.id) { mutableStateOf<Set<Int>?>(null) }
-    BackHandler(enabled = selected != null) { selected = null }
-    var menuFor by remember { mutableStateOf<List<VideoItem>?>(null) }
+    // Multi-select by place in the playlist; any change to the playlist ends it, so a place never
+    // points at a different item than the one that was ticked.
+    val selection = rememberItemSelection(p.id, p.items)
     // The built-in Starred playlist can't be renamed or deleted.
     val builtIn = p.id == PlaylistOps.STARRED
-    menuFor?.let { AddToPlaylistDialog(graph, it) { menuFor = null } }
     var confirmRemove by remember { mutableStateOf(false) }
     var showDuplicates by remember { mutableStateOf(false) }
     if (showDuplicates) DuplicatesDialog(graph, p) { showDuplicates = false }
@@ -182,44 +180,15 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
         order.map { item -> indexed.first { (i, it) -> !used[i] && it == item }.also { used[it.index] = true } }
     }
     val shownItems = shown.map { it.value }
-    val visibleKeys = shown.map { it.index }
-    // Places that no longer exist (the list changed meanwhile) drop out.
-    val sel = selected?.let { Selection.retain(it, p.items.indices.toList()) }
-    val picked = sel?.let { Selection.picked(p.items, it) }.orEmpty()
+    val selecting = selection.active
+    val pickedPlaces = selection.keys.orEmpty().mapNotNullTo(HashSet()) { it.toIntOrNull() }
 
     Column(Modifier.fillMaxSize()) {
-        if (sel != null) {
-            SelectionBar(
-                count = sel.size,
-                allSelected = Selection.allSelected(sel, visibleKeys),
-                onSelectAll = { selected = Selection.selectAll(visibleKeys) },
-                onInvert = { selected = Selection.invert(sel, visibleKeys) },
-                onCancel = { selected = null },
-            )
-            val context = LocalContext.current
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                val any = picked.isNotEmpty()
-                Button(onClick = { graph.hub.playQueue(picked); selected = null }, enabled = any) {
-                    Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.size(6.dp)); Text(S.playSelected)
-                }
-                listOf(
-                    Triple(R.drawable.ic_skip_next, S.playNext) { graph.hub.playNext(picked) },
-                    Triple(R.drawable.ic_playlist_play, S.addToQueue) { graph.hub.addToQueue(picked) },
-                ).forEach { (icon, label, action) ->
-                    OutlinedButton(onClick = {
-                        action()
-                        android.widget.Toast.makeText(context, I18n.s.addedToQueue(picked.size), android.widget.Toast.LENGTH_SHORT).show()
-                        selected = null
-                    }, enabled = any) { Icon(painterResource(icon), null); Spacer(Modifier.size(6.dp)); Text(label) }
-                }
-                // Keeps the selection, so "copy, then remove" moves items to another playlist.
-                OutlinedButton(onClick = { menuFor = picked }, enabled = any) {
-                    Icon(painterResource(R.drawable.ic_playlist_add), null); Spacer(Modifier.size(6.dp)); Text(S.addToPlaylist)
-                }
-                OutlinedButton(onClick = { confirmRemove = true }, enabled = any) {
+        if (selecting) {
+            // Play / Play next / Add to queue / Add to playlist (keeps the selection, so "copy, then
+            // remove" moves items), plus Remove from this playlist.
+            ItemSelectionHeader(graph, selection, shown.map { "${it.index}" to it.value }) { picked ->
+                OutlinedButton(onClick = { confirmRemove = true }, enabled = picked.isNotEmpty()) {
                     Icon(painterResource(R.drawable.ic_delete), null); Spacer(Modifier.size(6.dp)); Text(S.remove)
                 }
             }
@@ -235,7 +204,7 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
             }
             if (!builtIn) IconButton(onClick = { confirmDelete = true }) { Icon(painterResource(R.drawable.ic_delete), S.deletePlaylist) }
         }
-        if (sel == null) Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!selecting) Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { graph.hub.playQueue(shownItems) }, enabled = shownItems.isNotEmpty()) {
                 Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.size(6.dp)); Text(S.playAll)
             }
@@ -243,9 +212,9 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
                 Icon(painterResource(R.drawable.ic_shuffle), null); Spacer(Modifier.size(6.dp)); Text(S.shuffle)
             }
         }
-        if (sel == null) Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (!selecting) Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             SortFilterChip(active = !view.isDefault) { showSortFilter = true }
-            TextButton(onClick = { selected = emptySet() }, enabled = shownItems.isNotEmpty()) { Text(S.select) }
+            TextButton(onClick = { selection.set(emptySet()) }, enabled = shownItems.isNotEmpty()) { Text(S.select) }
             TextButton(onClick = { showDuplicates = true }, enabled = p.items.size > 1) { Text(S.findDuplicates) }
             // Sorted but nothing filtered out: the new order can be kept.
             if (view.sort != ListSort.DEFAULT && shownItems.size == p.items.size) {
@@ -268,17 +237,16 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
             itemsIndexed(shown, key = { _, it -> "${it.index}:${it.value.source}:${it.value.id}" }) { pos, entry ->
                 val i = entry.index
                 val item = entry.value
-                if (sel != null) {
-                    val toggle = { selected = Selection.toggle(sel, i) }
-                    VideoRow(
-                        graph, item, onClick = toggle, onLongClick = toggle,
-                        leading = { Checkbox(checked = i in sel, onCheckedChange = { toggle() }) },
-                    ) { PlatformBadge(S.sourceName(item.source)) }
+                if (selecting) {
+                    val toggle = { selection.toggle("$i") }
+                    VideoRow(graph, item, onClick = toggle, onLongClick = toggle, selected = selection.isSelected("$i")) {
+                        PlatformBadge(S.sourceName(item.source))
+                    }
                     return@itemsIndexed
                 }
                 VideoRow(
                     // Long-press starts multi-select; its bar has the item menu (Add to playlist) too.
-                    graph, item, onClick = { graph.hub.playQueue(shownItems, pos) }, onLongClick = { selected = setOf(i) },
+                    graph, item, onClick = { graph.hub.playQueue(shownItems, pos) }, onLongClick = { selection.start("$i") },
                     modifier = if (view.isDefault) Modifier.reorderable(reorder, i, MaterialTheme.colorScheme.surfaceContainerHigh) else Modifier,
                     // Moving only makes sense in the playlist's own order.
                     leading = if (view.isDefault) { { DragHandle(reorder, i, p.items.size) } } else null,
@@ -294,9 +262,9 @@ private fun PlaylistDetail(graph: AppGraph, p: Playlist, onBack: () -> Unit) {
     }
     if (confirmRemove) AlertDialog(
         onDismissRequest = { confirmRemove = false },
-        title = { Text(S.removeSelectedConfirm(picked.size)) },
+        title = { Text(S.removeSelectedConfirm(pickedPlaces.size)) },
         confirmButton = {
-            TextButton(onClick = { sel?.let { graph.playlists.removeAll(p.id, it) }; selected = null; confirmRemove = false }) { Text(S.remove) }
+            TextButton(onClick = { graph.playlists.removeAll(p.id, pickedPlaces); selection.clear(); confirmRemove = false }) { Text(S.remove) }
         },
         dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text(S.cancel) } },
     )
@@ -327,7 +295,8 @@ fun QueueDialog(graph: AppGraph, onDismiss: () -> Unit) {
                 val listState = rememberLazyListState()
                 val reorder = rememberReorderState(listState)
                 reorder.bind(first = 1, count = s.queue.size, onMove = graph.hub::moveInQueue)
-                val selection = rememberItemSelection()
+                // Keys are queue places: a queue change (parts expanding, a removal) ends the selection.
+                val selection = rememberItemSelection(s.queue)
                 Column {
                     QueueSelectionHeader(graph, selection, s.queue)
                     LazyColumn(Modifier.heightIn(max = 480.dp), state = listState) {

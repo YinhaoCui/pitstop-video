@@ -50,6 +50,7 @@ import app.pitstop.video.player.PlaybackHub
 import app.pitstop.video.youtube.NewPipeDownloader
 import app.pitstop.video.youtube.YouTubeAccount
 import app.pitstop.video.youtube.YouTubeSource
+import kotlinx.coroutines.launch
 import org.schabi.newpipe.extractor.NewPipe
 
 class PitstopApp : Application() {
@@ -162,6 +163,10 @@ class AppGraph(app: Application) {
 
     init {
         NewPipe.init(NewPipeDownloader(http))
+        // "Starred" / "星标" follows the in-app language switch.
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main).launch {
+            I18n.language.collect { playlists.nameStarred(I18n.s.starred) }
+        }
     }
 }
 

@@ -627,7 +627,7 @@ class Strings(val language: AppLanguage) {
     fun removeSelectedConfirm(n: Int) = t("Remove $n item(s) from this playlist?", "从此列表移除 $n 项？")
     val remove get() = t("Remove", "移除")
     // Duplicates in a playlist
-    val findDuplicates get() = t("Duplicates", "查找重复")
+    val findDuplicates get() = t("Duplicates", "重复项")
     val noDuplicates get() = t("No duplicates found", "没有发现重复项")
     fun duplicateGroups(n: Int) = t(if (n == 1) "1 group of similar items" else "$n groups of similar items", "$n 组相似内容")
     val duplicatesHint get() = t(

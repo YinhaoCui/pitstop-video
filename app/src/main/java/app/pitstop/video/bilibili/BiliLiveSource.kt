@@ -172,7 +172,8 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
     private suspend fun firstAnswering(choices: List<BiliLiveParse.StreamChoice>): Pair<BiliLiveParse.StreamChoice, String>? {
         val urls = choices.mapNotNull { c -> BiliCdn.choose(c.urls, overseas = false)?.let { c to it } }
         val probe = http.newBuilder().callTimeout(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS).build()
-        return urls.firstOrNull { (_, url) ->
+        // At most three checks (≤ 15 s): the HEVC variants sit on the same servers as their AVC twins.
+        return urls.take(3).firstOrNull { (_, url) ->
             withContext(Dispatchers.IO) {
                 runCatching {
                     val req = Request.Builder().url(url).apply { PLAY_HEADERS.forEach { (k, v) -> header(k, v) } }.build()

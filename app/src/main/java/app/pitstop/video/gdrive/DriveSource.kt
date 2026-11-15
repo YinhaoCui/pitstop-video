@@ -10,6 +10,7 @@ import app.pitstop.video.core.AudioFiles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import app.pitstop.video.core.PlaylistStore
@@ -125,7 +126,7 @@ class DriveSource(
     override suspend fun expand(item: VideoItem): List<VideoItem>? {
         if (!item.id.startsWith(COLLECTION_PREFIX)) return null
         PickedFiles.parseTreeFolder(item.id)?.let { (tree, doc) ->
-            return treeChildren(tree, doc).second.ifEmpty { throw UserFacingException(I18n.s.noVideos) }
+            return treeChildren(tree, doc).second.ifEmpty { throw UserFacingException(I18n.s.nothingHere) }
         }
         val folder = item.id.removePrefix(COLLECTION_PREFIX)
         if (folder.startsWith(GP)) {
@@ -225,13 +226,23 @@ class DriveSource(
         val out = HashMap<String, VideoItem>()
         val pending = ArrayDeque(_trees.value.mapNotNull { PickedFiles.parseTreeFolder(it.id) })
         var folders = 0
-        while (pending.isNotEmpty() && folders++ < 300) {
-            val (tree, doc) = pending.removeFirst()
-            val (dirs, songs) = runCatching { treeChildren(tree, doc) }.getOrNull() ?: continue
-            songs.forEach { s -> out.putIfAbsent(PickedFiles.matchKey(s.extra ?: s.title), s) }
-            dirs.forEach { d -> PickedFiles.parseTreeFolder(d.id)?.let(pending::addLast) }
-        }
-        folderIndex = now to out
+        // At most 20 s: this runs while a song waits to play. A scan cut short isn't cached.
+        val complete = withTimeoutOrNull(20_000) {
+            while (pending.isNotEmpty() && folders++ < 300) {
+                val (tree, doc) = pending.removeFirst()
+                val (dirs, songs) = try {
+                    treeChildren(tree, doc)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    continue
+                }
+                songs.forEach { s -> out.putIfAbsent(PickedFiles.matchKey(s.extra ?: s.title), s) }
+                dirs.forEach { d -> PickedFiles.parseTreeFolder(d.id)?.let(pending::addLast) }
+            }
+            true
+        } == true
+        if (complete) folderIndex = now to out
         out
     }
 
@@ -278,11 +289,17 @@ class DriveSource(
             pickedItem(uri.toString(), name)
         }
         savePicked(added + _picked.value.filter { old -> added.none { it.id == old.id } })
+        // Android drops the oldest grants past 512: take the folder grants again so they stay the newest.
+        _trees.value.forEach { t ->
+            PickedFiles.parseTreeFolder(t.id)?.let { (tree, _) ->
+                runCatching { context.contentResolver.takePersistableUriPermission(Uri.parse(tree), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            }
+        }
         return withoutAccess().size
     }
 
     /** A folder chosen with the system folder picker: one read grant covers all its files and subfolders. */
-    fun addTree(uri: Uri) {
+    suspend fun addTree(uri: Uri) = withContext(Dispatchers.IO) {
         runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         val doc = DocumentsContract.getTreeDocumentId(uri)
         val name = runCatching {

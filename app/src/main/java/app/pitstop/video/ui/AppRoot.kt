@@ -158,8 +158,9 @@ private fun CarVideoOnly(graph: AppGraph) {
 
 @Composable
 fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenChange: (Boolean) -> Unit) {
+    val state by graph.hub.state.collectAsStateWithLifecycle()
     // A queue can mix videos and songs: whatever is playing now decides between picture and cover.
-    val playingMusic = graph.hub.state.collectAsStateWithLifecycle().value.isMusic
+    val playingMusic = state.isMusic
     if (inPip) {
         if (playingMusic) MusicStage(graph, Modifier.fillMaxSize())
         else PhonePlayer(graph, Modifier.fillMaxSize(), showControls = false)
@@ -195,7 +196,6 @@ fun AppRoot(graph: AppGraph, inPip: Boolean, fullscreen: Boolean, onFullscreenCh
     var liveSourceId by rememberSaveable { mutableStateOf(liveSources.firstOrNull()?.id) }
     // Search everywhere → More: switch platform and run the same search there.
     var pendingQuery by remember { mutableStateOf<String?>(null) }
-    val state by graph.hub.state.collectAsStateWithLifecycle()
     // Re-read feed lists after sign-in / sign-out.
     val ytSignedIn by graph.youTubeAccount.signedIn.collectAsStateWithLifecycle()
     val biliLoggedIn by graph.biliCookies.loggedIn.collectAsStateWithLifecycle()

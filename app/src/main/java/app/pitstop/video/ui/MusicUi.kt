@@ -121,14 +121,12 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) {
-            val lost = graph.driveSource.addPicked(uris)
-            if (lost > 0) message = I18n.s.filesNoAccess(lost) to true
-        }
+        // Songs that lost access (over Android's 512-file limit) are reported by the card below.
+        if (uris.isNotEmpty()) graph.driveSource.addPicked(uris)
     }
     // A whole folder at once: one grant covers every song in it (no tapping each file, no 512 limit).
     val folderPick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) {
+        if (uri != null) scope.launch {
             graph.driveSource.addTree(uri)
             message = I18n.s.driveFolderAdded to false
         }

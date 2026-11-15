@@ -106,7 +106,10 @@ fun PlayerScreen(graph: AppGraph, onClose: () -> Unit, onFullscreen: () -> Unit)
     val s by graph.hub.state.collectAsStateWithLifecycle()
     val playlists by graph.playlists.playlists.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(0) }
-    val queueSelection = rememberItemSelection(tab)
+    // Keys are queue places: a queue change (parts expanding, a removal) ends the selection.
+    val queueSelection = rememberItemSelection(tab, s.queue)
+    // The selection bar is a list row that can scroll away; Back still ends the selection, not the player.
+    BackHandler(enabled = queueSelection.active) { queueSelection.clear() }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) { Icon(painterResource(R.drawable.ic_arrow_down), S.back) }

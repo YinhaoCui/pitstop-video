@@ -156,7 +156,12 @@ class PlaybackHub(
                 ) onStall()
                 lastState = playbackState
                 if (playbackState == Player.STATE_ENDED) {
-                    if (_state.value.repeat == RepeatMode.ONE) { player.seekTo(0); player.play() } else next()
+                    when {
+                        // A live stream never really ends (FLV is one long download): the server cut it off, so rejoin.
+                        _state.value.current?.source?.live == true && reconnectAttempts < 6 -> reconnect()
+                        _state.value.repeat == RepeatMode.ONE -> { player.seekTo(0); player.play() }
+                        else -> next()
+                    }
                 }
             }
 
@@ -178,9 +183,16 @@ class PlaybackHub(
                 // Live HLS with a short window (Bilibili's fMP4 keeps only a few seconds): when playback
                 // falls behind it, rejoin the live edge instead of stopping with an error.
                 if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
-                    player.seekToDefaultPosition()
-                    player.prepare()
-                    return
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - liveRejoinAt > 60_000) liveRejoins = 0
+                    liveRejoinAt = now
+                    if (liveRejoins++ < 5) {
+                        player.seekToDefaultPosition()
+                        player.prepare()
+                        return
+                    }
+                    // Keeps falling behind: fetch the stream again (maybe another server or format).
+                    if (reconnectAttempts < 6) { reconnect(); return }
                 }
                 // Older phones / emulators / head units: retry once at a quality every device decodes.
                 val decoderProblem = error.errorCode in listOf(
@@ -409,6 +421,9 @@ class PlaybackHub(
     /** Next resolve uses safe quality; each video gets at most one safe retry. */
     private var safeNext = false
     private var safeRetriedFor: String? = null
+    /** Rejoins of the live edge after falling behind the window, counted per minute. */
+    private var liveRejoins = 0
+    private var liveRejoinAt = 0L
     /** The item whose link was last fetched again after an HTTP 401 / 403 / 410, and when. */
     private var refreshedFor: String? = null
     private var refreshedAt = 0L

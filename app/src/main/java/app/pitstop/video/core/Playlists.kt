@@ -150,13 +150,19 @@ class PlaylistStore(private val file: File, starredName: String) {
      */
     fun replaceItems(f: (VideoItem) -> VideoItem?): Int {
         var count = 0
-        val before = _playlists.value
-        val after = before.map { p ->
-            val items = p.items.map { old -> f(old)?.also { count++ } ?: old }
-            if (items == p.items) p else p.copy(items = PlaylistOps.addAll(p.copy(items = emptyList()), items).items)
+        mutate { list ->
+            count = 0
+            list.map { p ->
+                val items = p.items.map { old -> f(old)?.also { count++ } ?: old }
+                if (items == p.items) p else p.copy(items = PlaylistOps.addAll(p.copy(items = emptyList()), items).items)
+            }
         }
-        if (count > 0) mutate { after }
         return count
+    }
+
+    /** The built-in Starred playlist's name, in the app language (call when the language changes). */
+    fun nameStarred(name: String) {
+        if (get(PlaylistOps.STARRED)?.name != name) mutate { PlaylistOps.withStarred(it, name) }
     }
 
     /** Saves a new order of the same items (Sort & filter → Keep this order). */
