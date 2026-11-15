@@ -9,6 +9,7 @@ import app.pitstop.video.core.COLLECTION_PREFIX
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.GoogleScopedAccount
 import app.pitstop.video.core.I18n
+import app.pitstop.video.core.PickedFiles
 import app.pitstop.video.core.PlayableStream
 import app.pitstop.video.core.SourceId
 import app.pitstop.video.core.UserFacingException
@@ -56,7 +57,10 @@ class DriveSource(
     }
 
     override suspend fun load(feed: Feed): List<VideoItem> = when (feed.key) {
-        FEED_PICKED -> _picked.value
+        // Songs whose file grant Android dropped (over its 512-file limit) say so instead of failing to play.
+        FEED_PICKED -> withoutAccess().toSet().let { lost ->
+            _picked.value.map { if (it.id in lost) it.copy(author = I18n.s.fileNoAccess) else it }
+        }
         FEED_GPICKER -> picker.files.value.map { f ->
             if (f.isFolder) gpFolder(f) else gpItem(f)
         }
@@ -175,8 +179,25 @@ class DriveSource(
 
     // ---- Without sign-in: files picked in the system picker ----
 
-    /** Adds files returned by the picker; newest picks go first, duplicates move to the top. */
-    fun addPicked(uris: List<Uri>) {
+    /** Picked files Android no longer lets the app read (see [PickedFiles]). */
+    fun withoutAccess(): List<String> {
+        val granted = runCatching {
+            context.contentResolver.persistedUriPermissions.filter { it.isReadPermission }.mapTo(HashSet()) { it.uri.toString() }
+        }.getOrDefault(emptySet())
+        return PickedFiles.withoutAccess(_picked.value.filter { it.id.startsWith("content://") }.map { it.id }, granted)
+    }
+
+    /** Drops the picked songs that can't be read any more, so they can be added again (or picked from Google Drive). */
+    fun removeWithoutAccess() {
+        val lost = withoutAccess().toSet()
+        if (lost.isNotEmpty()) savePicked(_picked.value.filterNot { it.id in lost })
+    }
+
+    /**
+     * Adds files returned by the picker; newest picks go first, duplicates move to the top.
+     * Returns how many picked songs can't be read afterwards (Android keeps at most 512 file grants).
+     */
+    fun addPicked(uris: List<Uri>): Int {
         val added = uris.map { uri ->
             runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             val name = runCatching {
@@ -186,6 +207,7 @@ class DriveSource(
             pickedItem(uri.toString(), name)
         }
         savePicked(added + _picked.value.filter { old -> added.none { it.id == old.id } })
+        return withoutAccess().size
     }
 
     fun clearPicked() {

@@ -115,12 +115,18 @@ fun MusicTab(graph: AppGraph) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked: Boolean) {
-    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) graph.driveSource.addPicked(uris)
-    }
     val drivePicker = graph.driveSource.picker
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) {
+            val lost = graph.driveSource.addPicked(uris)
+            if (lost > 0) message = I18n.s.filesNoAccess(lost) to true
+        }
+    }
+    // Songs added with the file picker whose access Android dropped (it keeps 512 per app).
+    val picked by graph.driveSource.picked.collectAsStateWithLifecycle()
+    val lost = remember(picked) { graph.driveSource.withoutAccess().size }
     val googleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
         scope.launch {
             message = runCatching { I18n.s.drivePickerAdded(drivePicker.completePick(res.data)) to false }
@@ -146,6 +152,10 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
                 }
             }) { Text(S.driveGooglePick, maxLines = 1) }
             OutlinedButton(contentPadding = tight, onClick = { files.launch(arrayOf("audio/*")) }) { Text(S.driveAddSongs, maxLines = 1) }
+        }
+        if (lost > 0) {
+            Text(I18n.s.filesNoAccess(lost), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = { graph.driveSource.removeWithoutAccess(); message = null }) { Text(S.removeNoAccess) }
         }
         if (hasGooglePicked || hasFiles) TextButton(onClick = { drivePicker.clear(); graph.driveSource.clearPicked() }) { Text(S.driveClear) }
         message?.let { (text, error) ->
