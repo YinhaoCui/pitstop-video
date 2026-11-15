@@ -20,6 +20,36 @@ enum class SourceId(val music: Boolean = false, val live: Boolean = false) {
 fun <T> shownSources(all: List<T>, hidden: Set<SourceId>, id: (T) -> SourceId): List<T> =
     all.filter { id(it) !in hidden }.ifEmpty { all }
 
+/**
+ * [all] in the user's platform [order]. Platforms the order doesn't mention (new in this version)
+ * keep their place relative to each other and go after the ordered ones.
+ */
+fun <T> orderedSources(all: List<T>, order: List<SourceId>, id: (T) -> SourceId): List<T> =
+    all.withIndex().sortedWith(
+        compareBy({ order.indexOf(id(it.value)).let { i -> if (i < 0) Int.MAX_VALUE else i } }, { it.index })
+    ).map { it.value }
+
+/** Every platform in the user's [saved] order (unknown names already dropped, new platforms appended). */
+fun fullSourceOrder(saved: List<SourceId>): List<SourceId> = orderedSources(SourceId.entries, saved.distinct()) { it }
+
+/**
+ * Moves [id] one step up ([delta] = -1) or down (+1) among the platforms of its own bar ([sameBar]),
+ * returning the new full order. Platforms of other bars keep their positions.
+ */
+fun moveSource(order: List<SourceId>, id: SourceId, delta: Int, sameBar: (SourceId) -> Boolean): List<SourceId> {
+    val full = fullSourceOrder(order)
+    val bar = full.filter(sameBar)
+    val i = bar.indexOf(id)
+    val j = i + delta
+    if (i < 0 || j !in bar.indices) return full
+    val moved = bar.toMutableList().apply { this[i] = this[j]; this[j] = id }
+    val next = moved.iterator()
+    return full.map { if (sameBar(it)) next.next() else it }
+}
+
+/** The bar a platform belongs to: Video, Music or Live. */
+fun SourceId.sameBar(other: SourceId): Boolean = music == other.music && live == other.live
+
 /** Items whose id starts with this are collections (playlist / folder); [VideoSource.expand] turns them into tracks. */
 const val COLLECTION_PREFIX = "list:"
 

@@ -18,6 +18,7 @@ import java.io.File
 import app.pitstop.video.core.ThumbnailLoader
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.buildHttpClient
+import app.pitstop.video.core.orderedSources
 import app.pitstop.video.core.shownSources
 import app.pitstop.video.importer.PlaylistImport
 import app.pitstop.video.importer.TrackMeta
@@ -108,10 +109,12 @@ class AppGraph(app: Application) {
         DouyuSource(app, http),
     )
 
-    val videoSources: List<VideoSource> get() = sources.filter { !it.id.music && !it.id.live }
-    val liveSources: List<VideoSource> get() = sources.filter { it.id.live }
+    /** [sources] in the user's platform order (Settings → Platforms). */
+    private val orderedSources: List<VideoSource> get() = orderedSources(sources, Settings.sourceOrder.value) { it.id }
+    val videoSources: List<VideoSource> get() = orderedSources.filter { !it.id.music && !it.id.live }
+    val liveSources: List<VideoSource> get() = orderedSources.filter { it.id.live }
     val shownLiveSources: List<VideoSource> get() = shownSources(liveSources, Settings.hiddenSources.value) { it.id }
-    val musicSources: List<VideoSource> get() = sources.filter { it.id.music }
+    val musicSources: List<VideoSource> get() = orderedSources.filter { it.id.music }
     /** What the Video / Music bars show: the user's platform choice (Settings → Platforms). */
     val shownVideoSources: List<VideoSource> get() = shownSources(videoSources, Settings.hiddenSources.value) { it.id }
     val shownMusicSources: List<VideoSource> get() = shownSources(musicSources, Settings.hiddenSources.value) { it.id }
