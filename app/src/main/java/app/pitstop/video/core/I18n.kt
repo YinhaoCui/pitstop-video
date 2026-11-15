@@ -493,6 +493,11 @@ class Strings(val language: AppLanguage) {
     val loading get() = t("Loading…", "加载中…")
     val buffering get() = t("Buffering…", "缓冲中…")
     val reconnecting get() = t("Connection lost. Reconnecting…", "网络中断，正在重新连接…")
+    fun serverRefused(status: Int) = when (status) {
+        404 -> t("This file wasn't found on the server (HTTP 404). It may have been moved or deleted.", "服务器上找不到此文件（HTTP 404），可能已被移动或删除。")
+        401, 403 -> t("The server refused access to this file (HTTP $status). Try signing in again.", "服务器拒绝访问此文件（HTTP $status），请尝试重新登录。")
+        else -> t("The server refused to play this (HTTP $status).", "服务器拒绝播放此内容（HTTP $status）。")
+    }
     fun qualityLowered(h: Int) = t("Slow connection: switched to ${h}p", "网络较慢，已切换到 ${h}p")
     val nowPlaying get() = t("Now playing", "正在播放")
     val carPickSomething get() = t("Pick something in Browse.", "在“浏览”里选一个开始播放。")

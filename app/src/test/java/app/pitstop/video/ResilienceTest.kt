@@ -2,6 +2,8 @@ package app.pitstop.video
 
 import app.pitstop.video.core.QualityLadder
 import app.pitstop.video.core.StallTracker
+import app.pitstop.video.core.HttpFailure
+import app.pitstop.video.core.httpFailure
 import app.pitstop.video.core.isNetworkErrorCode
 import app.pitstop.video.core.retryDelayMs
 import org.junit.Assert.assertEquals
@@ -48,5 +50,18 @@ class ResilienceTest {
         assertTrue(isNetworkErrorCode(2001)) // IO_NETWORK_CONNECTION_FAILED
         assertTrue(isNetworkErrorCode(2004)) // IO_BAD_HTTP_STATUS (expired link)
         assertFalse(isNetworkErrorCode(4001)) // decoder init
+    }
+
+    @Test fun httpErrorsAreNotAllConnectionLoss() {
+        // Expired Google token / signed CDN link: fetch the item again.
+        assertEquals(HttpFailure.REFRESH, httpFailure(401))
+        assertEquals(HttpFailure.REFRESH, httpFailure(403))
+        assertEquals(HttpFailure.REFRESH, httpFailure(410))
+        // Busy servers: retry.
+        assertEquals(HttpFailure.RETRY, httpFailure(429))
+        assertEquals(HttpFailure.RETRY, httpFailure(503))
+        // Not found (e.g. a shared-drive file fetched without supportsAllDrives): a real error.
+        assertEquals(HttpFailure.FAIL, httpFailure(404))
+        assertEquals(HttpFailure.FAIL, httpFailure(400))
     }
 }

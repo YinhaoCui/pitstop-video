@@ -116,7 +116,8 @@ class DriveSource(
             val id = item.id.removePrefix(GP)
             PlayableStream(picker.mediaUrl(id), headers = mapOf("Authorization" to "Bearer ${picker.token()}"))
         } else PlayableStream(
-            "https://www.googleapis.com/drive/v3/files/${item.id}?alt=media&acknowledgeAbuse=true",
+            // supportsAllDrives: listings include shared drives, whose files answer 404 without it.
+            "https://www.googleapis.com/drive/v3/files/${item.id}?alt=media&acknowledgeAbuse=true&supportsAllDrives=true",
             headers = mapOf("Authorization" to "Bearer ${token()}"),
         )
 

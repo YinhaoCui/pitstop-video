@@ -26,6 +26,8 @@ import app.pitstop.video.core.I18n
 import app.pitstop.video.core.UserFacingException
 import app.pitstop.video.core.QualityLadder
 import app.pitstop.video.core.StallTracker
+import app.pitstop.video.core.HttpFailure
+import app.pitstop.video.core.httpFailure
 import app.pitstop.video.core.isNetworkErrorCode
 import app.pitstop.video.core.retryDelayMs
 import kotlinx.coroutines.flow.first
@@ -183,6 +185,29 @@ class PlaybackHub(
                 val s = _state.value
                 val cur = s.current
                 val key = cur?.let { "${it.source}:${it.id}:${it.part}" }
+                // The server answered, but with an HTTP error: not a lost connection.
+                val status = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
+                if (status != null && cur != null && key != null) {
+                    android.util.Log.w("PlaybackHub", "HTTP $status for ${cur.source}:${cur.id}")
+                    when (httpFailure(status)) {
+                        HttpFailure.REFRESH -> {
+                            // Tokens (Google Drive) and signed links expire: fetch a fresh one once, quietly.
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            if (refreshedFor != key || now - refreshedAt > 10 * 60_000) {
+                                refreshedFor = key
+                                refreshedAt = now
+                                prefetched = null
+                                resumeAtMs = player.currentPosition
+                                playAt(s.queue, s.index)
+                                return
+                            }
+                        }
+                        HttpFailure.RETRY -> if (reconnectAttempts < 6) { reconnect(); return }
+                        HttpFailure.FAIL -> Unit
+                    }
+                    _state.update { it.copy(error = I18n.s.serverRefused(status)) }
+                    return
+                }
                 if (isNetworkErrorCode(error.errorCode) && cur != null && reconnectAttempts < 6) {
                     reconnect()
                     return
@@ -356,6 +381,9 @@ class PlaybackHub(
     /** Next resolve uses safe quality; each video gets at most one safe retry. */
     private var safeNext = false
     private var safeRetriedFor: String? = null
+    /** The item whose link was last fetched again after an HTTP 401 / 403 / 410, and when. */
+    private var refreshedFor: String? = null
+    private var refreshedAt = 0L
 
     private fun playAt(queue: List<VideoItem>, index: Int, keepError: Boolean = false) {
         resolveJob?.cancel()
