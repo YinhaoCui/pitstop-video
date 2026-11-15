@@ -169,7 +169,20 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
         }
         if (lost > 0) {
             Text(I18n.s.filesNoAccess(lost), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = { graph.driveSource.removeWithoutAccess(); message = null }) { Text(S.removeNoAccess) }
+            val folders by graph.driveSource.trees.collectAsStateWithLifecycle()
+            var fixing by remember { mutableStateOf(false) }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Songs that are also in an added folder: point playlists at the folder copies.
+                if (folders.isNotEmpty()) Button(enabled = !fixing, onClick = {
+                    fixing = true
+                    scope.launch {
+                        val n = runCatching { graph.driveSource.repairWithFolders(graph.playlists) }.getOrDefault(0)
+                        message = I18n.s.repairedFromFolders(n) to false
+                        fixing = false
+                    }
+                }) { Text(if (fixing) S.loading else S.fixWithFolders, maxLines = 1) }
+                TextButton(onClick = { graph.driveSource.removeWithoutAccess(); message = null }) { Text(S.removeNoAccess) }
+            }
         }
         if (hasGooglePicked || hasFiles) TextButton(onClick = { drivePicker.clear(); graph.driveSource.clearPicked() }) { Text(S.driveClear) }
         message?.let { (text, error) ->

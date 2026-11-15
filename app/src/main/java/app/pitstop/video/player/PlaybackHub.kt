@@ -188,7 +188,8 @@ class PlaybackHub(
                 val key = cur?.let { "${it.source}:${it.id}:${it.part}" }
                 // A content:// file Android no longer lets us read (e.g. over the 512 file-grant limit).
                 if (isPermissionLoss(error)) {
-                    _state.update { it.copy(error = I18n.s.fileAccessLost) }
+                    // One unreadable file shouldn't stop a long queue: move on to the next song.
+                    if (s.index + 1 < s.queue.size) next() else _state.update { it.copy(error = I18n.s.fileAccessLost) }
                     return
                 }
                 // The server answered, but with an HTTP error: not a lost connection.

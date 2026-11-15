@@ -11,7 +11,21 @@ object PickedFiles {
     const val LIMIT = 512
 
     /** The picked [uris] (in list order) that have no read grant among [granted]. */
-    fun withoutAccess(uris: List<String>, granted: Set<String>): List<String> = uris.filter { it !in granted }
+    fun withoutAccess(uris: List<String>, granted: Set<String>): List<String> = uris.filter { !hasAccess(it, granted) }
+
+    /** A file's own grant, or a folder (tree) grant it sits under ("<tree>/document/<id>"). */
+    fun hasAccess(uri: String, granted: Set<String>): Boolean =
+        uri in granted || granted.any { uri.startsWith("$it/document/") }
+
+    /**
+     * The file name a song was added with: kept in [extra] by the Drive source, else rebuilt from the
+     * title and the extension shown as its subtitle ("Adele - Hello" + "MP3").
+     */
+    fun fileName(title: String, ext: String?, extra: String?): String =
+        extra?.takeIf { it.isNotBlank() } ?: if (ext.isNullOrBlank() || ext.contains(' ')) title else "$title.${ext.lowercase()}"
+
+    /** Songs are matched across ways of adding them by file name, ignoring case and spaces around it. */
+    fun matchKey(fileName: String): String = fileName.trim().lowercase()
 
     // A folder added with the system folder picker ("Add a folder"): one grant on the folder (a document
     // tree) covers every file below it, so there is no per-file limit. A folder row's id names the tree

@@ -32,4 +32,20 @@ class PickedFilesTest {
         assertEquals(null, PickedFiles.parseTreeFolder(app.pitstop.video.core.COLLECTION_PREFIX + "gp:1AbC"))
         assertEquals(null, PickedFiles.parseTreeFolder("content://x"))
     }
+
+    @Test fun folderGrantsCoverTheirFiles() {
+        val tree = "content://com.google.android.apps.docs.storage/tree/acc%3D5%3Bdoc%3Dencoded%3Dabc"
+        val granted = setOf(tree, "content://d/2")
+        assertTrue(PickedFiles.hasAccess("$tree/document/acc%3D5%3Bdoc%3Dencoded%3Dsong", granted))
+        assertTrue(PickedFiles.hasAccess("content://d/2", granted))
+        assertFalse(PickedFiles.hasAccess("content://d/1", granted))
+        assertEquals(listOf("content://d/1"), PickedFiles.withoutAccess(listOf("content://d/1", "$tree/document/x"), granted))
+    }
+
+    @Test fun songsMatchByFileName() {
+        assertEquals("adele - hello.mp3", PickedFiles.matchKey(PickedFiles.fileName("Adele - Hello", "MP3", null)))
+        assertEquals("adele - hello.mp3", PickedFiles.matchKey(PickedFiles.fileName("x", "MP3", " Adele - Hello.MP3 ")))
+        // A subtitle that isn't an extension (e.g. "Folder") isn't glued on.
+        assertEquals("song", PickedFiles.fileName("song", "No access · add again", null))
+    }
 }

@@ -473,6 +473,11 @@ class Strings(val language: AppLanguage) {
         "有 $n 首歌曲已无法读取：安卓最多只允许应用保留 512 个通过“从文件添加”加入的文件，超出时会移除最早的。歌曲较多时请用“添加文件夹”：一个文件夹即可包含其中所有歌曲，没有数量限制。",
     )
     val removeNoAccess get() = t("Remove songs without access", "移除无法访问的歌曲")
+    val fixWithFolders get() = t("Fix with my folders", "用我的文件夹修复")
+    fun repairedFromFolders(n: Int) = t(
+        if (n == 0) "Nothing to fix: no playlist song was found in your folders." else "Fixed $n playlist song(s): they now play from your folders.",
+        if (n == 0) "没有需要修复的：在你的文件夹中没有找到播放列表里的歌曲。" else "已修复 $n 首播放列表歌曲，现在从你的文件夹播放。",
+    )
     val fileAccessLost get() = t(
         "Pitstop can no longer read this file: Android keeps access to at most 512 files added with “Add from files”. Add its folder with “Add a folder” instead.",
         "Pitstop 已无法读取此文件：安卓最多只保留 512 个通过“从文件添加”加入的文件的访问权限。请改用“添加文件夹”添加它所在的文件夹。",
