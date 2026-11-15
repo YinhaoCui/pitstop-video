@@ -41,6 +41,7 @@ fun UpdateSection(graph: AppGraph, inDialog: Boolean = false) {
     val updater = graph.updater
     val state by updater.state.collectAsStateWithLifecycle()
     val auto by updater.autoCheck.collectAsStateWithLifecycle()
+    val beta by updater.beta.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // Back from "Install unknown apps": carry on if it was allowed.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { updater.resumeAfterPermission() }
@@ -88,6 +89,13 @@ fun UpdateSection(graph: AppGraph, inDialog: Boolean = false) {
                 Text(S.updateAutoText, style = MaterialTheme.typography.bodySmall)
             }
             Switch(checked = auto, onCheckedChange = updater::setAutoCheck)
+        }
+        if (!inDialog) Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(S.updateBeta, style = MaterialTheme.typography.bodyLarge)
+                Text(S.updateBetaText, style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = beta, onCheckedChange = updater::setBeta)
         }
     }
 }

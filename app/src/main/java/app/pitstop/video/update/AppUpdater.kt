@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -67,9 +68,24 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
         prefs.edit().putBoolean(KEY_AUTO, on).apply()
     }
 
+    private val _beta = MutableStateFlow(prefs.getBoolean(KEY_BETA, false))
+    /**
+     * Beta channel: GitHub pre-releases (tags like v0.7.0-beta.1) are offered too. They install over the
+     * app like any update. Turning it off doesn't go back: the app stays on the beta until a newer final
+     * version is released (Android doesn't install a lower version code over a higher one).
+     */
+    val beta: StateFlow<Boolean> = _beta.asStateFlow()
+
+    fun setBeta(on: Boolean) {
+        _beta.value = on
+        // The next launch check looks again, for the channel now chosen.
+        prefs.edit().putBoolean(KEY_BETA, on).remove(KEY_LAST_CHECK).apply()
+        if (_state.value is State.UpToDate || _state.value is State.Available || _state.value is State.Failed) _state.value = State.Idle
+    }
+
     val currentVersion: String = installedInfo()?.versionName.orEmpty()
 
-    /** Asks GitHub for the latest release. */
+    /** Asks GitHub for the latest release (or the newest pre-release, on the beta channel). */
     suspend fun check(): State {
         _state.value = State.Checking
         val result = try {
@@ -151,8 +167,11 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
     // ---- steps ----
 
     private suspend fun latestRelease(): AppRelease? = withContext(Dispatchers.IO) {
+        val beta = _beta.value
+        // releases/latest never returns a pre-release; the beta channel reads the recent releases instead.
+        val path = if (beta) "releases?per_page=30" else "releases/latest"
         val req = Request.Builder()
-            .url("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/releases/latest")
+            .url("https://api.github.com/repos/${BuildConfig.UPDATE_REPO}/$path")
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .build()
@@ -161,7 +180,8 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
             // 404: the repository has no published release yet.
             if (resp.code == 404) return@use null
             if (!resp.isSuccessful) throw IOException("GitHub HTTP ${resp.code}")
-            Updates.release(JSONObject(resp.body?.string().orEmpty()))
+            val body = resp.body?.string().orEmpty()
+            if (beta) Updates.newest(JSONArray(body), allowPreRelease = true) else Updates.release(JSONObject(body))
         }
     }
 
@@ -269,6 +289,7 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
         const val KEY_AUTO = "auto_check"
         const val KEY_LAST_CHECK = "last_check"
         const val KEY_SKIPPED = "skipped_tag"
+        const val KEY_BETA = "beta_channel"
         const val DAY_MS = 24 * 60 * 60_000L
     }
 }

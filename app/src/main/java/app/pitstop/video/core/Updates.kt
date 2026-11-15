@@ -1,5 +1,6 @@
 package app.pitstop.video.core
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** One published version of the app: the GitHub release and its APK. */
@@ -24,24 +25,69 @@ object Updates {
         return parts.map { it.toIntOrNull() ?: return null }
     }
 
-    /** True when [candidate] is a higher version than [current] (missing parts count as 0: 0.7 == 0.7.0). */
-    fun isNewer(candidate: String, current: String): Boolean {
-        val a = parseVersion(candidate) ?: return false
-        val b = parseVersion(current) ?: return true
-        for (i in 0 until maxOf(a.size, b.size)) {
-            val x = a.getOrElse(i) { 0 }
-            val y = b.getOrElse(i) { 0 }
-            if (x != y) return x > y
+    /** "0.7.0-beta.2" -> "beta.2"; null for a final version ("0.7.0", "0.7.0+build5"). */
+    fun preRelease(text: String): String? =
+        text.trim().substringBefore('+').substringAfter('-', "").ifEmpty { null }
+
+    /**
+     * Orders versions like semver: numbers part by part (missing parts count as 0: 0.7 == 0.7.0), then a
+     * pre-release comes before its final version (0.7.0-beta.1 < 0.7.0-beta.2 < 0.7.0-rc.1 < 0.7.0).
+     * Unparsable versions sort lowest.
+     */
+    fun compare(a: String, b: String): Int {
+        val x = parseVersion(a)
+        val y = parseVersion(b)
+        if (x == null || y == null) return (if (x == null) 0 else 1) - (if (y == null) 0 else 1)
+        for (i in 0 until maxOf(x.size, y.size)) {
+            val c = x.getOrElse(i) { 0 }.compareTo(y.getOrElse(i) { 0 })
+            if (c != 0) return c
         }
-        return false
+        val p = preRelease(a)
+        val q = preRelease(b)
+        return when {
+            p == null && q == null -> 0
+            p == null -> 1
+            q == null -> -1
+            else -> comparePre(p.split('.'), q.split('.'))
+        }
+    }
+
+    private fun comparePre(p: List<String>, q: List<String>): Int {
+        for (i in 0 until minOf(p.size, q.size)) {
+            val m = p[i].toIntOrNull()
+            val n = q[i].toIntOrNull()
+            val c = when {
+                m != null && n != null -> m.compareTo(n)
+                m != null -> -1
+                n != null -> 1
+                else -> p[i].compareTo(q[i])
+            }
+            if (c != 0) return c
+        }
+        return p.size.compareTo(q.size)
+    }
+
+    /** True when [candidate] is a higher version than [current] (see [compare]). */
+    fun isNewer(candidate: String, current: String): Boolean {
+        if (parseVersion(candidate) == null) return false
+        if (parseVersion(current) == null) return true
+        return compare(candidate, current) > 0
     }
 
     /**
-     * The release in a `GET /repos/{owner}/{repo}/releases/latest` answer, or null when it is a draft /
-     * pre-release, has no version tag or no APK attached.
+     * The newest usable release in a `GET /repos/{owner}/{repo}/releases` answer (the beta channel):
+     * pre-releases count when [allowPreRelease]; drafts and releases without an APK never do.
      */
-    fun release(json: JSONObject): AppRelease? {
-        if (json.optBoolean("draft") || json.optBoolean("prerelease")) return null
+    fun newest(list: JSONArray, allowPreRelease: Boolean): AppRelease? =
+        (0 until list.length()).mapNotNull { list.optJSONObject(it)?.let { r -> release(r, allowPreRelease) } }
+            .reduceOrNull { best, r -> if (compare(r.version, best.version) > 0) r else best }
+
+    /**
+     * The release in a `GET /repos/{owner}/{repo}/releases/latest` answer, or null when it is a draft,
+     * a pre-release (unless [allowPreRelease]), has no version tag or no APK attached.
+     */
+    fun release(json: JSONObject, allowPreRelease: Boolean = false): AppRelease? {
+        if (json.optBoolean("draft") || (json.optBoolean("prerelease") && !allowPreRelease)) return null
         val tag = json.optString("tag_name").ifEmpty { return null }
         parseVersion(tag) ?: return null
         val assets = json.optJSONArray("assets") ?: return null

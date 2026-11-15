@@ -710,6 +710,11 @@ class Strings(val language: AppLanguage) {
     val continueLabel get() = t("Continue", "继续")
     val updateAuto get() = t("Check automatically", "自动检查")
     val updateAutoText get() = t("Once a day when the app opens; a new version is offered, never installed without you.", "每天打开应用时检查一次；有新版本时会提示，不会自动安装。")
+    val updateBeta get() = t("Beta versions", "测试版")
+    val updateBetaText get() = t(
+        "Also offer test versions with features still being tried. Turning this off keeps the beta until the next final version.",
+        "同时提供仍在试用新功能的测试版。关闭后会保留当前测试版，直到下一个正式版发布。",
+    )
     fun updateCheckFailed(m: String) = t("Couldn't check for updates: $m", "检查更新失败：$m")
     val updateDownloadIncomplete get() = t("The download was incomplete. Try again.", "下载不完整，请重试。")
     val updateBadApk get() = t("The downloaded file isn't a valid app package.", "下载的文件不是有效的安装包。")
