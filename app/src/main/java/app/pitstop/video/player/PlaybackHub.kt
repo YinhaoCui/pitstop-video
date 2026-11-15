@@ -172,6 +172,13 @@ class PlaybackHub(
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                // Live HLS with a short window (Bilibili's fMP4 keeps only a few seconds): when playback
+                // falls behind it, rejoin the live edge instead of stopping with an error.
+                if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                    player.seekToDefaultPosition()
+                    player.prepare()
+                    return
+                }
                 // Older phones / emulators / head units: retry once at a quality every device decodes.
                 val decoderProblem = error.errorCode in listOf(
                     PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,

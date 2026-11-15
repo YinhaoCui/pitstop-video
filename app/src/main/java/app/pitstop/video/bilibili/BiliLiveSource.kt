@@ -278,9 +278,10 @@ object BiliLiveParse {
     fun chooseStream(data: JSONObject): StreamChoice? = streamChoices(data).firstOrNull()
 
     /**
-     * Every playable stream in getRoomPlayInfo's `data`, best first: HLS-fMP4, then HLS-TS, then FLV,
-     * AVC before HEVC (car head units often lack HEVC decoders). fMP4 comes first because the TS
-     * nodes overseas stopped answering (Nov 2026); the caller still checks that a server answers.
+     * Every playable stream in getRoomPlayInfo's `data`, best first: FLV, then HLS-fMP4, then HLS-TS,
+     * AVC before HEVC (car head units often lack HEVC decoders). FLV is one continuous download, so it
+     * can't fall behind a live window (Bilibili's fMP4 playlists keep only a few seconds, and the TS
+     * nodes overseas stopped answering in Nov 2026); the caller still checks that a server answers.
      */
     fun streamChoices(data: JSONObject): List<StreamChoice> {
         val streams = data.optJSONObject("playurl_info")?.optJSONObject("playurl")?.optJSONArray("stream") ?: return emptyList()
@@ -299,9 +300,9 @@ object BiliLiveParse {
                     if (urls.isEmpty()) continue
                     val hls = protocol == "http_hls"
                     val formatRank = when {
-                        hls && format == "fmp4" -> 0
-                        hls && format == "ts" -> 1
-                        !hls && format == "flv" -> 2
+                        !hls && format == "flv" -> 0
+                        hls && format == "fmp4" -> 1
+                        hls && format == "ts" -> 2
                         else -> continue
                     }
                     val rank = formatRank + if (c.optString("codec_name") == "avc") 0 else 10
