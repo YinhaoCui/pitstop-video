@@ -464,15 +464,18 @@ class Strings(val language: AppLanguage) {
     val drivePickHint get() = t("Pick songs from your Google Drive: open a folder and select its songs (tap several to pick them all at once). Pitstop sees only the songs you pick. Or add files with the phone's file picker.", "从 Google Drive 选择歌曲：打开文件夹并选中其中的歌曲（可一次选多首）。Pitstop 只能看到你选中的歌曲。也可以用手机的文件选择器添加。")
     val driveAddSongs get() = t("Add from files", "从文件添加")
     val driveClear get() = t("Clear list", "清空列表")
+    val driveAddFolder get() = t("Add a folder", "添加文件夹")
+    val driveFolders get() = t("My folders", "我的文件夹")
+    val driveFolderAdded get() = t("Folder added: find it under My folders. All its songs and subfolders are included.", "已添加文件夹，可在“我的文件夹”中找到，其中的歌曲和子文件夹都会包含在内。")
     val fileNoAccess get() = t("No access · add again", "无法访问 · 请重新添加")
     fun filesNoAccess(n: Int) = t(
-        "$n song(s) can't be read any more: Android lets an app keep access to at most 512 files added with “Add from files”, and drops the oldest. For a big library use “Pick from Google Drive”, which has no limit.",
-        "有 $n 首歌曲已无法读取：安卓最多只允许应用保留 512 个通过“从文件添加”加入的文件，超出时会移除最早的。歌曲较多时请用“从 Google Drive 选择”，它没有数量限制。",
+        "$n song(s) can't be read any more: Android lets an app keep access to at most 512 files added with “Add from files”, and drops the oldest. For a big library use “Add a folder”: one folder covers all its songs, with no limit.",
+        "有 $n 首歌曲已无法读取：安卓最多只允许应用保留 512 个通过“从文件添加”加入的文件，超出时会移除最早的。歌曲较多时请用“添加文件夹”：一个文件夹即可包含其中所有歌曲，没有数量限制。",
     )
     val removeNoAccess get() = t("Remove songs without access", "移除无法访问的歌曲")
     val fileAccessLost get() = t(
-        "Pitstop can no longer read this file: Android keeps access to at most 512 files added with “Add from files”. Add it again, or use “Pick from Google Drive”.",
-        "Pitstop 已无法读取此文件：安卓最多只保留 512 个通过“从文件添加”加入的文件的访问权限。请重新添加，或改用“从 Google Drive 选择”。",
+        "Pitstop can no longer read this file: Android keeps access to at most 512 files added with “Add from files”. Add its folder with “Add a folder” instead.",
+        "Pitstop 已无法读取此文件：安卓最多只保留 512 个通过“从文件添加”加入的文件的访问权限。请改用“添加文件夹”添加它所在的文件夹。",
     )
     val ytMusicSignedOut get() = t("Sign in with Google to add your liked songs and playlists.", "用 Google 登录，加入你喜欢的歌曲和歌单。")
     val biliMusicLogin get() = t("Sign in to Bilibili for higher audio quality.", "登录哔哩哔哩可获得更高音质。")

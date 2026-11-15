@@ -20,4 +20,16 @@ class PickedFilesTest {
         assertFalse(isPermissionLoss(java.io.IOException("timeout")))
         assertFalse(isPermissionLoss(null))
     }
+
+    @Test fun treeFolderIdsRoundTrip() {
+        val tree = "content://com.google.android.apps.docs.storage/tree/acc%3D5%3Bdoc%3Dencoded%3Dabc"
+        val doc = "acc=5;doc=encoded=xyz=="
+        val id = PickedFiles.treeFolderId(tree, doc)
+        assertTrue(id.startsWith(app.pitstop.video.core.COLLECTION_PREFIX))
+        assertEquals(tree to doc, PickedFiles.parseTreeFolder(id))
+        // Other folders (Drive API ids, Google picker folders) aren't tree folders.
+        assertEquals(null, PickedFiles.parseTreeFolder(app.pitstop.video.core.COLLECTION_PREFIX + "1AbC"))
+        assertEquals(null, PickedFiles.parseTreeFolder(app.pitstop.video.core.COLLECTION_PREFIX + "gp:1AbC"))
+        assertEquals(null, PickedFiles.parseTreeFolder("content://x"))
+    }
 }

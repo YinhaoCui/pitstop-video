@@ -93,14 +93,15 @@ fun MusicTab(graph: AppGraph) {
             else -> false
         }
         if (needsLogin) MusicLoginCard(graph, source.id)
-        // Without sign-in, Drive songs can still be picked one by one in the system file picker.
+        // Without sign-in: Google's Drive picker, whole folders, or songs from the system file picker.
         val googlePicked by graph.driveSource.picker.files.collectAsStateWithLifecycle()
+        val driveFolders by graph.driveSource.trees.collectAsStateWithLifecycle()
         if (source.id == SourceId.GDRIVE) {
-            DrivePickerCard(graph, hasFiles = drivePicked.isNotEmpty(), hasGooglePicked = googlePicked.isNotEmpty())
+            DrivePickerCard(graph, hasFiles = drivePicked.isNotEmpty() || driveFolders.isNotEmpty(), hasGooglePicked = googlePicked.isNotEmpty())
         }
         SourceTab(
             graph, source,
-            refreshKey = "$ytSignedIn/$biliLoggedIn/$neteaseSignedIn/$driveSignedIn/${drivePicked.size}/${googlePicked.size}",
+            refreshKey = "$ytSignedIn/$biliLoggedIn/$neteaseSignedIn/$driveSignedIn/${drivePicked.size}/${googlePicked.size}/${driveFolders.size}",
             siblings = sources, pendingQuery = pendingQuery, onPendingConsumed = { pendingQuery = null },
             onSearchIn = { s, q -> selected = s.id; pendingQuery = q },
         )
@@ -122,6 +123,13 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
         if (uris.isNotEmpty()) {
             val lost = graph.driveSource.addPicked(uris)
             if (lost > 0) message = I18n.s.filesNoAccess(lost) to true
+        }
+    }
+    // A whole folder at once: one grant covers every song in it (no tapping each file, no 512 limit).
+    val folderPick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            graph.driveSource.addTree(uri)
+            message = I18n.s.driveFolderAdded to false
         }
     }
     // Songs added with the file picker whose access Android dropped (it keeps 512 per app).
@@ -151,6 +159,7 @@ private fun DrivePickerCard(graph: AppGraph, hasFiles: Boolean, hasGooglePicked:
                         .onFailure { message = I18n.s.drivePickerFailed(it.message) to true }
                 }
             }) { Text(S.driveGooglePick, maxLines = 1) }
+            OutlinedButton(contentPadding = tight, onClick = { folderPick.launch(null) }) { Text(S.driveAddFolder, maxLines = 1) }
             OutlinedButton(contentPadding = tight, onClick = { files.launch(arrayOf("audio/*")) }) { Text(S.driveAddSongs, maxLines = 1) }
         }
         if (lost > 0) {
