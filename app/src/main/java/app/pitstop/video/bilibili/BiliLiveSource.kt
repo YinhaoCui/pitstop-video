@@ -13,7 +13,9 @@ import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.categoryKey
 import app.pitstop.video.core.getString
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -143,15 +145,15 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
         val audioOnly = StreamPolicy.audioOnly
         val maxHeight = StreamPolicy.maxHeight
         val wanted = BiliLiveParse.pickQn(BiliLiveParse.STANDARD_QNS, maxHeight, audioOnly)
-        var choice = BiliLiveParse.chooseStream(playInfo(item.id, wanted))
-            ?: throw UserFacingException(I18n.s.liveUnavailable)
+        var choices = BiliLiveParse.streamChoices(playInfo(item.id, wanted))
+        val first = choices.firstOrNull() ?: throw UserFacingException(I18n.s.liveUnavailable)
         // The first answer tells which qualities this room (and this viewer) may get; ask again if a better fit exists.
-        val fit = BiliLiveParse.pickQn(choice.acceptQn, maxHeight, audioOnly)
-        if (fit != choice.qn && fit in choice.acceptQn) {
+        val fit = BiliLiveParse.pickQn(first.acceptQn, maxHeight, audioOnly)
+        if (fit != first.qn && fit in first.acceptQn) {
             runCatching { playInfo(item.id, fit) }.getOrNull()
-                ?.let(BiliLiveParse::chooseStream)?.let { choice = it }
+                ?.let(BiliLiveParse::streamChoices)?.takeIf { it.isNotEmpty() }?.let { choices = it }
         }
-        val url = BiliCdn.choose(choice.urls, overseas = false) ?: throw UserFacingException(I18n.s.liveUnavailable)
+        val (choice, url) = firstAnswering(choices) ?: throw UserFacingException(I18n.s.liveUnavailable)
         return PlayableStream(
             videoUri = url,
             headers = PLAY_HEADERS,
@@ -159,6 +161,25 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
             audioOnly = audioOnly,
             live = true,
         )
+    }
+
+    /**
+     * The first stream (in [BiliLiveParse.streamChoices] order) whose server answers within a few seconds.
+     * Some Bilibili CDN nodes accept the connection and then never send a byte (seen Nov 2026 with
+     * HLS-TS on overseas `gotcha` nodes), which would leave the player buffering forever.
+     * When none answers in time, the first one is tried anyway (the player shows its own error).
+     */
+    private suspend fun firstAnswering(choices: List<BiliLiveParse.StreamChoice>): Pair<BiliLiveParse.StreamChoice, String>? {
+        val urls = choices.mapNotNull { c -> BiliCdn.choose(c.urls, overseas = false)?.let { c to it } }
+        val probe = http.newBuilder().callTimeout(PROBE_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS).build()
+        return urls.firstOrNull { (_, url) ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val req = Request.Builder().url(url).apply { PLAY_HEADERS.forEach { (k, v) -> header(k, v) } }.build()
+                    probe.newCall(req).execute().use { it.isSuccessful }
+                }.getOrDefault(false)
+            }
+        } ?: urls.firstOrNull()
     }
 
     private suspend fun playInfo(roomId: String, qn: Int): JSONObject {
@@ -221,6 +242,7 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
         const val FEED_FOLLOWING = "following"
         private const val LIVE_API = "https://api.live.bilibili.com"
         private const val LIVE_REFERER = "https://live.bilibili.com/"
+        private const val PROBE_TIMEOUT_S = 5L
         private const val MAX_RECOMMENDED_PAGES = 30
         private const val FOLLOWING_PAGES_PER_CALL = 3
         private const val AREA_PAGE_SIZE = 30
@@ -252,12 +274,16 @@ object BiliLiveParse {
 
     data class StreamChoice(val hls: Boolean, val qn: Int, val acceptQn: List<Int>, val urls: List<String>)
 
+    /** The best of [streamChoices], or null when there is nothing playable. */
+    fun chooseStream(data: JSONObject): StreamChoice? = streamChoices(data).firstOrNull()
+
     /**
-     * Picks one stream from getRoomPlayInfo's `data`: HLS before FLV (ts before fmp4), AVC before HEVC
-     * (car head units often lack HEVC decoders). Returns null when there is nothing playable.
+     * Every playable stream in getRoomPlayInfo's `data`, best first: HLS-fMP4, then HLS-TS, then FLV,
+     * AVC before HEVC (car head units often lack HEVC decoders). fMP4 comes first because the TS
+     * nodes overseas stopped answering (Nov 2026); the caller still checks that a server answers.
      */
-    fun chooseStream(data: JSONObject): StreamChoice? {
-        val streams = data.optJSONObject("playurl_info")?.optJSONObject("playurl")?.optJSONArray("stream") ?: return null
+    fun streamChoices(data: JSONObject): List<StreamChoice> {
+        val streams = data.optJSONObject("playurl_info")?.optJSONObject("playurl")?.optJSONArray("stream") ?: return emptyList()
         val candidates = mutableListOf<Pair<Int, StreamChoice>>()
         for (s in streams.objects()) {
             val protocol = s.optString("protocol_name")
@@ -273,8 +299,8 @@ object BiliLiveParse {
                     if (urls.isEmpty()) continue
                     val hls = protocol == "http_hls"
                     val formatRank = when {
-                        hls && format == "ts" -> 0
-                        hls && format == "fmp4" -> 1
+                        hls && format == "fmp4" -> 0
+                        hls && format == "ts" -> 1
                         !hls && format == "flv" -> 2
                         else -> continue
                     }
@@ -284,7 +310,7 @@ object BiliLiveParse {
                 }
             }
         }
-        return candidates.minByOrNull { it.first }?.second
+        return candidates.sortedBy { it.first }.map { it.second }
     }
 
     /** Room cards from the recommend / by-area / search lists (all share roomid, uid, uname, title, online). */

@@ -36,12 +36,22 @@ class LiveSourcesTest {
         """,
     )
 
-    @Test fun biliPrefersHlsTsAvc() {
+    @Test fun biliPrefersHlsFmp4Avc() {
         val c = BiliLiveParse.chooseStream(playInfo)!!
         assertTrue(c.hls)
         assertEquals(250, c.qn)
         assertEquals(listOf(10000, 400, 250), c.acceptQn)
-        assertEquals("https://d1--ov-gotcha105.bilivideo.com/live-bvc/3/live_2500.m3u8?expires=1&qn=250", c.urls[1])
+        assertEquals("https://d1--ov-gotcha207.bilivideo.com/live-bvc/4/live_2500/index.m3u8?expires=1", c.urls.single())
+    }
+
+    @Test fun biliFallbackOrder() {
+        // fMP4, then TS (AVC), then FLV, HEVC last: the source tries them in this order until a server answers.
+        val urls = BiliLiveParse.streamChoices(playInfo).map { it.urls.last() }
+        assertEquals(4, urls.size)
+        assertTrue(urls[0].contains("/4/live_2500/index.m3u8"))
+        assertTrue(urls[1].contains("/3/live_2500.m3u8"))
+        assertTrue(urls[2].contains(".flv?"))
+        assertTrue(urls[3].contains("minihevc"))
     }
 
     @Test fun biliFallsBackToFlv() {
