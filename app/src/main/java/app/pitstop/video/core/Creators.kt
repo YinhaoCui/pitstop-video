@@ -13,6 +13,9 @@ data class Creator(val source: SourceId, val id: String, val name: String)
 /** Feeds keyed like this list one saved creator's videos. */
 const val CREATOR_FEED_PREFIX = "creator:"
 
+/** The feed that lists the saved creators themselves (each one opens their videos). */
+const val SAVED_CREATORS_FEED = "saved_creators"
+
 /** Saved creators, persisted as JSON in app storage. Shared by the phone UI and the car screens. */
 class CreatorStore(private val file: File) {
     private val _creators = MutableStateFlow(read())
@@ -50,9 +53,15 @@ object CreatorCodec {
     }
 }
 
-/** The source's own feeds, plus one feed per saved creator (only for sources that list creators). */
-fun VideoSource.feedsWith(store: CreatorStore): List<Feed> =
-    feeds() + if (supportsCreators) store.forSource(id).map { Feed(CREATOR_FEED_PREFIX + it.id, it.name) } else emptyList()
+/**
+ * The source's own feeds, plus one "Saved creators" feed when any of its creators are saved (only for
+ * sources that list creators). The creators are a category of their own, not a feed each.
+ */
+fun VideoSource.feedsWith(store: CreatorStore, title: String = I18n.s.savedCreators): List<Feed> =
+    feeds() + if (supportsCreators && store.forSource(id).isNotEmpty()) listOf(Feed(SAVED_CREATORS_FEED, title)) else emptyList()
+
+/** The saved creators of [source] as feeds (one per creator), for lists that open each one. */
+fun CreatorStore.feedsFor(source: SourceId): List<Feed> = forSource(source).map { Feed(CREATOR_FEED_PREFIX + it.id, it.name) }
 
 /** One page of a feed (saved-creator feeds are a single page). */
 suspend fun VideoSource.loadFeedPage(feed: Feed, cursor: String?): FeedPage =

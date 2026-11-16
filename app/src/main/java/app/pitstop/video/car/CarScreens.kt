@@ -1,5 +1,7 @@
 package app.pitstop.video.car
 
+import app.pitstop.video.core.SAVED_CREATORS_FEED
+import app.pitstop.video.core.feedsFor
 import app.pitstop.video.core.feedsWith
 import app.pitstop.video.core.loadFeed
 
@@ -244,11 +246,30 @@ class SourceScreen(carContext: CarContext, private val hub: PlaybackHub, private
             list.addItem(
                 Row.Builder().setTitle(feed.title).setBrowsable(true)
                     .setOnClickListener {
-                        screenManager.push(ResultsScreen(carContext, hub, "$name · ${feed.title}") { source.loadFeed(feed) })
+                        if (feed.key == SAVED_CREATORS_FEED) screenManager.push(CarCreatorsScreen(carContext, hub, source))
+                        else screenManager.push(ResultsScreen(carContext, hub, "$name · ${feed.title}") { source.loadFeed(feed) })
                     }.build()
             )
         }
         return carContext.panel(ListTemplate.Builder().setHeader(backHeader(name)).setSingleList(list.build()).build(), hub)
+    }
+}
+
+/** The saved creators of one source; picking one lists their videos. */
+class CarCreatorsScreen(carContext: CarContext, private val hub: PlaybackHub, private val source: VideoSource) : Screen(carContext) {
+    override fun onGetTemplate(): Template {
+        val t = I18n.s
+        val name = t.sourceName(source.id)
+        val list = ItemList.Builder().setNoItemsMessage(t.noSavedCreators)
+        carContext.graph.creators.feedsFor(source.id).take(carContext.listLimit()).forEach { feed ->
+            list.addItem(
+                Row.Builder().setTitle(feed.title).setBrowsable(true)
+                    .setOnClickListener {
+                        screenManager.push(ResultsScreen(carContext, hub, "$name · ${feed.title}") { source.loadFeed(feed) })
+                    }.build()
+            )
+        }
+        return carContext.panel(ListTemplate.Builder().setHeader(backHeader(t.savedCreators)).setSingleList(list.build()).build(), hub)
     }
 }
 

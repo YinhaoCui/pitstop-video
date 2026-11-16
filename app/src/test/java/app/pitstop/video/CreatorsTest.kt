@@ -1,6 +1,8 @@
 package app.pitstop.video
 
 import app.pitstop.video.core.CREATOR_FEED_PREFIX
+import app.pitstop.video.core.SAVED_CREATORS_FEED
+import app.pitstop.video.core.feedsFor
 import app.pitstop.video.core.Creator
 import app.pitstop.video.core.CreatorCodec
 import app.pitstop.video.core.CreatorStore
@@ -42,15 +44,16 @@ class CreatorsTest {
     }
 
     @Test
-    fun savedCreatorsBecomeFeedsOnlyForTheirSource(): Unit = runBlocking {
+    fun savedCreatorsAreOneCategoryOnlyForTheirSource(): Unit = runBlocking {
         val f = File.createTempFile("creators", ".json").apply { delete() }
         val store = CreatorStore(f).apply { toggle(ychan) }
         val yt = FakeSource(SourceId.YOUTUBE, creators = true)
-        val feeds = yt.feedsWith(store)
-        assertEquals(listOf("popular", CREATOR_FEED_PREFIX + ychan.id), feeds.map { it.key })
-        assertEquals("creator videos", yt.loadFeed(feeds[1]).single().title)
-        assertEquals(1, FakeSource(SourceId.BILIBILI, creators = true).feedsWith(store).size)
-        assertEquals(1, FakeSource(SourceId.YOUTUBE, creators = false).feedsWith(store).size)
+        assertEquals(listOf("popular", SAVED_CREATORS_FEED), yt.feedsWith(store, "Saved").map { it.key })
+        val creatorFeeds = store.feedsFor(SourceId.YOUTUBE)
+        assertEquals(listOf(CREATOR_FEED_PREFIX + ychan.id), creatorFeeds.map { it.key })
+        assertEquals("creator videos", yt.loadFeed(creatorFeeds[0]).single().title)
+        assertEquals(1, FakeSource(SourceId.BILIBILI, creators = true).feedsWith(store, "Saved").size)
+        assertEquals(1, FakeSource(SourceId.YOUTUBE, creators = false).feedsWith(store, "Saved").size)
         f.delete()
     }
 

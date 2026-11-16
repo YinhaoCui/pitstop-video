@@ -92,6 +92,7 @@ import app.pitstop.video.core.VideoQuality
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.formatDuration
 import app.pitstop.video.local.PermissionSource
+import app.pitstop.video.core.SAVED_CREATORS_FEED
 import app.pitstop.video.core.feedsWith
 import app.pitstop.video.core.loadFeed
 import app.pitstop.video.core.loadFeedPage
@@ -643,6 +644,10 @@ internal fun SourceTab(
                 onMore = { s -> if (s.id == source.id) everywhere = false else onSearchIn?.invoke(s, q) },
                 onFolder = { s, item -> if (s.id == source.id) openFolders = openFolders + item else onSearchIn?.invoke(s, q) },
             )
+            return@Column
+        }
+        if (q == null && cat == null && feed?.key == SAVED_CREATORS_FEED) {
+            SavedCreatorsList(graph, source) { c -> creatorId = c.id; creatorName = c.name }
             return@Column
         }
         PagedVideoList(

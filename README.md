@@ -50,14 +50,16 @@ or NetEase instead.
 
 ### Browsing and search
 
-- Feeds, categories, search results and creator pages scroll endlessly.
+- Feeds, categories, search results and creator pages scroll endlessly. Back from the player (or
+  full screen) returns to the same place in the list.
 - *Categories* opens a window with every category of the platform, grouped and filterable.
 - Search suggests while you type and remembers recent searches. The *All platforms* chip searches
   every platform of the tab at once, with *More* for one platform's full results.
 - *Sort & filter* on every list: sort by title, creator or length; filter by length, words or
   platform. Platform-side options too: YouTube upload date / length, Bilibili sort and length,
   uploader sort, radio sort.
-- Tap a creator's name for their latest uploads; saved creators become feed chips on phone and car.
+- Tap a creator's name for their latest uploads. Saved creators are listed together under one
+  *Saved creators* chip (and row in the car), not mixed in with the feeds.
 
 ### Queue and playlists
 

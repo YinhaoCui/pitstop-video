@@ -488,6 +488,8 @@ class Strings(val language: AppLanguage) {
     // Creators
     val saveCreator get() = t("Save", "收藏")
     val savedCreator get() = t("Saved", "已收藏")
+    val savedCreators get() = t("Saved creators", "收藏的作者")
+    val noSavedCreators get() = t("No saved creators. Tap a creator's name, then Save.", "还没有收藏的作者。点作者名字，再点“收藏”。")
 
     // Common
     val playlists get() = t("Playlists", "播放列表")

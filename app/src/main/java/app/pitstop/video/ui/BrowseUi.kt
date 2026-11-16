@@ -62,6 +62,8 @@ import app.pitstop.video.core.S
 import app.pitstop.video.core.Settings
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.DisposableEffect
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -72,6 +74,24 @@ internal sealed interface LoadState {
     /** [next]: cursor of the following page; [moreFailed]: loading it failed, offer a retry. */
     data class Loaded(val items: List<VideoItem>, val next: String? = null, val moreFailed: String? = null) : LoadState
     data class Failed(val message: String) : LoadState
+}
+
+/**
+ * What a list had loaded and where it was scrolled, so coming back to it (from the player, another feed,
+ * a creator's page ...) shows the same items at the same place instead of reloading from the top.
+ * A few lists are kept, for half an hour; a refresh changes the list's key and so starts fresh.
+ */
+private object ListMemory {
+    class Entry(val load: LoadState.Loaded, val index: Int, val offset: Int, val at: Long = System.currentTimeMillis())
+
+    private const val MAX = 12
+    private const val TTL_MS = 30 * 60_000L
+    private val entries = object : LinkedHashMap<Any, Entry>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Any, Entry>) = size > MAX
+    }
+
+    fun get(key: Any): Entry? = entries[key]?.takeIf { System.currentTimeMillis() - it.at < TTL_MS }
+    fun put(key: Any, entry: Entry) { entries[key] = entry }
 }
 
 /**
@@ -92,9 +112,21 @@ internal fun PagedVideoList(
     /** In-app sort & filter of what has loaded (Sort & filter window). */
     view: ListView = ListView(),
 ) {
-    var reload by remember { mutableIntStateOf(0) }
-    var load by remember { mutableStateOf<LoadState>(LoadState.Loading) }
+    var reload by remember(loadKey) { mutableIntStateOf(0) }
+    val remembered = remember(loadKey) { ListMemory.get(loadKey) }
+    var load by remember(loadKey) { mutableStateOf<LoadState>(remembered?.load ?: LoadState.Loading) }
+    val listState = remember(loadKey) { LazyListState(remembered?.index ?: 0, remembered?.offset ?: 0) }
+    // Leaving (the player opens, another feed is picked ...): remember what was loaded and where.
+    DisposableEffect(loadKey) {
+        onDispose {
+            (load as? LoadState.Loaded)?.let {
+                ListMemory.put(loadKey, ListMemory.Entry(it, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset))
+            }
+        }
+    }
     LaunchedEffect(loadKey, reload) {
+        // Back to a remembered list: keep it (Retry or a refresh reloads).
+        if (reload == 0 && remembered != null) return@LaunchedEffect
         load = LoadState.Loading
         load = try {
             page(null).let { p -> LoadState.Loaded(p.items.distinctBy { it.id }, p.next) }
@@ -143,7 +175,7 @@ internal fun PagedVideoList(
             }
           } else Column(modifier.fillMaxSize()) {
            ItemSelectionHeader(graph, selection, shown.mapIndexedNotNull { i, it -> if (source.isFolder(it)) null else "$i:${it.id}" to it })
-           LazyColumn(Modifier.fillMaxSize()) {
+           LazyColumn(Modifier.fillMaxSize(), state = listState) {
             val hidden = l.items.size - shown.size
             if (hidden > 0) item(key = "hidden") {
                 Text(

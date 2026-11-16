@@ -1,6 +1,7 @@
 package app.pitstop.video.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +42,33 @@ import app.pitstop.video.core.VideoSource
 import kotlinx.coroutines.CancellationException
 
 /** One creator's latest videos, with Save (adds them as a quick feed chip, also on the car screen). */
+/** The saved creators of one platform (the "Saved creators" chip); tapping one opens their videos. */
+@Composable
+fun SavedCreatorsList(graph: AppGraph, source: VideoSource, onOpen: (Creator) -> Unit) {
+    val saved by graph.creators.creators.collectAsStateWithLifecycle()
+    val mine = saved.filter { it.source == source.id }
+    if (mine.isEmpty()) {
+        Text(S.noSavedCreators, Modifier.padding(24.dp))
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize()) {
+        itemsIndexed(mine, key = { _, c -> c.id }) { _, c ->
+            Row(
+                Modifier.fillMaxWidth().clickable { onOpen(c) }.padding(start = 20.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(painterResource(R.drawable.ic_person), null, tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    c.name, Modifier.weight(1f).padding(horizontal = 16.dp),
+                    style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                // Un-save without opening the creator.
+                FilledTonalButton(onClick = { graph.creators.toggle(c) }) { Text(S.savedCreator) }
+            }
+        }
+    }
+}
+
 @Composable
 fun CreatorPage(graph: AppGraph, source: VideoSource, id: String, name: String, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
