@@ -37,6 +37,11 @@ class YtNewPipeCategoriesTest {
         assertNull(store["unknown"])
     }
 
+    @Test fun popularLeavesOutLive() = assertEquals(
+        listOf("Trending", "trending_music"),
+        CategoryKeys.popularKiosks(listOf("live", "Trending", "trending_music")),
+    )
+
     @Test fun kioskOrderPutsDefaultFirst() {
         assertEquals(
             listOf("Trending", "live", "trending_gaming", "trending_music"),

@@ -85,7 +85,10 @@ class NewPipePager {
         val cont: (() -> FeedPage)? = if (p.hasNextPage() && next != null) {
             { pages(extractor, next, map, after) }
         } else after
-        return FeedPage(p.items.mapNotNull(map), cont?.let(::keep))
+        val items = p.items.mapNotNull(map)
+        // A page whose items were all filtered out (e.g. only live streams) would look like the end.
+        if (items.isEmpty() && cont != null) return cont()
+        return FeedPage(items, cont?.let(::keep))
     }
 }
 
@@ -103,6 +106,9 @@ object CategoryKeys {
     /** Default kiosk first, the rest alphabetically (stable order across launches). */
     fun kioskOrder(available: Collection<String>, default: String): List<String> =
         listOf(default) + available.filter { it != default }.sorted()
+
+    /** YouTube's Popular feed: every trending list except "live" (Popular is for videos). */
+    fun popularKiosks(kiosks: List<String>): List<String> = kiosks.filter { it != "live" }
 
     /** What a YouTube trending list continues with once it runs out (a topic key for I18n.ytTopicQuery). */
     fun ytKioskFollowUp(kioskId: String): String = when (kioskId) {

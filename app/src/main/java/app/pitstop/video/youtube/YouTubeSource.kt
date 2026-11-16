@@ -87,7 +87,7 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
         return withContext(Dispatchers.IO) {
             when {
                 cursor != null -> pager.resume(cursor)
-                category == null -> kioskChain(kiosks(), 0)
+                category == null -> kioskChain(CategoryKeys.popularKiosks(kiosks()), 0)
                 category.startsWith(CategoryKeys.KIOSK) -> {
                     val kiosk = category.removePrefix(CategoryKeys.KIOSK)
                     kioskPages(kiosk) { searchFirst(I18n.s.ytTopicQuery(CategoryKeys.ytKioskFollowUp(kiosk))) }
@@ -99,17 +99,18 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
 
     /**
      * Popular, endlessly: YouTube's trending lists are short charts, so when one runs out the feed
-     * continues with the next trending kiosk (music, gaming, podcasts, live ...), then with a search.
+     * continues with the next trending kiosk (music, gaming, podcasts ...), then with a search.
+     * Live streams are left out: Popular is for videos ("Live now" stays a category of its own).
      */
     private fun kioskChain(kiosks: List<String>, index: Int): FeedPage {
         val kiosk = kiosks.getOrNull(index) ?: return searchFirst(I18n.s.ytTopicQuery("popular"))
-        return kioskPages(kiosk) { kioskChain(kiosks, index + 1) }
+        return kioskPages(kiosk, ::toVideo) { kioskChain(kiosks, index + 1) }
     }
 
-    private fun kioskPages(kioskId: String, after: () -> FeedPage): FeedPage {
+    private fun kioskPages(kioskId: String, map: (InfoItem) -> VideoItem? = ::toStream, after: () -> FeedPage): FeedPage {
         val extractor = runCatching { ServiceList.YouTube.kioskList.getExtractorById(kioskId, null) }.getOrNull()
             ?: return after()
-        return pager.pages(extractor, null, ::toStream, after)
+        return pager.pages(extractor, null, map, after)
     }
 
     private fun searchFirst(query: String): FeedPage = pager.pages(
@@ -117,6 +118,11 @@ class YouTubeSource(private val account: YouTubeAccount) : VideoSource {
     )
 
     private fun toStream(i: InfoItem): VideoItem? = (i as? StreamInfoItem)?.let(::toItem)
+
+    /** Like [toStream], but not live streams. */
+    private fun toVideo(i: InfoItem): VideoItem? = (i as? StreamInfoItem)
+        ?.takeIf { it.streamType != StreamType.LIVE_STREAM && it.streamType != StreamType.AUDIO_LIVE_STREAM }
+        ?.let(::toItem)
 
     /** Trending lists (YouTube's own kiosks), then topics that are searches in the app language. */
     override suspend fun categories(): List<Category> = withContext(Dispatchers.IO) {
