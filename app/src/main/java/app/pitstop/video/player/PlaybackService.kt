@@ -9,14 +9,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import app.pitstop.video.graph
 import app.pitstop.video.ui.MainActivity
 
@@ -30,7 +22,6 @@ import app.pitstop.video.ui.MainActivity
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
         super.onCreate()
@@ -40,21 +31,15 @@ class PlaybackService : MediaSessionService() {
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val player = HubPlayer(hub)
-        session = MediaSession.Builder(this, player)
+        session = MediaSession.Builder(this, HubPlayer(hub))
             .setSessionActivity(open)
             .build()
-        // Song <-> video changes which buttons are offered (see HubPlayer).
-        scope.launch {
-            hub.state.map { it.isMusic }.distinctUntilChanged().drop(1).collect { player.commandsChanged() }
-        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
         // Only the session is ours; the player belongs to PlaybackHub.
-        scope.cancel()
         session?.release()
         session = null
         super.onDestroy()
@@ -81,38 +66,18 @@ private class HubPlayer(private val hub: PlaybackHub) : ForwardingPlayer(hub.pla
         ).build()
 
     /**
-     * Android Auto's media card (and some notifications) show ±10 s buttons instead of previous / next
-     * whenever seeking back / forward is offered. For songs, skipping tracks is what those buttons should
-     * do, so the 10 s seeks are offered only for videos.
+     * Android Auto's media card (and some notifications) show -10 s / +10 s instead of previous / next
+     * whenever seeking back / forward is offered, so it isn't: those buttons switch songs and videos.
+     * Seeking within an item stays on the phone and car player screens.
      */
-    private fun hidden(command: Int) = hub.state.value.isMusic &&
-        (command == Player.COMMAND_SEEK_BACK || command == Player.COMMAND_SEEK_FORWARD)
+    private val hidden = Player.Commands.Builder().addAll(Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD).build()
 
     override fun getAvailableCommands(): Player.Commands =
-        super.getAvailableCommands().buildUpon().addAll(extra).apply {
-            if (hub.state.value.isMusic) removeAll(Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD)
-        }.build()
+        super.getAvailableCommands().buildUpon().addAll(extra)
+            .removeAll(Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD).build()
 
     override fun isCommandAvailable(command: Int): Boolean =
-        !hidden(command) && (extra.contains(command) || super.isCommandAvailable(command))
-
-    private val listeners = java.util.concurrent.CopyOnWriteArrayList<Player.Listener>()
-
-    override fun addListener(listener: Player.Listener) {
-        listeners += listener
-        super.addListener(listener)
-    }
-
-    override fun removeListener(listener: Player.Listener) {
-        listeners -= listener
-        super.removeListener(listener)
-    }
-
-    /** Tells the session (and so Android Auto / the notification) to read the buttons again. */
-    fun commandsChanged() {
-        val commands = availableCommands
-        listeners.forEach { it.onAvailableCommandsChanged(commands) }
-    }
+        !hidden.contains(command) && (extra.contains(command) || super.isCommandAvailable(command))
 
     override fun hasNextMediaItem(): Boolean = hub.state.value.upNext.isNotEmpty()
     override fun hasPreviousMediaItem(): Boolean = true
