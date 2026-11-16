@@ -1,0 +1,136 @@
+import java.util.Properties
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+}
+
+/**
+ * Opt-in features for personal builds, off in the public release: set them in local.properties or
+ * with -P (e.g. `pitstop.youtubeDownloads=true`).
+ * - pitstop.youtubeDownloads: allow saving YouTube / YouTube Music videos to the device.
+ * - pitstop.driveFullAccess: browse all of Google Drive (restricted drive.readonly scope, see README).
+ */
+val localProps = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+fun optIn(name: String): Boolean = (findProperty(name) ?: localProps.getProperty(name))?.toString()?.toBoolean() ?: false
+
+android {
+    namespace = "app.pitstop.video"
+    compileSdk {
+        version = release(37)
+    }
+
+    defaultConfig {
+        applicationId = "app.pitstop.video"
+        // Android 8.0+: older phones, tablets and most aftermarket Android head units.
+        minSdk = 26
+        targetSdk = 37
+        versionCode = 29
+        versionName = "0.8.0"
+        buildConfigField("boolean", "YOUTUBE_DOWNLOADS", optIn("pitstop.youtubeDownloads").toString())
+        buildConfigField("boolean", "DRIVE_FULL_ACCESS", optIn("pitstop.driveFullAccess").toString())
+        // Settings → Check for updates reads this GitHub repository's latest release (owner/name).
+        val updateRepo = (findProperty("pitstop.updateRepo") ?: localProps.getProperty("pitstop.updateRepo") ?: "YinhaoCui/pitstop-video").toString()
+        buildConfigField("String", "UPDATE_REPO", "\"$updateRepo\"")
+        // -Ppitstop.idSuffix=.dev installs a test copy next to the release (different signing key, own data);
+        // -Ppitstop.appLabel=... names it.
+        findProperty("pitstop.idSuffix")?.let { applicationIdSuffix = it.toString() }
+        manifestPlaceholders["appLabel"] = (findProperty("pitstop.appLabel") ?: "@string/app_name").toString()
+    }
+
+    // How the app reaches Android Auto. Both flavors share the application id (install one or the other;
+    // switching keeps data and sign-ins) and are published side by side in every release.
+    flavorDimensions += "car"
+    productFlavors {
+        // A parked app (the phone UI on the car screen) plus the POI template screen. Works on real cars
+        // however the APK was installed.
+        create("parked") {
+            dimension = "car"
+            isDefault = true
+            buildConfigField("boolean", "NAV_ROUTE", "false")
+            manifestPlaceholders["carCategory"] = "POI"
+            manifestPlaceholders["carPermission"] = "MAP_TEMPLATES"
+            manifestPlaceholders["parkedCategory"] = "android.intent.category.CAR_LAUNCHER"
+            manifestPlaceholders["appCategory"] = "game"
+        }
+        // "Mirror Video": a navigation template app only, full-screen video (NavigationTemplate). Android
+        // Auto shows it on real cars only when installed with tools/install-mirror-video (see update/PlayInstall.kt).
+        create("nav") {
+            dimension = "car"
+            buildConfigField("boolean", "NAV_ROUTE", "true")
+            manifestPlaceholders["carCategory"] = "NAVIGATION"
+            manifestPlaceholders["carPermission"] = "NAVIGATION_TEMPLATES"
+            manifestPlaceholders["parkedCategory"] = "app.pitstop.video.category.NOT_PARKED"
+            manifestPlaceholders["appCategory"] = "video"
+        }
+    }
+
+    // Public releases are signed with a fixed key from the environment (CI secrets), so updates install
+    // over older versions. Without it, release builds fall back to the debug key for personal use.
+    val releaseKeystore = System.getenv("PITSTOP_KEYSTORE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKeystore != null) create("release") {
+            storeFile = releaseKeystore
+            storePassword = System.getenv("PITSTOP_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("PITSTOP_KEY_ALIAS")
+            keyPassword = System.getenv("PITSTOP_KEY_PASSWORD")
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName(if (releaseKeystore != null) "release" else "debug")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        // Required by NewPipeExtractor.
+        isCoreLibraryDesugaringEnabled = true
+    }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+    packaging {
+        resources.excludes += setOf("META-INF/*.kotlin_module", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs.nio)
+
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.exoplayer.hls)
+    implementation(libs.media3.exoplayer.dash)
+    implementation(libs.media3.datasource.okhttp)
+    implementation(libs.media3.ui)
+    implementation(libs.media3.session)
+
+    implementation(libs.car.app)
+    implementation(libs.car.app.projected)
+
+    implementation(libs.okhttp)
+    implementation(libs.coroutines.android)
+    implementation(libs.coroutines.play.services)
+    implementation(libs.newpipe.extractor)
+    implementation(libs.nanojson)
+    implementation(libs.play.services.auth)
+    implementation(libs.zxing.core)
+    implementation(libs.androidx.webkit)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.org.json)
+}

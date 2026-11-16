@@ -1,0 +1,418 @@
+package app.pitstop.video.ui
+
+import app.pitstop.video.BuildConfig
+import app.pitstop.video.core.S
+import app.pitstop.video.core.I18n
+import android.Manifest
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Color as AColor
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.res.painterResource
+import app.pitstop.video.R
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.pitstop.video.AppGraph
+import app.pitstop.video.bilibili.BiliApi
+import app.pitstop.video.netease.NeteaseApi
+import app.pitstop.video.player.DrivingMonitor
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/** The categories of Settings; each opens its own page. */
+private enum class SettingsPage(val icon: Int) {
+    ACCOUNTS(R.drawable.ic_person),
+    PLAYBACK(R.drawable.ic_play),
+    SUBTITLES(R.drawable.ic_subtitles),
+    PLATFORMS(R.drawable.ic_category),
+    CAR(R.drawable.ic_car),
+    APPEARANCE(R.drawable.ic_palette),
+    DOWNLOADS(R.drawable.ic_download),
+    ABOUT(R.drawable.ic_info),
+}
+
+@Composable
+private fun SettingsPage.title() = when (this) {
+    SettingsPage.ACCOUNTS -> S.accounts
+    SettingsPage.PLAYBACK -> S.settingsPlayback
+    SettingsPage.SUBTITLES -> S.subtitlesTitle
+    SettingsPage.PLATFORMS -> S.platforms
+    SettingsPage.CAR -> S.settingsCar
+    SettingsPage.APPEARANCE -> S.settingsAppearance
+    SettingsPage.DOWNLOADS -> S.downloads
+    SettingsPage.ABOUT -> S.settingsAbout
+}
+
+@Composable
+private fun SettingsPage.summary() = when (this) {
+    SettingsPage.ACCOUNTS -> S.settingsAccountsText
+    SettingsPage.PLAYBACK -> S.settingsPlaybackText
+    SettingsPage.SUBTITLES -> S.settingsSubtitlesText
+    SettingsPage.PLATFORMS -> S.settingsPlatformsText
+    SettingsPage.CAR -> S.settingsCarText
+    SettingsPage.APPEARANCE -> S.settingsAppearanceText
+    SettingsPage.DOWNLOADS -> S.settingsDownloadsText
+    SettingsPage.ABOUT -> S.settingsAboutText
+}
+
+/** Settings: a short list of categories; each one opens its own page (Back returns to the list). */
+@Composable
+fun AccountScreen(graph: AppGraph) {
+    var open by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
+    val page = open
+    if (page == null) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+            SettingsPage.entries.forEach { p ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { open = p }.padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(painterResource(p.icon), null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(20.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(p.title(), style = MaterialTheme.typography.titleMedium)
+                        Text(p.summary(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(painterResource(R.drawable.ic_chevron_right), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            VersionFooter()
+        }
+        return
+    }
+    BackHandler { open = null }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { open = null }) { Icon(painterResource(R.drawable.ic_back), S.back) }
+            Text(page.title(), style = MaterialTheme.typography.titleLarge)
+        }
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            when (page) {
+                SettingsPage.ACCOUNTS -> {
+                    YouTubeSection(graph)
+                    HorizontalDivider()
+                    BilibiliSection(graph)
+                    HorizontalDivider()
+                    NeteaseSection(graph)
+                    // Whole-Drive sign-in uses the restricted drive.readonly scope: personal builds only.
+                    if (BuildConfig.DRIVE_FULL_ACCESS) {
+                        HorizontalDivider()
+                        DriveSection(graph)
+                    }
+                }
+                SettingsPage.PLAYBACK -> {
+                    PhonePlaybackSection()
+                    DataSaverSection()
+                }
+                SettingsPage.SUBTITLES -> SubtitleSettingsSection()
+                SettingsPage.PLATFORMS -> PlatformsSection()
+                SettingsPage.CAR -> {
+                    SafetySection(graph)
+                    DrivingAudioSection()
+                    HorizontalDivider()
+                    Text(S.usingInCar, style = MaterialTheme.typography.titleMedium)
+                    Text(if (graph.isAutomotiveOs) S.aaosHelp else S.aaHelp, style = MaterialTheme.typography.bodyMedium)
+                }
+                SettingsPage.APPEARANCE -> {
+                    LanguageSection()
+                    HorizontalDivider()
+                    AppearanceSection()
+                }
+                SettingsPage.DOWNLOADS -> DownloadsSection(graph)
+                SettingsPage.ABOUT -> {
+                    UpdateSection(graph)
+                    VersionFooter()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun YouTubeSection(graph: AppGraph) {
+    val context = LocalContext.current
+    val account = graph.youTubeAccount
+    val signedIn by account.signedIn.collectAsStateWithLifecycle()
+    var remembered by remember(signedIn) { mutableStateOf(account.rememberedChannels) }
+    val webLogin = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+
+    Text(S.youtube, style = MaterialTheme.typography.titleMedium)
+    Text(
+        if (signedIn) S.youtubeSignedIn else S.youtubeSignedOut,
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    if (signedIn) {
+        OutlinedButton(onClick = account::signOut) { Text(S.signOutYoutube) }
+    } else {
+        Text(S.youtubeLoginNote, style = MaterialTheme.typography.bodySmall)
+        Button(onClick = { webLogin.launch(Intent(context, YouTubeLoginActivity::class.java)) }) { Text(S.signInGoogle) }
+        if (remembered > 0) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(S.youtubeRemembered(remembered), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = { account.forgetChannels(); remembered = 0 }) { Text(S.forgetChannels) }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun BilibiliSection(graph: AppGraph) {
+    val context = LocalContext.current
+    val loggedIn by graph.biliCookies.loggedIn.collectAsStateWithLifecycle()
+    var name by remember { mutableStateOf<String?>(null) }
+    var showQr by remember { mutableStateOf(false) }
+    val webLogin = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+
+    LaunchedEffect(loggedIn) {
+        name = if (loggedIn) runCatching { graph.biliApi.profile().name }.getOrNull() else null
+    }
+
+    Text(S.bilibili, style = MaterialTheme.typography.titleMedium)
+    Text(
+        if (loggedIn) S.biliSignedIn(name) else S.biliSignedOut,
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    if (loggedIn) {
+        OutlinedButton(onClick = { graph.biliCookies.logout() }) { Text(S.signOutBili) }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { webLogin.launch(Intent(context, BiliLoginActivity::class.java)) }) { Text(S.signInWeb) }
+            OutlinedButton(onClick = { showQr = true }) { Text(S.signInQr) }
+        }
+    }
+    if (showQr) BiliQrDialog(graph.biliApi) { showQr = false }
+}
+
+@Composable
+private fun BiliQrDialog(api: BiliApi, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var qr by remember { mutableStateOf<BiliApi.QrCode?>(null) }
+    var status by remember { mutableStateOf(I18n.s.qrGenerating) }
+
+    LaunchedEffect(Unit) {
+        val code = runCatching { api.qrGenerate() }.getOrElse { status = I18n.s.failed(it.message); return@LaunchedEffect }
+        qr = code
+        status = I18n.s.qrScanHint
+        repeat(90) {
+            delay(2_000)
+            when (runCatching { api.qrPoll(code.key) }.getOrNull()) {
+                BiliApi.QrState.DONE -> { onDismiss(); return@LaunchedEffect }
+                BiliApi.QrState.SCANNED -> status = I18n.s.qrScanned
+                BiliApi.QrState.EXPIRED -> { status = I18n.s.qrExpired; return@LaunchedEffect }
+                else -> Unit
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(S.qrTitle) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                qr?.let { code ->
+                    val bmp = remember(code.url) { qrBitmap(code.url) }
+                    Image(bmp.asImageBitmap(), S.qrCode, Modifier.size(220.dp))
+                }
+                Text(status)
+            }
+        },
+        confirmButton = {
+            qr?.let { code ->
+                TextButton(onClick = {
+                    val deepLink = Uri.parse("bilibili://browser?url=" + Uri.encode(code.url))
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, deepLink)) }
+                }) { Text(S.openInBili) }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(S.close) } },
+    )
+}
+
+/** NetEase Cloud Music: web page login (phone + SMS / password) or QR code from another phone. */
+@Composable
+internal fun NeteaseSection(graph: AppGraph) {
+    val context = LocalContext.current
+    val signedIn by graph.neteaseCookies.signedIn.collectAsStateWithLifecycle()
+    var name by remember { mutableStateOf<String?>(null) }
+    var showQr by remember { mutableStateOf(false) }
+    val webLogin = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+    LaunchedEffect(signedIn) {
+        name = if (signedIn) runCatching { graph.neteaseApi.account()?.second }.getOrNull() else null
+    }
+    Text(S.netease, style = MaterialTheme.typography.titleMedium)
+    Text(if (signedIn) S.neteaseSignedIn(name) else S.neteaseSignedOut, style = MaterialTheme.typography.bodyMedium)
+    if (signedIn) {
+        OutlinedButton(onClick = { graph.neteaseApi.logout() }) { Text(S.signOutNetease) }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { webLogin.launch(Intent(context, NeteaseLoginActivity::class.java)) }) { Text(S.signInPhoneWeb) }
+            OutlinedButton(onClick = { showQr = true }) { Text(S.signInQr) }
+        }
+    }
+    if (showQr) NeteaseQrDialog(graph) { showQr = false }
+}
+
+@Composable
+private fun NeteaseQrDialog(graph: AppGraph, onDismiss: () -> Unit) {
+    val api = graph.neteaseApi
+    var content by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf(I18n.s.qrGenerating) }
+    LaunchedEffect(Unit) {
+        val key = runCatching { api.qrKey() }.getOrElse { status = I18n.s.failed(it.message); return@LaunchedEffect }
+        content = api.qrContent(key)
+        status = I18n.s.neteaseQrHint
+        repeat(90) {
+            delay(2_000)
+            when (runCatching { api.qrPoll(key) }.getOrNull()) {
+                NeteaseApi.QrState.DONE -> { onDismiss(); return@LaunchedEffect }
+                NeteaseApi.QrState.SCANNED -> status = I18n.s.qrScanned
+                NeteaseApi.QrState.EXPIRED -> { status = I18n.s.qrExpired; return@LaunchedEffect }
+                else -> Unit
+            }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(S.netease) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                content?.let { c ->
+                    val bmp = remember(c) { qrBitmap(c) }
+                    Image(bmp.asImageBitmap(), S.qrCode, Modifier.size(220.dp))
+                }
+                Text(status)
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(S.close) } },
+    )
+}
+
+/** Google Drive (read-only) for music in Drive folders. */
+@Composable
+internal fun DriveSection(graph: AppGraph) {
+    val account = graph.driveAccount
+    val signedIn by account.signedIn.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var message by remember { mutableStateOf<String?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        runCatching { account.completeSignIn(res.data) }.onFailure { message = it.message }
+    }
+    Text(S.googleDrive, style = MaterialTheme.typography.titleMedium)
+    Text(if (signedIn) S.driveSignedIn else S.driveSignedOut, style = MaterialTheme.typography.bodyMedium)
+    if (signedIn) {
+        OutlinedButton(onClick = account::signOut) { Text(S.signOutDrive) }
+    } else {
+        Button(onClick = {
+            scope.launch {
+                runCatching { account.beginSignIn() }
+                    .onSuccess { pi -> pi?.let { launcher.launch(IntentSenderRequest.Builder(it.intentSender).build()) } }
+                    .onFailure { message = I18n.s.googleFailed(it.message) }
+            }
+        }) { Text(S.signInGoogle) }
+    }
+    message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+}
+
+private fun qrBitmap(text: String, size: Int = 512): Bitmap {
+    val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size)
+    val pixels = IntArray(size * size) { i -> if (matrix[i % size, i / size]) AColor.BLACK else AColor.WHITE }
+    return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
+}
+
+@Composable
+private fun SafetySection(graph: AppGraph) {
+    val signal by graph.driving.signal.collectAsStateWithLifecycle()
+    val moving by graph.driving.moving.collectAsStateWithLifecycle()
+    var hasLocation by remember { mutableStateOf(graph.driving.hasLocationPermission()) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        hasLocation = graph.driving.hasLocationPermission()
+    }
+
+    Text(S.safetyTitle, style = MaterialTheme.typography.titleMedium)
+    Text(
+        S.safetyText,
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    Text(
+        S.speedSource(
+            when (signal) {
+                DrivingMonitor.Signal.CAR -> S.speedCar
+                DrivingMonitor.Signal.PHONE_GPS -> S.speedGps
+                DrivingMonitor.Signal.NONE -> S.speedNone
+            },
+            moving,
+        ),
+        style = MaterialTheme.typography.bodySmall,
+    )
+    if (!hasLocation) {
+        Button(onClick = {
+            launcher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        }) { Text(S.allowLocation) }
+    }
+
+    // Head units / car tablets: this screen itself is in the car, so the lock applies here too.
+    var inCar by remember { mutableStateOf(graph.inCarDevice) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(S.inCarTitle, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (graph.isAutomotiveOs) S.inCarAaos else S.inCarText,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Switch(
+            checked = inCar,
+            enabled = !graph.isAutomotiveOs,
+            onCheckedChange = { on ->
+                graph.inCarDevice = on
+                inCar = graph.inCarDevice
+                if (on) graph.driving.startPhoneGps("device") else graph.driving.stopPhoneGps("device")
+            },
+        )
+    }
+}
