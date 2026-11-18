@@ -21,7 +21,7 @@ Car App Library 1.7 for the car. See README.md for the architecture overview.
   `I18n.s.x` elsewhere. Never hard-code UI strings.
 - Every source implements `core/VideoSource`; add new feeds there instead of special-casing the UI.
 - Two product flavors, same application id, both in every release (`PitstopVideo-*.apk` "Pitstop
-  Video" and `MirrorVideo-*.apk` "Mirror Video", its own name via `src/nav/res` and `I18n.appName`;
+  Video" and `PitstopVideo-*.mirror.apk` "Mirror Video", its own name via `src/nav/res` and `I18n.appName`;
   the updater picks its own via `Updates.isNavApk`, `BuildConfig.NAV_ROUTE`):
   - `parked`: parked app + POI template app (`MAP_TEMPLATES`); car root is `MapWithContentTemplate`.
   - `nav`: navigation template app only (`NAVIGATION_TEMPLATES`, parked activity disabled); car root

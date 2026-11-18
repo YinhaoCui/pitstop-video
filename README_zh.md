@@ -225,16 +225,16 @@ Android Auto 只有在开发者模式允许时，才会显示不是来自 Play �
 
 - `PitstopVideo-vX.Y.Z.apk` → **Pitstop Video**：**停车应用**加下面介绍的模板界面。怎么安装都可以；
   在*设置 → 更新与关于*里自行更新。
-- `MirrorVideo-vX.Y.Z.apk` → **Mirror Video**：只作为**导航**模板应用，视频**全屏**（Android Auto 的
+- `PitstopVideo-vX.Y.Z.mirror.apk` → **Mirror Video**：只作为**导航**模板应用，视频**全屏**（Android Auto 的
   按钮浮在视频上方并会自动淡出；点一下即可再出现）。车辆开动时视频照样停止。**每次安装都需要电脑：**
   真实车辆只在安装来源记录为 Play 商店时才列出它，而安卓只会为通过 adb 发起的安装记录这一点。
   打开 USB 调试、连接手机后运行
 
   ```bash
-  tools/install-mirror-video.sh MirrorVideo-vX.Y.Z.apk
+  tools/install-mirror-video.sh PitstopVideo-vX.Y.Z.mirror.apk
   ```
 
-  （Windows 上用 Git Bash，或 `powershell -File tools/install-mirror-video.ps1 MirrorVideo-vX.Y.Z.apk`），
+  （Windows 上用 Git Bash，或 `powershell -File tools/install-mirror-video.ps1 PitstopVideo-vX.Y.Z.mirror.apk`），
   然后在手机上确认。每次更新也要这样做：直接在手机上安装 APK（即使是覆盖 Mirror Video）会让 Android Auto
   再次隐藏它。Mirror Video 会提示有新版本并给出发布页链接，但不会自行安装。*设置 → 更新与关于 →
   Android Auto* 会显示车上是否会列出它。

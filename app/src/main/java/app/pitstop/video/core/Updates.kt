@@ -84,9 +84,13 @@ object Updates {
 
     /**
      * True for the navigation build's APK. Every release carries both builds:
-     * `PitstopVideo-v1.2.3.apk` (parked, "Pitstop Video") and `MirrorVideo-v1.2.3.apk` (nav, "Mirror Video").
+     * `PitstopVideo-v1.2.3.apk` (parked, "Pitstop Video") and `PitstopVideo-v1.2.3.mirror.apk` (nav,
+     * "Mirror Video"). The nav name must sort after the parked one: GitHub lists assets by name, and
+     * versions before 0.8.0 take the first `.apk` of a release. (0.8.0 was first published with
+     * `MirrorVideo-v0.8.0.apk`, still recognised.)
      */
-    fun isNavApk(name: String): Boolean = name.startsWith("MirrorVideo", ignoreCase = true)
+    fun isNavApk(name: String): Boolean =
+        name.endsWith(".mirror.apk", ignoreCase = true) || name.startsWith("MirrorVideo", ignoreCase = true)
 
     /**
      * The release in a `GET /repos/{owner}/{repo}/releases/latest` answer, or null when it is a draft,

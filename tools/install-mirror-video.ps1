@@ -1,6 +1,6 @@
 # Installs (or updates) Mirror Video so real cars' Android Auto lists it. Windows version of
 # install-mirror-video.sh (see there for why): run it for the first install and for every update.
-# Usage: powershell -File tools/install-mirror-video.ps1 MirrorVideo-vX.Y.Z.apk   (phone connected, USB debugging on)
+# Usage: powershell -File tools/install-mirror-video.ps1 PitstopVideo-vX.Y.Z.mirror.apk   (phone connected, USB debugging on)
 param([Parameter(Mandatory = $true)][string]$Apk)
 $ErrorActionPreference = 'Stop'
 $adb = if ($env:ADB) { $env:ADB } else { 'adb' }

@@ -74,14 +74,25 @@ class UpdatesTest {
     }
 
     @Test fun eachBuildPicksItsOwnApk() {
-        val both = """{"name":"MirrorVideo-v0.6.4.apk","size":7,"browser_download_url":"https://x/MirrorVideo-v0.6.4.apk"},$APK"""
+        // Listed in GitHub's (name) order, with the nav APK after the parked one.
+        val both = """$APK,{"name":"PitstopVideo-v0.6.4.mirror.apk","size":7,"browser_download_url":"https://x/PitstopVideo-v0.6.4.mirror.apk"}"""
         assertEquals("PitstopVideo-v0.6.4.apk", Updates.release(json(assets = both))!!.apkName)
-        assertEquals("MirrorVideo-v0.6.4.apk", Updates.release(json(assets = both), nav = true)!!.apkName)
+        assertEquals("PitstopVideo-v0.6.4.mirror.apk", Updates.release(json(assets = both), nav = true)!!.apkName)
         // A release from before the nav build: the nav app finds nothing to update to (never the parked APK).
         assertNull(Updates.release(json(), nav = true))
         assertEquals("0.6.4", Updates.newest(JSONArray().put(json(assets = both)), allowPreRelease = false, nav = true)!!.version)
-        assertTrue(Updates.isNavApk("MirrorVideo-claude-beta.apk"))
+        assertTrue(Updates.isNavApk("PitstopVideo-claude-beta.mirror.apk"))
+        assertTrue(Updates.isNavApk("MirrorVideo-v0.8.0.apk"))
         assertFalse(Updates.isNavApk("PitstopVideo-v0.6.4.apk"))
+    }
+
+    /** Versions before 0.8.0 take the first `.apk`: the parked APK's name has to sort first. */
+    @Test fun parkedApkSortsFirstForOldUpdaters() {
+        for (ref in listOf("v0.8.1", "v1.0.0-beta.2", "claude-some-branch")) {
+            val names = listOf("PitstopVideo-$ref.mirror.apk", "PitstopVideo-$ref.apk")
+            assertEquals("PitstopVideo-$ref.apk", names.sorted().first())
+            assertEquals("PitstopVideo-$ref.apk", names.sortedBy { it.lowercase() }.first())
+        }
     }
 
     private companion object {

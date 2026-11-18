@@ -63,9 +63,9 @@ jobs:
           # name (Updates.isNavApk). Branch builds (workflow_dispatch) may have a "/" in the name.
           ref="${GITHUB_REF_NAME////-}"
           cp app/build/outputs/apk/parked/release/app-parked-release.apk "PitstopVideo-$ref.apk"
-          cp app/build/outputs/apk/nav/release/app-nav-release.apk "MirrorVideo-$ref.apk"
+          cp app/build/outputs/apk/nav/release/app-nav-release.apk "PitstopVideo-$ref.mirror.apk"
           echo "APK=PitstopVideo-$ref.apk" >> "$GITHUB_ENV"
-          echo "APK_NAV=MirrorVideo-$ref.apk" >> "$GITHUB_ENV"
+          echo "APK_NAV=PitstopVideo-$ref.mirror.apk" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:

@@ -6,10 +6,10 @@
 # installer with the Play Store's package name. `adb install -i com.android.vending` is not enough.
 # Run this for the first install and for every update (an install from the phone resets it).
 #
-# Usage: tools/install-mirror-video.sh MirrorVideo-vX.Y.Z.apk   (phone connected with USB debugging)
+# Usage: tools/install-mirror-video.sh PitstopVideo-vX.Y.Z.mirror.apk   (phone connected with USB debugging)
 # Windows: run it in Git Bash, or use tools/install-mirror-video.ps1.
 set -eu
-APK="${1:?usage: $0 MirrorVideo-vX.Y.Z.apk}"
+APK="${1:?usage: $0 PitstopVideo-vX.Y.Z.mirror.apk}"
 ADB="${ADB:-adb}"
 export MSYS_NO_PATHCONV=1   # Git Bash: keep /sdcard paths as they are
 NAME="mirror-video-install.apk"

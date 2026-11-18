@@ -257,17 +257,17 @@ its own kind. Not using Android Auto? Take *Pitstop Video*.
 
 - `PitstopVideo-vX.Y.Z.apk` → **Pitstop Video**: the **parked app** plus the template screen
   described below. Install it any way you like; it updates itself from *Settings → Updates & about*.
-- `MirrorVideo-vX.Y.Z.apk` → **Mirror Video**: a **navigation** template app only, with the video
+- `PitstopVideo-vX.Y.Z.mirror.apk` → **Mirror Video**: a **navigation** template app only, with the video
   **full screen** (Android Auto's buttons float over it and fade out; tap to bring them back). Video
   still stops when the car moves. **It needs a computer to install, every time:** real cars only list
   it when the Play Store is recorded as its installer, and Android only records that for an install
   started over adb. With USB debugging on and the phone connected, run
 
   ```bash
-  tools/install-mirror-video.sh MirrorVideo-vX.Y.Z.apk
+  tools/install-mirror-video.sh PitstopVideo-vX.Y.Z.mirror.apk
   ```
 
-  (Git Bash on Windows, or `powershell -File tools/install-mirror-video.ps1 MirrorVideo-vX.Y.Z.apk`)
+  (Git Bash on Windows, or `powershell -File tools/install-mirror-video.ps1 PitstopVideo-vX.Y.Z.mirror.apk`)
   and confirm on the phone. Do the same for every update: installing an APK on the phone itself,
   even over Mirror Video, makes Android Auto hide it again. Mirror Video tells you when a new
   version is out and links the release page, but doesn't install it. *Settings → Updates & about →
