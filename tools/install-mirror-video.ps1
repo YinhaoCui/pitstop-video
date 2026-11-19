@@ -19,7 +19,8 @@ for ($i = 0; $i -lt 10 -and -not $id; $i++) {
 }
 if (-not $id) { throw "The phone didn't index $remote; try again." }
 
-& $adb shell am start -a android.intent.action.INSTALL_PACKAGE `
+# --grant-read-uri-permission: without it the installer may get no access to the file and silently close.
+& $adb shell am start --grant-read-uri-permission -a android.intent.action.INSTALL_PACKAGE `
     -d "content://media/external/downloads/$id" -t application/vnd.android.package-archive `
     --ez android.intent.extra.NOT_UNKNOWN_SOURCE true `
     --es android.intent.extra.INSTALLER_PACKAGE_NAME com.android.vending | Out-Null

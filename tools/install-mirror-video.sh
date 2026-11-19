@@ -12,6 +12,8 @@ set -eu
 APK="${1:?usage: $0 PitstopVideo-vX.Y.Z.mirror.apk}"
 ADB="${ADB:-adb}"
 export MSYS_NO_PATHCONV=1   # Git Bash: keep /sdcard paths as they are
+# ...which also stops /c/... converting for adb.exe, so convert the local path ourselves.
+if command -v cygpath >/dev/null 2>&1; then APK=$(cygpath -m "$APK"); fi
 NAME="mirror-video-install.apk"
 REMOTE="/sdcard/Download/$NAME"
 
@@ -27,7 +29,8 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 done
 [ -n "$ID" ] || { echo "The phone didn't index $REMOTE; try again." >&2; exit 1; }
 
-"$ADB" shell am start -a android.intent.action.INSTALL_PACKAGE \
+# --grant-read-uri-permission: without it the installer may get no access to the file and silently close.
+"$ADB" shell am start --grant-read-uri-permission -a android.intent.action.INSTALL_PACKAGE \
   -d "content://media/external/downloads/$ID" -t application/vnd.android.package-archive \
   --ez android.intent.extra.NOT_UNKNOWN_SOURCE true \
   --es android.intent.extra.INSTALLER_PACKAGE_NAME com.android.vending >/dev/null
