@@ -68,16 +68,17 @@ class CarPresentation(
     private lateinit var progress: ProgressBar
     private lateinit var time: TextView
     private lateinit var upNext: LinearLayout
-    private lateinit var lockOverlay: TextView
     private lateinit var fullProgress: ProgressBar
     private lateinit var overlayInfo: LinearLayout
     private lateinit var overlayTitle: TextView
     private lateinit var overlayAuthor: TextView
-    /** Songs: artwork + title instead of an empty video area. */
+    /** Songs, and videos while driving (no picture): artwork + title instead of an empty video area. */
     private lateinit var musicView: LinearLayout
     private lateinit var musicArt: android.widget.ImageView
     private lateinit var musicTitle: TextView
     private lateinit var musicAuthor: TextView
+    /** While driving: why there is no picture. */
+    private lateinit var musicNote: TextView
     private var musicArtFor: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -125,6 +126,7 @@ class CarPresentation(
         }
         musicTitle = text(ctx, 24f, bold = true).apply { maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END }
         musicAuthor = text(ctx, 17f).apply { setTextColor(0xFFE6DDF5.toInt()); maxLines = 1 }
+        musicNote = text(ctx, 15f).apply { setTextColor(0xFF2DD4BF.toInt()); visibility = View.GONE }
         musicView = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -136,6 +138,7 @@ class CarPresentation(
                 setPadding(dp(28), 0, 0, 0)
                 addView(musicTitle)
                 addView(musicAuthor, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(6) })
+                addView(musicNote, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(18) })
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             visibility = View.GONE
         }
@@ -172,16 +175,9 @@ class CarPresentation(
             addView(videoFrame)
             addView(panel)
         }
-        lockOverlay = text(ctx, 22f, bold = true).apply {
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.BLACK)
-            text = I18n.s.pausedMoving
-            visibility = View.GONE
-        }
         val root = FrameLayout(ctx).apply {
             setBackgroundColor(Color.BLACK)
             addView(content, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-            addView(lockOverlay, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         }
         setContentView(root)
 
@@ -302,15 +298,17 @@ class CarPresentation(
             text = "—"; setTextColor(0xFF808080.toInt()); setPadding(0, dp(10), 0, 0)
         })
 
-        lockOverlay.text = if (s.audioOnly) {
-            "${I18n.s.audioOnlyDriving}\n\n${item?.title.orEmpty()}\n\n${I18n.s.audioOnlyPark}"
-        } else {
-            I18n.s.pausedMoving
+        // Parked-only lock: while driving the picture is never shown. A video becomes a "now playing"
+        // card (cover, title, why there is no picture); music looks the same parked or driving.
+        val locked = s.drivingLocked && !s.isMusic
+        val cover = s.isMusic || locked
+        playerView.visibility = if (locked) View.INVISIBLE else View.VISIBLE
+        musicView.visibility = if (cover) View.VISIBLE else View.GONE
+        musicNote.visibility = if (locked) View.VISIBLE else View.GONE
+        if (locked) {
+            musicNote.text = if (s.audioOnly) "${I18n.s.audioOnlyDriving}\n${I18n.s.audioOnlyPark}" else I18n.s.pausedMoving
         }
-        // Music has no picture: it keeps playing (and showing its cover) while driving.
-        lockOverlay.visibility = if (s.drivingLocked && !s.isMusic) View.VISIBLE else View.GONE
-        musicView.visibility = if (s.isMusic) View.VISIBLE else View.GONE
-        if (s.isMusic && item != null) {
+        if (cover && item != null) {
             musicTitle.text = item.title
             musicAuthor.text = item.author.orEmpty()
             val key = item.thumbnailUrl ?: item.id

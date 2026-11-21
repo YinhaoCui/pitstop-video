@@ -114,7 +114,12 @@ class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
             )
             .build()
         // Right column (max 4): seek back, seek forward, subtitles on/off, shrink to Browse.
-        val side = ActionStrip.Builder()
+        // While driving there is no picture (see CarPresentation): previous / next instead.
+        val side = if (s.drivingLocked) ActionStrip.Builder()
+            .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_skip_previous)).setOnClickListener { hub.previous() }.build())
+            .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_skip_next)).setOnClickListener { hub.next() }.build())
+            .build()
+        else ActionStrip.Builder()
             .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_replay_10)).setOnClickListener { hub.seekBy(-10_000) }.build())
             .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_forward_10)).setOnClickListener { hub.seekBy(10_000) }.build())
             .addAction(
