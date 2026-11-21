@@ -1,9 +1,20 @@
 # Installs (or updates) Mirror Video so real cars' Android Auto lists it. Windows version of
 # install-mirror-video.sh (see there for why): run it for the first install and for every update.
-# Usage: powershell -File tools/install-mirror-video.ps1 PitstopVideo-vX.Y.Z.mirror.apk   (phone connected, USB debugging on)
-param([Parameter(Mandatory = $true)][string]$Apk)
+# Usage: powershell -File tools/install-mirror-video.ps1 [PitstopVideo-vX.Y.Z.mirror.apk]   (phone connected, USB debugging on)
+# Without a file it downloads the newest release's Mirror Video APK.
+param([string]$Apk)
 $ErrorActionPreference = 'Stop'
 $adb = if ($env:ADB) { $env:ADB } else { 'adb' }
+$repo = if ($env:PITSTOP_REPO) { $env:PITSTOP_REPO } else { 'YinhaoCui/pitstop-video' }
+if (-not $Apk) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'install-mirror-video' }
+    $asset = $release.assets | Where-Object { $_.name -like '*.mirror.apk' } | Select-Object -First 1
+    if (-not $asset) { throw "No Mirror Video APK in the newest release of $repo." }
+    $Apk = Join-Path $env:TEMP $asset.name
+    Write-Output "Downloading $($asset.name)..."
+    Invoke-WebRequest $asset.browser_download_url -OutFile $Apk -UseBasicParsing
+}
 $name = 'mirror-video-install.apk'
 $remote = "/sdcard/Download/$name"
 

@@ -6,11 +6,21 @@
 # installer with the Play Store's package name. `adb install -i com.android.vending` is not enough.
 # Run this for the first install and for every update (an install from the phone resets it).
 #
-# Usage: tools/install-mirror-video.sh PitstopVideo-vX.Y.Z.mirror.apk   (phone connected with USB debugging)
+# Usage: tools/install-mirror-video.sh [PitstopVideo-vX.Y.Z.mirror.apk]   (phone connected with USB debugging)
+# Without a file it downloads the newest release's Mirror Video APK (needs curl).
 # Windows: run it in Git Bash, or use tools/install-mirror-video.ps1.
 set -eu
-APK="${1:?usage: $0 PitstopVideo-vX.Y.Z.mirror.apk}"
+APK="${1:-}"
 ADB="${ADB:-adb}"
+REPO="${PITSTOP_REPO:-YinhaoCui/pitstop-video}"
+if [ -z "$APK" ]; then
+  URL=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" |
+        sed -n 's/.*"browser_download_url": *"\([^"]*\.mirror\.apk\)".*/\1/p' | head -1)
+  [ -n "$URL" ] || { echo "No Mirror Video APK in the newest release of $REPO." >&2; exit 1; }
+  APK="${TMPDIR:-/tmp}/${URL##*/}"
+  echo "Downloading ${URL##*/}..."
+  curl -fL --progress-bar -o "$APK" "$URL"
+fi
 export MSYS_NO_PATHCONV=1   # Git Bash: keep /sdcard paths as they are
 # ...which also stops /c/... converting for adb.exe, so convert the local path ourselves.
 if command -v cygpath >/dev/null 2>&1; then APK=$(cygpath -m "$APK"); fi
