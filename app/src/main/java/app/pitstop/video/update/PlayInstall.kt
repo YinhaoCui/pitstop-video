@@ -12,8 +12,8 @@ import android.os.Build
  * `ACTION_INSTALL_PACKAGE` with `EXTRA_INSTALLER_PACKAGE_NAME=com.android.vending`, sent by the shell
  * (`tools/install-mirror-video.sh`). Sent by the app itself, the extra is ignored and the installer
  * becomes `com.google.android.packageinstaller`; `adb install -i com.android.vending` doesn't count
- * either (initiated by `com.android.shell`). Any install from the phone resets it, so the app never
- * installs its own updates.
+ * either (initiated by `com.android.shell`). Any normal install from the phone resets it, so the app
+ * only installs its own updates through Shizuku ([ShizukuInstall]: the same intent, sent by the shell user).
  */
 object PlayInstall {
     private const val PLAY_STORE = "com.android.vending"

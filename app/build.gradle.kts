@@ -130,6 +130,9 @@ dependencies {
     implementation(libs.play.services.auth)
     implementation(libs.zxing.core)
     implementation(libs.androidx.webkit)
+    // Mirror Video's on-phone update (update/ShizukuInstall.kt).
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
 
     testImplementation(libs.junit)
     testImplementation(libs.org.json)

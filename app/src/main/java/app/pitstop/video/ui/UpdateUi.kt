@@ -45,8 +45,10 @@ fun UpdateSection(graph: AppGraph, inDialog: Boolean = false) {
     val auto by updater.autoCheck.collectAsStateWithLifecycle()
     val beta by updater.beta.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // Mirror Video installs through Shizuku only; looked at again on resume (the user may just have started it).
+    var canInstall by remember { mutableStateOf(updater.canInstall) }
     // Back from "Install unknown apps": carry on if it was allowed.
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { updater.resumeAfterPermission() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { updater.resumeAfterPermission(); canInstall = updater.canInstall }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (!inDialog) Text(S.appUpdates, style = MaterialTheme.typography.titleMedium)
@@ -78,8 +80,8 @@ fun UpdateSection(graph: AppGraph, inDialog: Boolean = false) {
                     Button(onClick = { runCatching { context.startActivity(updater.permissionIntent()) } }) { Text(S.openSettings) }
                     OutlinedButton(onClick = updater::resumeAfterPermission) { Text(S.continueLabel) }
                 }
-                release != null && !updater.canInstall -> {
-                    // Mirror Video: installing here would hide it from Android Auto; it's updated with the adb script.
+                release != null && !canInstall -> {
+                    // Mirror Video without Shizuku: installing here would hide it from Android Auto.
                     Button(onClick = { openPage(context, release) }) { Text(S.releasePage) }
                 }
                 release != null -> {
@@ -89,10 +91,10 @@ fun UpdateSection(graph: AppGraph, inDialog: Boolean = false) {
                 else -> OutlinedButton(onClick = updater::startCheck, enabled = !busy) { Text(S.checkForUpdates) }
             }
         }
-        if (!updater.canInstall && state is State.Available) {
+        if (!canInstall && state is State.Available) {
             Text(S.mirrorUpdateHow, style = MaterialTheme.typography.bodySmall)
         }
-        if (!inDialog && BuildConfig.NAV_ROUTE) CarSetup()
+        if (!inDialog && BuildConfig.NAV_ROUTE) CarSetup(canInstall, onFix = updater::startRepair)
         if (!inDialog) Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(S.updateAuto, style = MaterialTheme.typography.bodyLarge)
@@ -112,7 +114,7 @@ fun UpdateSection(graph: AppGraph, inDialog: Boolean = false) {
 
 /** Mirror Video: whether Android Auto will list it (Play Store recorded as installer, see [PlayInstall]). */
 @Composable
-private fun CarSetup() {
+private fun CarSetup(canInstall: Boolean, onFix: () -> Unit) {
     val context = LocalContext.current
     var ready by remember { mutableStateOf(PlayInstall.isRecordedAsPlay(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { ready = PlayInstall.isRecordedAsPlay(context) }
@@ -121,6 +123,7 @@ private fun CarSetup() {
         Text(S.carSetupReady, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
     } else {
         Text(S.carSetupNeeded, style = MaterialTheme.typography.bodySmall)
+        if (canInstall) OutlinedButton(onClick = onFix) { Text(S.carSetupFix) }
     }
 }
 

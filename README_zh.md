@@ -226,18 +226,22 @@ Android Auto 只有在开发者模式允许时，才会显示不是来自 Play �
 - `PitstopVideo-vX.Y.Z.apk` → **Pitstop Video**：**停车应用**加下面介绍的模板界面。怎么安装都可以；
   在*设置 → 更新与关于*里自行更新。
 - `PitstopVideo-vX.Y.Z.mirror.apk` → **Mirror Video**：只作为**导航**模板应用，视频**全屏**（Android Auto 的
-  按钮浮在视频上方并会自动淡出；点一下即可再出现）。车辆开动时视频照样停止。**每次安装都需要电脑：**
-  真实车辆只在安装来源记录为 Play 商店时才列出它，而安卓只会为通过 adb 发起的安装记录这一点。
+  按钮浮在视频上方并会自动淡出；点一下即可再出现）。车辆开动时视频照样停止。**它不能用普通方式安装：**
+  真实车辆只在安装来源记录为 Play 商店时才列出它，而安卓只会为 *shell* 用户（adb）发起的安装记录这一点。
   打开 USB 调试、连接手机后运行
 
   ```bash
-  tools/install-mirror-video.sh PitstopVideo-vX.Y.Z.mirror.apk
+  tools/install-mirror-video.sh
   ```
 
-  （Windows 上用 Git Bash，或 `powershell -File tools/install-mirror-video.ps1 PitstopVideo-vX.Y.Z.mirror.apk`），
-  然后在手机上确认。每次更新也要这样做：直接在手机上安装 APK（即使是覆盖 Mirror Video）会让 Android Auto
-  再次隐藏它。Mirror Video 会提示有新版本并给出发布页链接，但不会自行安装。*设置 → 更新与关于 →
-  Android Auto* 会显示车上是否会列出它。
+  （Windows 上用 Git Bash，或 `powershell -File tools/install-mirror-video.ps1`；两者都会下载最新版本，
+  也可以把 APK 文件作为参数传入），然后在手机上确认。直接在手机上安装 APK（即使是覆盖 Mirror Video）
+  会让 Android Auto 再次隐藏它。
+
+  **不用电脑更新：** 安装并启动 [Shizuku](https://shizuku.rikka.app/)（它与手机的无线调试配对一次，
+  手机重启后需要重新启动）。Shizuku 运行时，Mirror Video 的*设置 → 更新与关于*里会出现*下载并安装*按钮，
+  安装方式与脚本相同。没有 Shizuku 时只提供发布页链接。*设置 → 更新与关于 → Android Auto*
+  会显示车上是否会列出已安装的副本；不会列出时，可以点*用 Shizuku 重新安装*。
 
 如果装的是 Mirror Video，上面步骤中的 *Pitstop Video* 请换成 *Mirror Video*。
 

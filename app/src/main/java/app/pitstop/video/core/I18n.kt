@@ -748,12 +748,17 @@ class Strings(val language: AppLanguage) {
         "已就绪：Android Auto 会把 Mirror 视频列为全屏车机应用。",
     )
     val carSetupNeeded get() = t(
-        "Real cars' Android Auto hides this copy. Install it from a computer with tools/install-mirror-video (see the README); your data stays.",
-        "真车上的 Android Auto 会隐藏这个副本。请在电脑上用 tools/install-mirror-video 安装（见 README）；数据会保留。",
+        "Real cars' Android Auto hides this copy. Reinstall it with Shizuku running (the button shows here), or from a computer with tools/install-mirror-video (see the README); your data stays.",
+        "真车上的 Android Auto 会隐藏这个副本。请启动 Shizuku 后在这里重新安装（按钮会显示在这里），或在电脑上用 tools/install-mirror-video 安装（见 README）；数据会保留。",
+    )
+    val carSetupFix get() = t("Reinstall with Shizuku", "用 Shizuku 重新安装")
+    val shizukuDenied get() = t(
+        "Shizuku didn't give permission. Open Shizuku, allow Mirror Video, then try again.",
+        "Shizuku 没有授权。请打开 Shizuku，允许 Mirror 视频，然后重试。",
     )
     val mirrorUpdateHow get() = t(
-        "Install it from a computer with tools/install-mirror-video (see the README). Installing it on the phone would hide Mirror Video from Android Auto.",
-        "请在电脑上用 tools/install-mirror-video 安装（见 README）。在手机上安装会让 Android Auto 隐藏 Mirror 视频。",
+        "Start Shizuku to update here, or install it from a computer with tools/install-mirror-video (see the README). A normal install on the phone would hide Mirror Video from Android Auto.",
+        "启动 Shizuku 后可在这里更新，或在电脑上用 tools/install-mirror-video 安装（见 README）。在手机上直接安装会让 Android Auto 隐藏 Mirror 视频。",
     )
     fun updateCheckFailed(m: String) = t("Couldn't check for updates: $m", "检查更新失败：$m")
     val updateDownloadIncomplete get() = t("The download was incomplete. Try again.", "下载不完整，请重试。")

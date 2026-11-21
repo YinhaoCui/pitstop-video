@@ -259,19 +259,24 @@ its own kind. Not using Android Auto? Take *Pitstop Video*.
   described below. Install it any way you like; it updates itself from *Settings → Updates & about*.
 - `PitstopVideo-vX.Y.Z.mirror.apk` → **Mirror Video**: a **navigation** template app only, with the video
   **full screen** (Android Auto's buttons float over it and fade out; tap to bring them back). Video
-  still stops when the car moves. **It needs a computer to install, every time:** real cars only list
+  still stops when the car moves. **It can't be installed the usual way:** real cars only list
   it when the Play Store is recorded as its installer, and Android only records that for an install
-  started over adb. With USB debugging on and the phone connected, run
+  started by the *shell* user (adb). With USB debugging on and the phone connected, run
 
   ```bash
-  tools/install-mirror-video.sh PitstopVideo-vX.Y.Z.mirror.apk
+  tools/install-mirror-video.sh
   ```
 
-  (Git Bash on Windows, or `powershell -File tools/install-mirror-video.ps1 PitstopVideo-vX.Y.Z.mirror.apk`)
-  and confirm on the phone. Do the same for every update: installing an APK on the phone itself,
-  even over Mirror Video, makes Android Auto hide it again. Mirror Video tells you when a new
-  version is out and links the release page, but doesn't install it. *Settings → Updates & about →
-  Android Auto* shows whether the car will list it.
+  (Git Bash on Windows, or `powershell -File tools/install-mirror-video.ps1`; both download the newest
+  release, or take an APK file as argument) and confirm on the phone. Installing an APK on the phone
+  itself, even over Mirror Video, makes Android Auto hide it again.
+
+  **Updating without a computer:** install [Shizuku](https://shizuku.rikka.app/) and start it (it
+  pairs with the phone's wireless debugging once, and has to be started again after a reboot). With
+  Shizuku running, *Settings → Updates & about* in Mirror Video gets a *Download and install* button that
+  installs the same way the script does. Without Shizuku it only links the release page.
+  *Settings → Updates & about → Android Auto* shows whether the car will list the installed copy,
+  and offers *Reinstall with Shizuku* when it won't.
 
 In the steps above, look for *Mirror Video* instead of *Pitstop Video* if that's the one you installed.
 

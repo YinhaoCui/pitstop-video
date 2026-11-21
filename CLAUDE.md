@@ -36,8 +36,11 @@ Car App Library 1.7 for the car. See README.md for the architecture overview.
   `EXTRA_INSTALLER_PACKAGE_NAME=com.android.vending` (Fermata's trick) **sent from adb**
   (`tools/install-mirror-video.sh` / `.ps1`). Sent by the app itself the extra is ignored
   (installer becomes `com.google.android.packageinstaller`, tested on Android 17), so Mirror Video
-  can't fix or update itself: its updater only links the release page (`AppUpdater.canInstall`),
-  and any install on the phone hides it from AA again. `update/PlayInstall.kt` reports the state.
+  can't install itself the normal way, and any normal install on the phone hides it from AA again.
+  On the phone it only updates through Shizuku (`update/ShizukuInstall.kt` runs
+  `core/ShellInstall.script` as the shell user: the same steps as the script); without Shizuku
+  running its updater only links the release page (`AppUpdater.canInstall`).
+  `update/PlayInstall.kt` reports the state.
   The script pushes the APK to `/sdcard/Download` and uses its MediaStore `content://` id
   (`file://` URIs don't resolve; set `MSYS_NO_PATHCONV=1` in Git Bash).
   The DHU is a *developer head unit* that skips this check, so "it shows on the DHU" proves

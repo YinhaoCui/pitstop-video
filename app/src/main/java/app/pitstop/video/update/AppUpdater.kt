@@ -85,8 +85,11 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
 
     val currentVersion: String = installedInfo()?.versionName.orEmpty()
 
-    /** False for Mirror Video (nav build): it only offers the release page; see [PlayInstall]. */
-    val canInstall: Boolean = !BuildConfig.NAV_ROUTE
+    /**
+     * Mirror Video (nav build) only installs through Shizuku, which keeps the Play Store as its recorded
+     * installer (see [PlayInstall], [ShizukuInstall]); without it, it only offers the release page.
+     */
+    val canInstall: Boolean get() = !BuildConfig.NAV_ROUTE || ShizukuInstall.running()
 
     /** Asks GitHub for the latest release (or the newest pre-release, on the beta channel). */
     suspend fun check(): State {
@@ -125,11 +128,33 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
 
     /** Starts [downloadAndInstall] unless an update is already downloading / installing. Call on the main thread. */
     fun start(release: AppRelease) {
-        // Mirror Video is never installed from the phone: that would make Android Auto hide it (see PlayInstall).
+        // Mirror Video is never installed the usual way: that would make Android Auto hide it (see PlayInstall).
         if (!canInstall) return
         if (_state.value is State.Downloading || _state.value is State.Installing) return
         _state.value = State.Downloading(release, null)
         scope.launch { downloadAndInstall(release) }
+    }
+
+    /**
+     * Mirror Video, installed from the phone (Android Auto hides it): installs the newest release again
+     * through Shizuku, which records the Play Store as installer. The same version is fine here.
+     */
+    fun startRepair() {
+        if (!BuildConfig.NAV_ROUTE || !canInstall) return
+        if (_state.value is State.Checking || _state.value is State.Downloading || _state.value is State.Installing) return
+        _state.value = State.Checking
+        scope.launch {
+            val release = try {
+                latestRelease()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = State.Failed(I18n.s.updateCheckFailed(e.message ?: e.javaClass.simpleName))
+                return@launch
+            }
+            if (release == null) _state.value = State.Failed(I18n.s.updateCheckFailed("no release"))
+            else downloadAndInstall(release, allowSameVersion = true)
+        }
     }
 
     fun startCheck() {
@@ -139,22 +164,28 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
 
     /** Back from the permission screen: continue when it was granted. */
     fun resumeAfterPermission() {
+        // Mirror Video: back from the system installer without installing (a success replaces the app).
+        (_state.value as? State.Installing)?.let { if (BuildConfig.NAV_ROUTE) _state.value = State.Available(it.release) }
         val s = _state.value as? State.NeedsPermission ?: return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()) start(s.release)
     }
 
     /** Downloads [release]'s APK, checks it and opens the system installer. */
-    private suspend fun downloadAndInstall(release: AppRelease) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+    private suspend fun downloadAndInstall(release: AppRelease, allowSameVersion: Boolean = false) {
+        val nav = BuildConfig.NAV_ROUTE
+        if (!nav && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
             _state.value = State.NeedsPermission(release)
             return
         }
         try {
+            if (nav && !ShizukuInstall.ensurePermission()) throw UserFacingException(I18n.s.shizukuDenied)
             _state.value = State.Downloading(release, null)
-            val apk = download(release)
-            verify(apk)
+            // Shizuku's shell can't read the app's private cache: the external files folder instead.
+            val dir = if (nav) context.getExternalFilesDir(null) ?: throw IOException("No external storage") else context.cacheDir
+            val apk = download(release, File(dir, "updates"))
+            verify(apk, allowSameVersion)
             _state.value = State.Installing(release)
-            install(apk)
+            if (nav) withContext(Dispatchers.IO) { ShizukuInstall.install(apk) } else install(apk)
         } catch (e: CancellationException) {
             _state.value = State.Available(release)
             throw e
@@ -192,8 +223,8 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
         }
     }
 
-    private suspend fun download(release: AppRelease): File = withContext(Dispatchers.IO) {
-        val dir = File(context.cacheDir, "updates").apply { deleteRecursively(); mkdirs() }
+    private suspend fun download(release: AppRelease, dir: File): File = withContext(Dispatchers.IO) {
+        dir.deleteRecursively(); dir.mkdirs()
         val file = File(dir, "update.apk")
         val client = http.newBuilder().cookieJar(okhttp3.CookieJar.NO_COOKIES)
             .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS).build()
@@ -224,11 +255,12 @@ class AppUpdater(private val context: Context, private val http: OkHttpClient) {
     }
 
     /** Same package, a higher version code and the same signing key as the installed app. */
-    private fun verify(apk: File) {
+    private fun verify(apk: File, allowSameVersion: Boolean = false) {
         val archive = archiveInfo(apk) ?: throw UserFacingException(I18n.s.updateBadApk)
         if (archive.packageName != context.packageName) throw UserFacingException(I18n.s.updateOtherPackage(archive.packageName))
         val installed = installedInfo() ?: throw UserFacingException(I18n.s.updateBadApk)
-        if (versionCode(archive) <= versionCode(installed)) throw UserFacingException(I18n.s.updateNotNewer)
+        val older = versionCode(archive).compareTo(versionCode(installed)).let { if (allowSameVersion) it < 0 else it <= 0 }
+        if (older) throw UserFacingException(I18n.s.updateNotNewer)
         if (signatures(archive) != signatures(installed)) throw UserFacingException(I18n.s.updateWrongKey)
     }
 
