@@ -157,6 +157,8 @@ internal fun PagedVideoList(
         }
     }
 
+    var following by remember { mutableStateOf<VideoItem?>(null) }
+    following?.let { FollowDialog(graph, it) { following = null } }
     when (val l = load) {
         LoadState.Loading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         is LoadState.Failed -> Column(modifier.fillMaxWidth().padding(24.dp)) {
@@ -193,11 +195,15 @@ internal fun PagedVideoList(
                         selection.click(key) {
                             // The queue follows what's shown: the sorted / filtered order.
                             val tracks = shown.filterNot(source::isFolder)
-                            graph.hub.playQueue(tracks, tracks.indexOf(item))
+                            graph.hub.playBrowsed(tracks, tracks.indexOf(item))
                         }
                     }
                 }
-                val openCreator = onCreator?.takeIf { item.authorId != null && source.supportsCreators }?.let { { it(item) } }
+                // A creator's name opens their videos; a streamer's name offers to follow them.
+                val openCreator: (() -> Unit)? = when {
+                    source.supportsFollowing -> ({ following = item })
+                    else -> onCreator?.takeIf { item.authorId != null && source.supportsCreators }?.let { { it(item) } }
+                }
                 VideoRow(
                     graph, item, onClick = onClick, onAuthor = openCreator,
                     onLongClick = if (isFolder) onAdd?.let { a -> { if (!selection.active) a(item) } } else ({ selection.longPress(key) }),
@@ -445,7 +451,7 @@ internal fun EverywhereResults(
                                 if (isFolder) { if (!selection.active) onFolder(s, item) }
                                 else selection.click(key) {
                                     val tracks = items.filterNot(s::isFolder)
-                                    graph.hub.playQueue(tracks, tracks.indexOf(item))
+                                    graph.hub.playBrowsed(tracks, tracks.indexOf(item))
                                 }
                             },
                             onLongClick = if (isFolder) null else ({ selection.longPress(key) }),

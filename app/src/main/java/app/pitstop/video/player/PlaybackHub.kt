@@ -100,6 +100,11 @@ data class HubState(
      */
     val isMusic: Boolean get() = current?.source?.music == true || noPicture
     val upNext: List<VideoItem> get() = if (index < 0) emptyList() else queue.drop(index + 1)
+    /**
+     * A live stream picked from a browse list plays on its own: there is no "next" stream, so the
+     * queue, up next and previous / next are not shown. A stream inside a queue the user built keeps it.
+     */
+    val soloLive: Boolean get() = queue.size == 1 && current?.source?.live == true
 }
 
 /**
@@ -293,6 +298,15 @@ class PlaybackHub(
             val first = queue[index]
             playAt(listOf(first) + (queue - first).shuffled(), 0)
         } else playAt(queue, index)
+    }
+
+    /**
+     * Plays the item picked from a browse list (a feed, search results): the list becomes the queue,
+     * except for live streams, which play alone (the other rooms of a list are not "up next").
+     */
+    fun playBrowsed(list: List<VideoItem>, index: Int) {
+        val item = list.getOrNull(index) ?: return
+        if (item.source.live) playQueue(listOf(item)) else playQueue(list, index)
     }
 
     /** Jumps to [index] in the current queue (keeps the shuffled order). */

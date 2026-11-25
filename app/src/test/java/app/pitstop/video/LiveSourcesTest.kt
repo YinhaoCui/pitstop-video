@@ -1,6 +1,7 @@
 package app.pitstop.video
 
 import app.pitstop.video.bilibili.BiliLiveParse
+import app.pitstop.video.live.DouyuParse
 import app.pitstop.video.live.TwitchParse
 import org.json.JSONArray
 import org.json.JSONObject
@@ -100,7 +101,7 @@ class LiveSourcesTest {
         assertTrue(items[1].thumbnailUrl!!.startsWith("https://i0.hdslb.com/bfs/live/new_room_cover/cf.jpg"))
     }
 
-    @Test fun biliFollowingKeepsOnlyLive() {
+    @Test fun biliAccountFollowingListsOfflineToo() {
         val list = JSONArray(
             """[
               {"roomid":544853,"uid":686127,"uname":"籽岷","title":"尝试双机位","live_status":1,"text_small":"10.9万",
@@ -108,11 +109,63 @@ class LiveSourcesTest {
               {"roomid":21686237,"uid":456664753,"uname":"央视新闻","title":"央视新闻的直播间","live_status":0,"text_small":"0"}
             ]""",
         )
-        val items = BiliLiveParse.followingLive(list)
-        assertEquals(1, items.size)
-        assertEquals("544853", items[0].id)
-        assertEquals("籽岷 · 10.9万", items[0].author)
-        assertTrue(items[0].thumbnailUrl!!.startsWith("https://"))
+        val rooms = BiliLiveParse.following(list)
+        assertEquals(listOf(true, false), rooms.map { it.live })
+        assertTrue(rooms.all { it.fromAccount })
+        assertEquals("686127", rooms[0].creator.id)
+        assertEquals("544853", rooms[0].item!!.id)
+        assertEquals("籽岷 · 10.9万", rooms[0].item!!.author)
+        assertTrue(rooms[0].item!!.thumbnailUrl!!.startsWith("https://"))
+        // Off air: no viewer count after the name.
+        assertEquals("央视新闻", rooms[1].item!!.author)
+    }
+
+    @Test fun biliStatusByUid() {
+        val data = JSONObject(
+            """{"672328094":{"title":"摸金","room_id":22637261,"uid":672328094,"online":0,"live_status":2,"uname":"嘉然",
+                 "cover_from_user":"https://i0.hdslb.com/bfs/live/new_room_cover/7b.jpg","keyframe":""},
+                "686127":{"title":"双机位","room_id":544853,"uid":686127,"online":1234,"live_status":1,"uname":"籽岷",
+                 "cover_from_user":"","keyframe":"https://i0.hdslb.com/bfs/live-key-frame/k.jpg"}}""",
+        )
+        val rooms = BiliLiveParse.statusByUid(data) { "$it watching" }.associateBy { it.creator.id }
+        // live_status 2 is a replay of a recording, not live.
+        assertEquals(false, rooms.getValue("672328094").live)
+        assertEquals("22637261", rooms.getValue("672328094").item!!.id)
+        assertEquals("嘉然", rooms.getValue("672328094").item!!.author)
+        assertEquals(true, rooms.getValue("686127").live)
+        assertEquals("籽岷 · 1234 watching", rooms.getValue("686127").item!!.author)
+        assertTrue(rooms.getValue("686127").item!!.thumbnailUrl!!.contains("live-key-frame"))
+    }
+
+    @Test fun twitchFollowedChannels() {
+        val users = JSONArray(
+            """[{"login":"shroud","displayName":"shroud","stream":null},
+                {"login":"kaicenat","displayName":"KaiCenat","stream":{"title":"hi","viewersCount":5000,
+                  "previewImageURL":"https://static-cdn.jtvnw.net/previews-ttv/live_user_kaicenat-440x248.jpg"}},
+                null]""",
+        )
+        val rooms = TwitchParse.followed(users) { "$it watching" }
+        assertEquals(listOf("shroud", "kaicenat"), rooms.map { it.creator.id })
+        assertEquals(listOf(false, true), rooms.map { it.live })
+        assertEquals("KaiCenat · 5000 watching", rooms[1].item!!.author)
+        assertEquals("hi", rooms[1].item!!.title)
+        // Logins are sent in lower case, as Twitch stores them.
+        assertEquals("[\"abc\"]", TwitchParse.usersQuery(listOf("ABC")).getJSONObject("variables").getJSONArray("l").toString())
+    }
+
+    @Test fun douyuRoomState() {
+        val on = DouyuParse.parseRoomState(
+            """{"room":{"room_id":9999,"room_name":"陪伴每一天！","nickname":"yyfyyf","show_status":1,"videoLoop":0,
+                 "room_pic":"https://rpic.douyucdn.cn/asrpic/9999.avif/dy4","room_biz_all":{"hot":"4875870"}}}""",
+        )!!
+        assertEquals(true, on.live)
+        assertEquals("9999", on.room.rid)
+        assertEquals("yyfyyf", on.room.streamer)
+        assertEquals(4875870L, on.room.viewers)
+        // Off air, and a room replaying a recording, are both "not live".
+        assertEquals(false, DouyuParse.parseRoomState("""{"room":{"room_id":1,"show_status":2,"videoLoop":0}}""")!!.live)
+        assertEquals(false, DouyuParse.parseRoomState("""{"room":{"room_id":1,"show_status":1,"videoLoop":1}}""")!!.live)
+        assertEquals(null, DouyuParse.parseRoomState("""{"error":1}"""))
     }
 
     // --- Twitch ---

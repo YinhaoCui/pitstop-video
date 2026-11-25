@@ -51,6 +51,14 @@ object Settings {
         prefs?.edit()?.putBoolean("background_play", value)?.apply()
     }
 
+    /** True exactly once: the caller then turns starred live rooms into follows (see LiveFollow.fromStarred). */
+    fun takeStarredLiveImport(): Boolean {
+        val p = prefs ?: return false
+        if (p.getBoolean("starred_live_followed", false)) return false
+        p.edit().putBoolean("starred_live_followed", true).apply()
+        return true
+    }
+
     private val _carVideoOnly = MutableStateFlow(true)
     /** Car screen (parked app): show only the video, or the whole app. The phone works as the remote either way. */
     val carVideoOnly: StateFlow<Boolean> = _carVideoOnly.asStateFlow()

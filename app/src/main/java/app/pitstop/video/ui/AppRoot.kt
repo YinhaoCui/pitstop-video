@@ -92,6 +92,7 @@ import app.pitstop.video.core.VideoQuality
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.formatDuration
 import app.pitstop.video.local.PermissionSource
+import app.pitstop.video.core.LiveFollow
 import app.pitstop.video.core.SAVED_CREATORS_FEED
 import app.pitstop.video.core.feedsWith
 import app.pitstop.video.core.loadFeed
@@ -382,23 +383,25 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            IconButton(onClick = graph.hub::previous) { Icon(painterResource(R.drawable.ic_skip_previous), S.previous) }
+            // A stream playing on its own has no queue: only play / pause and the star.
+            val solo = s.soloLive
+            if (!solo) IconButton(onClick = graph.hub::previous) { Icon(painterResource(R.drawable.ic_skip_previous), S.previous) }
             PlayButton(s.wantsToPlay, graph.hub::togglePause)
-            IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), S.next) }
+            if (!solo) IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), S.next) }
             // Lit (accent colour) when on; repeat cycles off → all → one.
             val on = MaterialTheme.colorScheme.primary
             val off = MaterialTheme.colorScheme.onSurfaceVariant
-            IconButton(onClick = graph.hub::toggleShuffle) {
+            if (!solo) IconButton(onClick = graph.hub::toggleShuffle) {
                 Icon(painterResource(R.drawable.ic_shuffle), S.shuffle, tint = if (s.shuffle) on else off)
             }
-            IconButton(onClick = graph.hub::cycleRepeat) {
+            if (!solo) IconButton(onClick = graph.hub::cycleRepeat) {
                 Icon(
                     painterResource(if (s.repeat == RepeatMode.ONE) R.drawable.ic_repeat_one else R.drawable.ic_repeat),
                     when (s.repeat) { RepeatMode.OFF -> S.repeatOff; RepeatMode.ALL -> S.repeatAll; RepeatMode.ONE -> S.repeatOne },
                     tint = if (s.repeat == RepeatMode.OFF) off else on,
                 )
             }
-            IconButton(onClick = { showQueue = true }) { Icon(painterResource(R.drawable.ic_playlist_play), S.queue) }
+            if (!solo) IconButton(onClick = { showQueue = true }) { Icon(painterResource(R.drawable.ic_playlist_play), S.queue) }
             s.current?.let { cur ->
                 val lists by graph.playlists.playlists.collectAsStateWithLifecycle()
                 val starred = lists.firstOrNull { it.id == PlaylistOps.STARRED }?.let { PlaylistOps.contains(it, cur) } == true
@@ -554,7 +557,10 @@ internal fun SourceTab(
 
     val savedCreators by graph.creators.creators.collectAsStateWithLifecycle()
     val feeds = remember(source, refreshKey, savedCreators) { source.feedsWith(graph.creators) }
-    var feedKey by rememberSaveable(source.id) { mutableStateOf(feeds.firstOrNull()?.key) }
+    // A live platform opens on "Following" once someone is followed there, else on its first own feed.
+    var feedKey by rememberSaveable(source.id) {
+        mutableStateOf(feeds.firstOrNull { it.key != LiveFollow.FEED || savedCreators.any { c -> c.source == source.id } }?.key)
+    }
     var query by rememberSaveable(source.id) { mutableStateOf("") }
     var activeQuery by rememberSaveable(source.id) { mutableStateOf<String?>(null) }
     // A category picked in the Categories window replaces the feed until it's cleared.
@@ -644,6 +650,10 @@ internal fun SourceTab(
                 onMore = { s -> if (s.id == source.id) everywhere = false else onSearchIn?.invoke(s, q) },
                 onFolder = { s, item -> if (s.id == source.id) openFolders = openFolders + item else onSearchIn?.invoke(s, q) },
             )
+            return@Column
+        }
+        if (q == null && cat == null && feed?.key == LiveFollow.FEED) {
+            FollowingList(graph, source, reloadKey = listOf(reload, refreshKey))
             return@Column
         }
         if (q == null && cat == null && feed?.key == SAVED_CREATORS_FEED) {

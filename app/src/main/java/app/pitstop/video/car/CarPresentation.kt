@@ -68,6 +68,7 @@ class CarPresentation(
     private lateinit var progress: ProgressBar
     private lateinit var time: TextView
     private lateinit var upNext: LinearLayout
+    private lateinit var upNextTitle: TextView
     private lateinit var fullProgress: ProgressBar
     private lateinit var overlayInfo: LinearLayout
     private lateinit var overlayTitle: TextView
@@ -164,9 +165,10 @@ class CarPresentation(
             addView(author, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(6) })
             addView(progress, LinearLayout.LayoutParams(MATCH_PARENT, dp(6)).apply { topMargin = dp(16) })
             addView(time, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(4) })
-            addView(text(ctx, 15f, bold = true).apply {
+            upNextTitle = text(ctx, 15f, bold = true).apply {
                 text = I18n.s.upNext; setTextColor(0xFFFF8FB5.toInt())
-            }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(24) })
+            }
+            addView(upNextTitle, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(24) })
             addView(upNext)
         }
 
@@ -286,6 +288,9 @@ class CarPresentation(
         }
         status.visibility = if (status.text.isNullOrEmpty()) View.GONE else View.VISIBLE
 
+        // A stream picked from a live list plays alone: nothing is "up next".
+        upNextTitle.visibility = if (s.soloLive) View.GONE else View.VISIBLE
+        upNext.visibility = upNextTitle.visibility
         upNext.removeAllViews()
         s.upNext.take(4).forEach { next ->
             upNext.addView(text(context, 15f).apply {

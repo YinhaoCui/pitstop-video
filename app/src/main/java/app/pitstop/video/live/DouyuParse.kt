@@ -13,6 +13,9 @@ data class DouyuRoom(
     val cover: String?,
 )
 
+/** A room page's state: the room as a list entry and whether it is broadcasting now. */
+data class DouyuRoomState(val room: DouyuRoom, val live: Boolean)
+
 /** One quality step from getH5PlayV1's `multirates`; [height] is estimated from the name / rate code. */
 data class DouyuRate(val rate: Int, val name: String, val height: Int)
 
@@ -134,6 +137,23 @@ object DouyuParse {
                 cover = httpsUrl(o.optString("roomSrc")),
             )
         }
+    }
+
+    /**
+     * `/betard/{rid}` (the room page's data): `room.show_status` 1 = on air, 2 = off; `videoLoop` 1 means
+     * the room is replaying a recording, which the site doesn't count as live. Null when there is no room.
+     */
+    fun parseRoomState(json: String): DouyuRoomState? {
+        val r = JSONObject(json).optJSONObject("room") ?: return null
+        val rid = r.optLong("room_id", 0).takeIf { it > 0 } ?: return null
+        val room = DouyuRoom(
+            rid = rid.toString(),
+            title = r.optString("room_name"),
+            streamer = r.optString("nickname").ifEmpty { r.optString("owner_name") },
+            viewers = r.optJSONObject("room_biz_all")?.optString("hot")?.toLongOrNull(),
+            cover = httpsUrl(r.optString("room_pic").ifEmpty { r.optString("coverSrc") }),
+        )
+        return DouyuRoomState(room, live = r.optInt("show_status") == 1 && r.optInt("videoLoop") != 1)
     }
 
     /** "250.1万" -> 2501000, "1.2亿" -> 120000000, "8345" -> 8345. */

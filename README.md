@@ -50,7 +50,7 @@ the car's browse list follows the same choice.
 | Music | **Radio** | radio-browser.info: popular, near you, genres, countries, languages | – |
 | Music | **Google Drive** | *Pick from Google Drive* (Google's own picker) or *Add from files*; see [Google Drive](#google-drive) | Personal builds only: browse the whole Drive |
 | Music | **On this phone** | Songs stored on the device | – |
-| Live | **Bilibili Live** | Recommended, popular, live areas, search | *Following* |
+| Live | **Bilibili Live** | Recommended, popular, live areas, search | The account's followed streamers join *Following* |
 | Live | **Twitch** | Top streams, top 100 categories, search; audio-only renditions | – |
 | Live | **Douyu** | Popular, all categories, search | – |
 
@@ -70,6 +70,12 @@ or NetEase instead.
   uploader sort, radio sort.
 - Tap a creator's name for their latest uploads. Saved creators are listed together under one
   *Saved creators* chip (and row in the car), not mixed in with the feeds.
+- **Following** (Live tab, all three platforms, no account needed): tap a streamer's name, or
+  *Follow* in a room's menu. The *Following* chip, first on each live platform, lists everyone you
+  follow: live rooms first, the rest greyed as *Not live*. It is checked when you open it or pull to
+  refresh, never in the background. Under a playing stream, the followed streamers who are live now
+  are one tap away; the car's *Following* row lists the live ones. Rooms starred before this existed
+  are followed automatically the first time.
 
 ### Queue and playlists
 
@@ -105,7 +111,9 @@ or NetEase instead.
 - Picks only streams the device can decode; on a decoder failure it retries once at 480p AVC.
   Reconnects with backoff at the same position, refreshes expired stream links, and steps quality
   down after repeated stalls. The next item is looked up in advance.
-- Live streams join at the live edge.
+- Live streams join at the live edge. A stream picked from the Live tab plays on its own: no queue,
+  no previous / next, and it never jumps to another room. A stream inside a playlist or queue you
+  built keeps it.
 - **Subtitles**: YouTube uploaded tracks, auto-generated captions and auto-translation into your
   language; Bilibili uploaded and AI subtitles (AI ones usually need sign-in). Style them in
   *Settings*: language, size, colour, text and background opacity, edge style, with a live preview.
