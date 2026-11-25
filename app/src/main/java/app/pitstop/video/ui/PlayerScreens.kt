@@ -91,7 +91,8 @@ fun MiniPlayer(graph: AppGraph, onOpen: () -> Unit) {
             IconButton(onClick = graph.hub::togglePause) {
                 Icon(painterResource(if (s.wantsToPlay) R.drawable.ic_pause else R.drawable.ic_play), S.playPause)
             }
-            IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), S.next) }
+            // A stream playing on its own has nothing next.
+            if (!s.soloLive) IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), S.next) }
         }
     }
 }
@@ -241,7 +242,8 @@ fun BoxWithConstraintsScope.FloatingPlayer(graph: AppGraph, onOpen: () -> Unit) 
             IconButton(onClick = graph.hub::togglePause) {
                 Icon(painterResource(if (s.wantsToPlay) R.drawable.ic_pause else R.drawable.ic_play), S.playPause)
             }
-            IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), S.next) }
+            // A stream playing on its own has nothing next.
+            if (!s.soloLive) IconButton(onClick = graph.hub::next) { Icon(painterResource(R.drawable.ic_skip_next), S.next) }
         }
     }
 }
