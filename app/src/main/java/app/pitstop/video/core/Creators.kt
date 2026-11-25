@@ -29,6 +29,14 @@ class CreatorStore(private val file: File) {
         write(_creators.value)
     }
 
+    /** Adds the [list] entries that aren't saved yet. */
+    fun addAll(list: List<Creator>) {
+        val fresh = list.filterNot { isSaved(it.source, it.id) }.distinctBy { it.source to it.id }
+        if (fresh.isEmpty()) return
+        _creators.value = _creators.value + fresh
+        write(_creators.value)
+    }
+
     fun forSource(source: SourceId) = _creators.value.filter { it.source == source }
 
     private fun read(): List<Creator> = runCatching { CreatorCodec.decode(file.readText()) }.getOrDefault(emptyList())
@@ -56,9 +64,14 @@ object CreatorCodec {
 /**
  * The source's own feeds, plus one "Saved creators" feed when any of its creators are saved (only for
  * sources that list creators). The creators are a category of their own, not a feed each.
+ * Live platforms start with their "Following" feed ([LiveFollow.FEED]) instead.
  */
-fun VideoSource.feedsWith(store: CreatorStore, title: String = I18n.s.savedCreators): List<Feed> =
-    feeds() + if (supportsCreators && store.forSource(id).isNotEmpty()) listOf(Feed(SAVED_CREATORS_FEED, title)) else emptyList()
+fun VideoSource.feedsWith(
+    store: CreatorStore,
+    title: String = I18n.s.savedCreators,
+    followingTitle: String = I18n.s.followingStreamers,
+): List<Feed> =
+    (if (supportsFollowing) listOf(Feed(LiveFollow.FEED, followingTitle)) else emptyList()) + feeds() + if (supportsCreators && store.forSource(id).isNotEmpty()) listOf(Feed(SAVED_CREATORS_FEED, title)) else emptyList()
 
 /** The saved creators of [source] as feeds (one per creator), for lists that open each one. */
 fun CreatorStore.feedsFor(source: SourceId): List<Feed> = forSource(source).map { Feed(CREATOR_FEED_PREFIX + it.id, it.name) }

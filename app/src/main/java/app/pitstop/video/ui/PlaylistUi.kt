@@ -55,6 +55,7 @@ import app.pitstop.video.R
 import app.pitstop.video.core.ListSort
 import app.pitstop.video.core.ListView
 import app.pitstop.video.core.Playlist
+import app.pitstop.video.core.LiveFollow
 import app.pitstop.video.core.PlaylistOps
 import app.pitstop.video.core.VideoItem
 
@@ -426,6 +427,18 @@ private fun ItemMenuDialog(
                         Icon(painterResource(if (starred) R.drawable.ic_star else R.drawable.ic_star_border), null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(12.dp))
                         Text(if (starred) S.unstar else S.star, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                star?.let(LiveFollow::creatorOf)?.let { streamer ->
+                    val creators by graph.creators.creators.collectAsStateWithLifecycle()
+                    val isFollowed = creators.any { it.source == streamer.source && it.id == streamer.id }
+                    Row(
+                        Modifier.fillMaxWidth().clickable { graph.creators.toggle(streamer); onDismiss() }.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(painterResource(R.drawable.ic_person), null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Text(if (isFollowed) S.unfollowStreamer else S.followStreamer, color = MaterialTheme.colorScheme.primary)
                     }
                 }
                 if (onDownload != null) {

@@ -1,6 +1,9 @@
 package app.pitstop.video.live
 
 import app.pitstop.video.core.Category
+import app.pitstop.video.core.Creator
+import app.pitstop.video.core.FollowedRoom
+import app.pitstop.video.core.LiveFollow
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
@@ -111,6 +114,16 @@ class TwitchSource(private val http: OkHttpClient) : VideoSource {
         }
     }
 
+    override val supportsFollowing get() = true
+
+    /** Channels are looked up by login, [FOLLOW_BATCH] per request. */
+    override suspend fun followedRooms(creators: List<Creator>): List<FollowedRoom> {
+        val known = creators.chunked(FOLLOW_BATCH).flatMap { batch ->
+            TwitchParse.followed(gql(TwitchParse.usersQuery(batch.map { it.id })).optJSONArray("users"), I18n.s::viewers)
+        }.associateBy { it.creator.id }
+        return LiveFollow.inOrder(creators, known)
+    }
+
     override suspend fun search(query: String): List<VideoItem> = searchPage(query, null).items
 
     /** Live channels matching [query], 50 per page; offline channels are dropped from each page. */
@@ -178,6 +191,7 @@ class TwitchSource(private val http: OkHttpClient) : VideoSource {
 
     companion object {
         const val FEED_POPULAR = "popular"
+        private const val FOLLOW_BATCH = 50
         private const val GQL_URL = "https://gql.twitch.tv/gql"
         /** The Twitch web site's public client id (also used by streamlink and yt-dlp). */
         private const val CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
@@ -247,6 +261,22 @@ object TwitchParse {
             "params:{platform:\"web\",playerBackend:\"mediaplayer\",playerType:\"site\"}){value signature}}",
         JSONObject().put("login", login),
     )
+
+    /** Several channels by login, each with its stream when it is live. */
+    fun usersQuery(logins: List<String>) = query(
+        "query(\$l:[String!]){users(logins:\$l){login displayName stream{title viewersCount previewImageURL(width:440,height:248)}}}",
+        JSONObject().put("l", JSONArray(logins.map { it.lowercase() })),
+    )
+
+    /** `users` → one room per channel that exists (unknown logins come back as null); offline ones have no cover. */
+    fun followed(users: JSONArray?, viewers: (Long) -> String): List<FollowedRoom> = users.objects().mapNotNull { u ->
+        val login = u.optString("login").ifEmpty { return@mapNotNull null }
+        val name = u.optString("displayName").ifEmpty { login }
+        val stream = u.optJSONObject("stream")
+        val item = if (stream != null) item(login, name, stream, viewers)
+        else VideoItem(source = SourceId.TWITCH, id = login, title = name, author = name, authorId = login)
+        FollowedRoom(Creator(SourceId.TWITCH, login, name), item, live = stream != null)
+    }
 
     /** `streams` connection (top streams or one game's streams) → items. */
     fun streams(connection: JSONObject?, viewers: (Long) -> String): List<VideoItem> =

@@ -169,6 +169,15 @@ interface VideoSource {
     /** Latest videos of one creator (channel / uploader). */
     suspend fun creatorVideos(authorId: String): List<VideoItem> = emptyList()
 
+    /** Live platforms: streamers can be followed in the app ([LiveFollow]); [followedRooms] reports their rooms. */
+    val supportsFollowing: Boolean get() = false
+
+    /** The rooms of followed [creators] right now, live or not, in the same order. */
+    suspend fun followedRooms(creators: List<Creator>): List<FollowedRoom> = emptyList()
+
+    /** Streamers followed in the platform's own account; empty when signed out or unsupported. */
+    suspend fun accountFollowing(): List<FollowedRoom> = emptyList()
+
     /** A creator's videos, endlessly: like [loadPage]. Defaults to [creatorVideos] as one page. */
     suspend fun creatorPage(authorId: String, cursor: String?): FeedPage =
         if (cursor == null) FeedPage(creatorVideos(authorId)) else FeedPage(emptyList())

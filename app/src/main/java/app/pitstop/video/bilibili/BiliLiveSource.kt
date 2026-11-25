@@ -1,6 +1,9 @@
 package app.pitstop.video.bilibili
 
 import app.pitstop.video.core.Category
+import app.pitstop.video.core.Creator
+import app.pitstop.video.core.FollowedRoom
+import app.pitstop.video.core.LiveFollow
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
@@ -37,7 +40,6 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
     override fun feeds(): List<Feed> = buildList {
         add(Feed(FEED_RECOMMENDED, I18n.s.recommended))
         add(Feed(FEED_POPULAR, I18n.s.popular))
-        if (cookies.loggedIn.value) add(Feed(FEED_FOLLOWING, I18n.s.following))
     }
 
     override suspend fun load(feed: Feed): List<VideoItem> = loadPage(feed, null).items
@@ -47,7 +49,6 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
         feed.categoryKey()?.let { key -> BiliLiveParse.areaKey(key)?.let { (parent, area) -> return areaRooms(parent, area, page) } }
         return when (feed.key) {
             FEED_POPULAR -> popular(page)
-            FEED_FOLLOWING -> following(page)
             else -> recommended(page)
         }
     }
@@ -77,22 +78,37 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
         return FeedPage(items, (page + 1).toString().takeIf { items.isNotEmpty() && d.optInt("has_more") == 1 })
     }
 
+    override val supportsFollowing get() = true
+
+    /** Followed uids in one status request per [FOLLOW_BATCH]. */
+    override suspend fun followedRooms(creators: List<Creator>): List<FollowedRoom> {
+        val known = creators.chunked(FOLLOW_BATCH).flatMap { batch ->
+            val uids = batch.mapNotNull { it.id.toLongOrNull() }
+            if (uids.isEmpty()) emptyList()
+            else BiliLiveParse.statusByUid(
+                data("$LIVE_API/room/v1/Room/get_status_info_by_uids?" + uids.joinToString("&") { "uids[]=$it" }),
+                I18n.s::viewers,
+            )
+        }.associateBy { it.creator.id }
+        return LiveFollow.inOrder(creators, known)
+    }
+
     /**
-     * Followed streamers, 10 per server page, live ones first but not strictly; a few server pages
-     * are read per call so a page of the feed is rarely empty.
+     * The streamers the signed-in account follows (10 per server page, up to [FOLLOWING_MAX_PAGES]),
+     * live or not; they show in "Following" together with the app's own follows.
      */
-    private suspend fun following(startPage: Int): FeedPage {
-        if (!cookies.loggedIn.value) throw UserFacingException(I18n.s.needBiliLogin)
-        val out = mutableListOf<VideoItem>()
-        var page = startPage
-        var total = page
-        while (page <= total && page < startPage + FOLLOWING_PAGES_PER_CALL) {
+    override suspend fun accountFollowing(): List<FollowedRoom> {
+        if (!cookies.loggedIn.value) return emptyList()
+        val out = mutableListOf<FollowedRoom>()
+        var page = 1
+        var total = 1
+        while (page <= total && page <= FOLLOWING_MAX_PAGES) {
             val d = data("$LIVE_API/xlive/web-ucenter/user/following?page=$page&page_size=10&ignoreRecord=1&hit_ab=true")
             total = d.optInt("totalPage", page)
-            out += BiliLiveParse.followingLive(d.optJSONArray("list"))
+            out += BiliLiveParse.following(d.optJSONArray("list"))
             page++
         }
-        return FeedPage(out, page.toString().takeIf { page <= total })
+        return out
     }
 
     /**
@@ -240,12 +256,12 @@ class BiliLiveSource(private val http: OkHttpClient, private val cookies: BiliCo
     companion object {
         const val FEED_RECOMMENDED = "recommended"
         const val FEED_POPULAR = "popular"
-        const val FEED_FOLLOWING = "following"
         private const val LIVE_API = "https://api.live.bilibili.com"
         private const val LIVE_REFERER = "https://live.bilibili.com/"
         private const val PROBE_TIMEOUT_S = 5L
         private const val MAX_RECOMMENDED_PAGES = 30
-        private const val FOLLOWING_PAGES_PER_CALL = 3
+        private const val FOLLOWING_MAX_PAGES = 20
+        private const val FOLLOW_BATCH = 50
         private const val AREA_PAGE_SIZE = 30
         private val PLAY_HEADERS = mapOf("Referer" to LIVE_REFERER, "User-Agent" to DESKTOP_UA)
     }
@@ -371,22 +387,43 @@ object BiliLiveParse {
         return FeedPage(items, (page + 1).toString().takeIf { items.isNotEmpty() && page < d.optInt("numPages") })
     }
 
-    /** Followed streamers who are live now (web-ucenter/user/following `list`). */
-    fun followingLive(list: JSONArray?): List<VideoItem> = list.objects().mapNotNull { o ->
-        if (o.optInt("live_status") != 1) return@mapNotNull null
+    /** The account's followed streamers, live or not (web-ucenter/user/following `list`). */
+    fun following(list: JSONArray?): List<FollowedRoom> = list.objects().mapNotNull { o ->
         val room = o.optLong("roomid").takeIf { it > 0 } ?: return@mapNotNull null
         val name = o.optString("uname")
-        val watching = o.optString("text_small").takeIf { it.isNotEmpty() && it != "0" }
-        VideoItem(
+        val uid = o.optLong("uid").takeIf { it > 0 }?.toString() ?: room.toString()
+        val live = o.optInt("live_status") == 1
+        val watching = o.optString("text_small").takeIf { live && it.isNotEmpty() && it != "0" }
+        val item = VideoItem(
             source = SourceId.BILI_LIVE,
             id = room.toString(),
-            title = o.optString("title"),
+            title = o.optString("title").ifEmpty { name },
             author = if (watching != null) "$name · $watching" else name,
-            authorId = o.optLong("uid").takeIf { it > 0 }?.toString() ?: room.toString(),
+            authorId = uid,
             thumbnailUrl = BiliText.thumb(o.optString("room_cover")),
             durationSec = null,
         )
+        FollowedRoom(Creator(SourceId.BILI_LIVE, uid, name), item, live, fromAccount = true)
     }
+
+    /** room/v1/Room/get_status_info_by_uids `data`: one entry per uid that has a room (`live_status` 1 = live, 2 = replay). */
+    fun statusByUid(data: JSONObject, viewers: (Long) -> String): List<FollowedRoom> = data.keys().asSequence().mapNotNull { uid ->
+        val o = data.optJSONObject(uid) ?: return@mapNotNull null
+        val room = o.optLong("room_id").takeIf { it > 0 } ?: return@mapNotNull null
+        val name = BiliText.clean(o.optString("uname"))
+        val live = o.optInt("live_status") == 1
+        val online = o.optLong("online")
+        val item = VideoItem(
+            source = SourceId.BILI_LIVE,
+            id = room.toString(),
+            title = BiliText.clean(o.optString("title")).ifEmpty { name },
+            author = if (live && online > 0) "$name · ${viewers(online)}" else name,
+            authorId = uid,
+            thumbnailUrl = BiliText.thumb(o.optString("cover_from_user").ifEmpty { o.optString("keyframe") }),
+            durationSec = null,
+        )
+        FollowedRoom(Creator(SourceId.BILI_LIVE, uid, name), item, live)
+    }.toList()
 
     private fun JSONArray?.objects(): List<JSONObject> =
         if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }

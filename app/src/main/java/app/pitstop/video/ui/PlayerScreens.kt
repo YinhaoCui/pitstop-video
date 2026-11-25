@@ -115,11 +115,25 @@ fun PlayerScreen(graph: AppGraph, onClose: () -> Unit, onFullscreen: () -> Unit)
             IconButton(onClick = onClose) { Icon(painterResource(R.drawable.ic_arrow_down), S.back) }
             Text(S.nowPlaying, style = MaterialTheme.typography.titleMedium)
         }
+        val liveNow by rememberFollowedLive(graph, s.current.takeIf { s.soloLive })
         val listState = rememberLazyListState()
         val reorder = rememberReorderState(listState)
         reorder.bind(first = 3, count = s.queue.size, onMove = graph.hub::moveInQueue)
         LazyColumn(Modifier.fillMaxSize(), state = listState) {
             item(key = "player") { NowPlayingCard(graph, onFullscreen = onFullscreen) }
+            // A stream playing on its own has no queue: the followed streamers who are live take its place.
+            if (s.soloLive) {
+                if (liveNow.isNotEmpty()) item(key = "livehead") {
+                    Text(
+                        S.followingLiveNow, Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                items(liveNow, key = { "live:${it.source}:${it.id}" }) { item ->
+                    VideoRow(graph, item, onClick = { graph.hub.playQueue(listOf(item)) })
+                }
+                return@LazyColumn
+            }
             item(key = "tabs") {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                     listOf(S.queueCount(s.index + 1, s.queue.size), S.playlists).forEachIndexed { i, label ->

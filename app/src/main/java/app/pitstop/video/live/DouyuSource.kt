@@ -2,6 +2,8 @@ package app.pitstop.video.live
 
 import android.content.Context
 import app.pitstop.video.core.Category
+import app.pitstop.video.core.Creator
+import app.pitstop.video.core.FollowedRoom
 import app.pitstop.video.core.DESKTOP_UA
 import app.pitstop.video.core.Feed
 import app.pitstop.video.core.FeedPage
@@ -14,6 +16,11 @@ import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.categoryKey
 import app.pitstop.video.core.getString
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -50,6 +57,22 @@ class DouyuSource(private val context: Context, private val http: OkHttpClient) 
         }
         val rooms = DouyuParse.parseListPage(get("$BASE/japi/weblist/apinc/allpage/6/$page", "$BASE/"))
         return FeedPage(rooms.map(::toItem), next = if (rooms.isEmpty() || page >= MAX_PAGES) null else (page + 1).toString())
+    }
+
+    override val supportsFollowing get() = true
+
+    /** One room page request per streamer (Douyu has no batch lookup), a few at a time. */
+    override suspend fun followedRooms(creators: List<Creator>): List<FollowedRoom> = coroutineScope {
+        val gate = Semaphore(FOLLOW_PARALLEL)
+        creators.map { c ->
+            async {
+                gate.withPermit {
+                    val state = runCatching { DouyuParse.parseRoomState(get("$BASE/betard/${c.id}", "$BASE/${c.id}")) }.getOrNull()
+                    if (state == null) FollowedRoom(c, null, live = false)
+                    else FollowedRoom(c.copy(name = state.room.streamer.ifBlank { c.name }), toItem(state.room), state.live)
+                }
+            }
+        }.awaitAll()
     }
 
     override suspend fun search(query: String): List<VideoItem> = searchPage(query, null).items
@@ -146,6 +169,7 @@ class DouyuSource(private val context: Context, private val http: OkHttpClient) 
         private const val BASE = "https://www.douyu.com"
         private const val MOBILE = "https://m.douyu.com"
         private const val SEARCH_PAGE = 20
+        private const val FOLLOW_PARALLEL = 4
         /** The all-rooms list ends with an empty page well before this; a guard against endless loops. */
         private const val MAX_PAGES = 150
     }

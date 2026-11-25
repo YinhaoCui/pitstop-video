@@ -1,6 +1,8 @@
 package app.pitstop.video.car
 
+import app.pitstop.video.core.LiveFollow
 import app.pitstop.video.core.SAVED_CREATORS_FEED
+import app.pitstop.video.core.following
 import app.pitstop.video.core.feedsFor
 import app.pitstop.video.core.feedsWith
 import app.pitstop.video.core.loadFeed
@@ -85,7 +87,7 @@ private fun Screen.refreshOn(hub: PlaybackHub, key: (app.pitstop.video.player.Hu
  */
 class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Screen(carContext) {
     init {
-        refreshOn(hub) { listOf(it.wantsToPlay, it.mode, it.drivingLocked, it.subtitle != null, it.subtitleOptions.isNotEmpty()) }
+        refreshOn(hub) { listOf(it.wantsToPlay, it.mode, it.drivingLocked, it.subtitle != null, it.subtitleOptions.isNotEmpty(), it.soloLive) }
         // Any other screen on top of this one is a panel / list: shrink the video beside it.
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) = hub.setPanelOpen(false)
@@ -96,7 +98,7 @@ class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
     override fun onGetTemplate(): Template {
         val s = hub.state.value
         val t = I18n.s
-        val actions = ActionStrip.Builder()
+        val strip = ActionStrip.Builder()
             .addAction(
                 Action.Builder().setTitle(t.browse).setIcon(carContext.icon(R.drawable.ic_list))
                     .setOnClickListener { screenManager.push(BrowseScreen(carContext, hub)) }.build()
@@ -108,14 +110,15 @@ class PlayerScreen(carContext: CarContext, private val hub: PlaybackHub) : Scree
                     .setIcon(carContext.icon(if (s.mode == DisplayMode.FULL) R.drawable.ic_split else R.drawable.ic_fullscreen))
                     .setOnClickListener { hub.toggleMode() }.build()
             )
-            .addAction(
-                Action.Builder().setTitle(t.queue).setIcon(carContext.icon(R.drawable.ic_playlist_play))
-                    .setOnClickListener { screenManager.push(QueueScreen(carContext, hub)) }.build()
-            )
-            .build()
+        // A stream picked from a live list plays alone: there is no queue to open.
+        if (!s.soloLive) strip.addAction(
+            Action.Builder().setTitle(t.queue).setIcon(carContext.icon(R.drawable.ic_playlist_play))
+                .setOnClickListener { screenManager.push(QueueScreen(carContext, hub)) }.build()
+        )
+        val actions = strip.build()
         // Right column (max 4): seek back, seek forward, subtitles on/off, shrink to Browse.
         // While driving there is no picture (see CarPresentation): previous / next instead.
-        val side = if (s.drivingLocked) ActionStrip.Builder()
+        val side = if (s.drivingLocked && !s.soloLive) ActionStrip.Builder()
             .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_skip_previous)).setOnClickListener { hub.previous() }.build())
             .addAction(Action.Builder().setIcon(carContext.icon(R.drawable.ic_skip_next)).setOnClickListener { hub.next() }.build())
             .build()
@@ -259,6 +262,12 @@ class SourceScreen(carContext: CarContext, private val hub: PlaybackHub, private
                 Row.Builder().setTitle(feed.title).setBrowsable(true)
                     .setOnClickListener {
                         if (feed.key == SAVED_CREATORS_FEED) screenManager.push(CarCreatorsScreen(carContext, hub, source))
+                        // Following on the car: only the rooms that are live now.
+                        else if (feed.key == LiveFollow.FEED) screenManager.push(
+                            ResultsScreen(carContext, hub, "$name · ${feed.title}") {
+                                source.following(carContext.graph.creators).filter { it.live }.mapNotNull { it.item }
+                            }
+                        )
                         else screenManager.push(ResultsScreen(carContext, hub, "$name · ${feed.title}") { source.loadFeed(feed) })
                     }.build()
             )
@@ -309,6 +318,8 @@ class ResultsScreen(
     carContext: CarContext,
     private val hub: PlaybackHub,
     private val title: String,
+    /** A browse list (feed, search): a live stream picked from it plays alone. False for the user's playlists. */
+    private val browsed: Boolean = true,
     private val loader: suspend () -> List<VideoItem>,
 ) : Screen(carContext) {
     private var items: List<VideoItem>? = null
@@ -346,7 +357,7 @@ class ResultsScreen(
             val row = Row.Builder()
                 .setTitle(item.title.ifBlank { "—" })
                 .setOnClickListener {
-                    hub.playQueue(loaded, i)
+                    if (browsed) hub.playBrowsed(loaded, i) else hub.playQueue(loaded, i)
                     screenManager.popToRoot()
                 }
             val sub = listOfNotNull(item.author?.takeIf { it.isNotBlank() }, formatDuration(item.durationSec).ifEmpty { null })
@@ -376,7 +387,7 @@ class CarPlaylistsScreen(carContext: CarContext, private val hub: PlaybackHub) :
                 row.setOnClickListener { }
             } else {
                 row.setBrowsable(true).setOnClickListener {
-                    screenManager.push(ResultsScreen(carContext, hub, p.name) { store.get(p.id)?.items.orEmpty() })
+                    screenManager.push(ResultsScreen(carContext, hub, p.name, browsed = false) { store.get(p.id)?.items.orEmpty() })
                 }
             }
             list.addItem(row.build())
