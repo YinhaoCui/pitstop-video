@@ -79,6 +79,26 @@ private class HubPlayer(private val hub: PlaybackHub) : ForwardingPlayer(hub.pla
     override fun isCommandAvailable(command: Int): Boolean =
         !hidden.contains(command) && (extra.contains(command) || super.isCommandAvailable(command))
 
+    /**
+     * The session learns about command changes from player events, and ForwardingPlayer passes on the
+     * inner player's commands there (seek ±10 s, no next / previous for a single item), which made the
+     * car's media card show ±10 s anyway. Listeners get this player's commands instead.
+     */
+    private val wrapped = HashMap<Player.Listener, Player.Listener>()
+
+    override fun addListener(listener: Player.Listener) {
+        val w = object : Player.Listener by listener {
+            override fun onAvailableCommandsChanged(availableCommands: Player.Commands) =
+                listener.onAvailableCommandsChanged(this@HubPlayer.availableCommands)
+        }
+        wrapped[listener] = w
+        super.addListener(w)
+    }
+
+    override fun removeListener(listener: Player.Listener) {
+        wrapped.remove(listener)?.let { super.removeListener(it) }
+    }
+
     override fun hasNextMediaItem(): Boolean = hub.state.value.upNext.isNotEmpty()
     override fun hasPreviousMediaItem(): Boolean = true
 

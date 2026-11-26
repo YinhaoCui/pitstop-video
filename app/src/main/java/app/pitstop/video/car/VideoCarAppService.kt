@@ -60,9 +60,10 @@ class VideoSession : Session() {
                 CarConnections.count.value++
             }
 
-            // Leaving the app on the car screen (opening Maps, Phone, ...) pauses the video.
+            // Leaving the app on the car screen (opening Maps, Phone, ...) pauses a video; music keeps
+            // playing and is controlled from the car's media card.
             override fun onStop(owner: LifecycleOwner) {
-                hub.player.pause()
+                if (!hub.state.value.isMusic) hub.player.pause()
             }
 
             override fun onDestroy(owner: LifecycleOwner) {
