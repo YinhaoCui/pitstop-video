@@ -1,5 +1,8 @@
 package app.pitstop.video
 
+import app.pitstop.video.core.followTarget
+import app.pitstop.video.core.creatorsOf
+import app.pitstop.video.core.PlaylistOps
 import app.pitstop.video.update.AppUpdater
 import android.app.Application
 import android.content.ComponentName
@@ -87,7 +90,7 @@ class AppGraph(app: Application) {
     val youTubeAccount = YouTubeAccount(app, http)
     val thumbnails = ThumbnailLoader(app, http)
     val driving = DrivingMonitor(app)
-    val playlists = PlaylistStore(File(app.filesDir, "playlists.json"), I18n.s.starred)
+    val playlists = PlaylistStore(File(app.filesDir, "playlists.json"))
     val updater = AppUpdater(app, http)
     val creators = CreatorStore(File(app.filesDir, "creators.json"))
 
@@ -163,9 +166,10 @@ class AppGraph(app: Application) {
 
     init {
         NewPipe.init(NewPipeDownloader(http))
-        // "Starred" / "星标" follows the in-app language switch.
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main).launch {
-            I18n.language.collect { playlists.nameStarred(I18n.s.starred) }
+        // Stars became follows: once, the creators of everything starred are followed (the playlist stays).
+        if (Settings.takeStarredImport()) {
+            val starred = playlists.get(PlaylistOps.STARRED)?.items.orEmpty()
+            creators.addAll(creatorsOf(starred, creators.creators.value) { item -> source(item.source).followTarget(item) })
         }
     }
 }

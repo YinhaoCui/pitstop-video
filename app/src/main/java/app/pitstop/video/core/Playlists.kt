@@ -26,20 +26,8 @@ object PlaylistOps {
 
     fun add(p: Playlist, item: VideoItem): Playlist = if (contains(p, item)) p else p.copy(items = p.items + item)
 
-    /** Id of the built-in "Starred" playlist: always there, first, and not renamed or deleted. */
+    /** Id of the playlist that was the built-in "Starred" one; now an ordinary playlist (stars became follows). */
     const val STARRED = "starred"
-
-    /** [list] with the Starred playlist first (created empty when missing), named [name]. */
-    fun withStarred(list: List<Playlist>, name: String): List<Playlist> {
-        val starred = (list.firstOrNull { it.id == STARRED } ?: Playlist(STARRED, name)).copy(name = name)
-        return listOf(starred) + list.filterNot { it.id == STARRED }
-    }
-
-    /** Stars [item] (newest first) or, when it is already starred, removes the star. */
-    fun toggle(p: Playlist, item: VideoItem): Playlist =
-        if (contains(p, item)) p.copy(items = p.items.filterNot { same(it, item) }) else p.copy(items = listOf(item) + p.items)
-
-    private fun same(a: VideoItem, b: VideoItem) = a.source == b.source && a.id == b.id && a.part == b.part
 
     /** Appends [items] in order, skipping ones already in the playlist (or repeated in [items]). */
     fun addAll(p: Playlist, items: List<VideoItem>): Playlist = items.fold(p, ::add)
@@ -111,8 +99,8 @@ object PlaylistOps {
 }
 
 /** Playlists persisted as JSON in app-private storage; shared by phone UI and car screens. */
-class PlaylistStore(private val file: File, starredName: String) {
-    private val _playlists = MutableStateFlow(PlaylistOps.withStarred(load(), starredName))
+class PlaylistStore(private val file: File) {
+    private val _playlists = MutableStateFlow(load())
     val playlists: StateFlow<List<Playlist>> = _playlists.asStateFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val writeLock = Mutex()
@@ -126,20 +114,14 @@ class PlaylistStore(private val file: File, starredName: String) {
     }
 
     fun rename(id: String, name: String) {
-        if (id != PlaylistOps.STARRED) edit(id) { it.copy(name = name.trim().ifEmpty { it.name }) }
+        edit(id) { it.copy(name = name.trim().ifEmpty { it.name }) }
     }
     fun delete(id: String) {
-        if (id != PlaylistOps.STARRED) mutate { list -> list.filterNot { it.id == id } }
+        mutate { list -> list.filterNot { it.id == id } }
     }
-    fun deleteAll(ids: Set<String>) = mutate { list -> list.filterNot { it.id in ids && it.id != PlaylistOps.STARRED } }
+    fun deleteAll(ids: Set<String>) = mutate { list -> list.filterNot { it.id in ids } }
     fun removeAll(id: String, indices: Set<Int>) = edit(id) { PlaylistOps.removeAll(it, indices) }
 
-    fun isStarred(item: VideoItem): Boolean = get(PlaylistOps.STARRED)?.let { PlaylistOps.contains(it, item) } == true
-    /** Returns true when [item] is starred afterwards. */
-    fun toggleStar(item: VideoItem): Boolean {
-        edit(PlaylistOps.STARRED) { PlaylistOps.toggle(it, item) }
-        return isStarred(item)
-    }
     fun add(id: String, item: VideoItem) = edit(id) { PlaylistOps.add(it, item) }
     fun addAll(id: String, items: List<VideoItem>) = edit(id) { PlaylistOps.addAll(it, items) }
     fun removeAt(id: String, index: Int) = edit(id) { PlaylistOps.removeAt(it, index) }
@@ -158,11 +140,6 @@ class PlaylistStore(private val file: File, starredName: String) {
             }
         }
         return count
-    }
-
-    /** The built-in Starred playlist's name, in the app language (call when the language changes). */
-    fun nameStarred(name: String) {
-        if (get(PlaylistOps.STARRED)?.name != name) mutate { PlaylistOps.withStarred(it, name) }
     }
 
     /** Saves a new order of the same items (Sort & filter → Keep this order). */

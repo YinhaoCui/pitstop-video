@@ -1,5 +1,10 @@
 package app.pitstop.video.ui
 
+import app.pitstop.video.core.I18n
+import app.pitstop.video.core.followTarget
+import app.pitstop.video.core.followedWorks
+import app.pitstop.video.core.isFollowFeed
+import app.pitstop.video.core.FOLLOWED_WORKS_FEED
 import app.pitstop.video.player.SubtitleStyling
 import app.pitstop.video.core.Settings
 import app.pitstop.video.core.PlayerStyle
@@ -403,14 +408,8 @@ internal fun NowPlayingCard(graph: AppGraph, onFullscreen: () -> Unit) {
             }
             if (!solo) IconButton(onClick = { showQueue = true }) { Icon(painterResource(R.drawable.ic_playlist_play), S.queue) }
             s.current?.let { cur ->
-                val lists by graph.playlists.playlists.collectAsStateWithLifecycle()
-                val starred = lists.firstOrNull { it.id == PlaylistOps.STARRED }?.let { PlaylistOps.contains(it, cur) } == true
-                IconButton(onClick = { graph.playlists.toggleStar(cur) }) {
-                    Icon(
-                        painterResource(if (starred) R.drawable.ic_star else R.drawable.ic_star_border),
-                        if (starred) S.unstar else S.star, tint = if (starred) on else off,
-                    )
-                }
+                // Follow this video's / song's creator or this stream's streamer (lit when followed).
+                FollowButton(graph, cur, on, off)
                 IconButton(onClick = { adding = cur }) { Icon(painterResource(R.drawable.ic_playlist_add), S.addToPlaylist) }
                 if (graph.downloads.canDownload(cur)) {
                     IconButton(onClick = { downloading = cur }) { Icon(painterResource(R.drawable.ic_download), S.download) }
@@ -557,9 +556,13 @@ internal fun SourceTab(
 
     val savedCreators by graph.creators.creators.collectAsStateWithLifecycle()
     val feeds = remember(source, refreshKey, savedCreators) { source.feedsWith(graph.creators) }
-    // A live platform opens on "Following" once someone is followed there, else on its first own feed.
+    // A live platform opens on "Following" once someone is followed there; otherwise a platform opens on
+    // its own first feed, not on a follow list (those ask the platform once per creator).
     var feedKey by rememberSaveable(source.id) {
-        mutableStateOf(feeds.firstOrNull { it.key != LiveFollow.FEED || savedCreators.any { c -> c.source == source.id } }?.key)
+        val followsHere = savedCreators.any { c -> c.source == source.id }
+        mutableStateOf(
+            (feeds.firstOrNull { it.key == LiveFollow.FEED && followsHere } ?: feeds.firstOrNull { !isFollowFeed(it.key) } ?: feeds.firstOrNull())?.key,
+        )
     }
     var query by rememberSaveable(source.id) { mutableStateOf("") }
     var activeQuery by rememberSaveable(source.id) { mutableStateOf<String?>(null) }
@@ -656,18 +659,26 @@ internal fun SourceTab(
             FollowingList(graph, source, reloadKey = listOf(reload, refreshKey))
             return@Column
         }
+        if (q == null && cat == null && feed?.key == FOLLOWED_WORKS_FEED && savedCreators.none { it.source == source.id }) {
+            Text(S.noSavedCreators, Modifier.padding(24.dp))
+            return@Column
+        }
         if (q == null && cat == null && feed?.key == SAVED_CREATORS_FEED) {
             SavedCreatorsList(graph, source) { c -> creatorId = c.id; creatorName = c.name }
             return@Column
         }
         PagedVideoList(
             graph, source,
-            loadKey = listOf(source.id, q, cat?.key, feed?.key, reload, refreshKey, if (q != null) searchPicked else null),
+            loadKey = listOf(
+                source.id, q, cat?.key, feed?.key, reload, refreshKey, if (q != null) searchPicked else null,
+                if (feed?.key == FOLLOWED_WORKS_FEED) savedCreators.filter { it.source == source.id } else null,
+            ),
             view = view,
             page = { cursor ->
                 when {
                     q != null -> source.searchPage(q, cursor, searchPicked)
                     cat != null -> source.loadFeedPage(cat, cursor)
+                    feed?.key == FOLLOWED_WORKS_FEED -> if (cursor == null) FeedPage(source.followedWorks(graph.creators)) else FeedPage(emptyList())
                     feed != null -> source.loadFeedPage(feed, cursor)
                     else -> FeedPage(emptyList())
                 }
@@ -735,5 +746,26 @@ fun VideoRow(
             }
         }
         trailing()
+    }
+}
+
+/** Follows / unfollows the creator (or streamer) of [item]; nothing for items without one. */
+@Composable
+internal fun FollowButton(
+    graph: AppGraph,
+    item: VideoItem,
+    on: androidx.compose.ui.graphics.Color,
+    off: androidx.compose.ui.graphics.Color,
+) {
+    val target = remember(item) { graph.source(item.source).followTarget(item) } ?: return
+    val saved by graph.creators.creators.collectAsStateWithLifecycle()
+    val followed = saved.any { it.source == target.source && it.id == target.id }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    IconButton(onClick = {
+        graph.creators.toggle(target)
+        val msg = if (followed) I18n.s.unfollowedName(target.name) else I18n.s.followedName(target.name)
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+    }) {
+        Icon(painterResource(R.drawable.ic_person), if (followed) S.unfollow else S.follow, tint = if (followed) on else off)
     }
 }

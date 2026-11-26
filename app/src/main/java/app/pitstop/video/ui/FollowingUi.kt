@@ -20,7 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -40,9 +39,7 @@ import app.pitstop.video.R
 import app.pitstop.video.core.FollowedRoom
 import app.pitstop.video.core.I18n
 import app.pitstop.video.core.LiveFollow
-import app.pitstop.video.core.PlaylistOps
 import app.pitstop.video.core.S
-import app.pitstop.video.core.Settings
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.core.VideoSource
 import app.pitstop.video.core.following
@@ -50,16 +47,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-
-/**
- * Before follows existed, starring a room was the only way to keep a streamer: the first time a
- * Following list opens, the streamers of starred live rooms become follows (the stars stay).
- */
-private fun importStarredRooms(graph: AppGraph) {
-    if (!Settings.takeStarredLiveImport()) return
-    val starred = graph.playlists.get(PlaylistOps.STARRED)?.items.orEmpty()
-    graph.creators.addAll(LiveFollow.fromStarred(starred, graph.creators.creators.value))
-}
 
 /**
  * A live platform's "Following": every followed streamer, live rooms first (tap to watch), then the
@@ -70,7 +57,6 @@ private fun importStarredRooms(graph: AppGraph) {
 @Composable
 fun FollowingList(graph: AppGraph, source: VideoSource, reloadKey: Any?) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) { importStarredRooms(graph) }
     val saved by graph.creators.creators.collectAsStateWithLifecycle()
     val mine = saved.filter { it.source == source.id }
     var reload by remember { mutableIntStateOf(0) }

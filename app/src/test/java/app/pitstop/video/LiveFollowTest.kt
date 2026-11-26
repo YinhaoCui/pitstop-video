@@ -4,6 +4,7 @@ import app.pitstop.video.core.Creator
 import app.pitstop.video.core.FollowedRoom
 import app.pitstop.video.core.LiveFollow
 import app.pitstop.video.core.SourceId
+import app.pitstop.video.core.creatorsOf
 import app.pitstop.video.core.VideoItem
 import app.pitstop.video.player.HubState
 import org.junit.Assert.assertEquals
@@ -36,7 +37,7 @@ class LiveFollowTest {
         val followed = listOf(Creator(SourceId.TWITCH, "x", "X"))
         assertEquals(
             listOf(Creator(SourceId.DOUYU, "1", "A"), Creator(SourceId.BILI_LIVE, "777", "B")),
-            LiveFollow.fromStarred(starred, followed),
+            creatorsOf(starred, followed, LiveFollow::creatorOf),
         )
     }
 

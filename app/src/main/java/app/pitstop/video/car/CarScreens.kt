@@ -1,5 +1,7 @@
 package app.pitstop.video.car
 
+import app.pitstop.video.core.followedWorks
+import app.pitstop.video.core.FOLLOWED_WORKS_FEED
 import app.pitstop.video.core.LiveFollow
 import app.pitstop.video.core.SAVED_CREATORS_FEED
 import app.pitstop.video.core.following
@@ -262,6 +264,9 @@ class SourceScreen(carContext: CarContext, private val hub: PlaybackHub, private
                 Row.Builder().setTitle(feed.title).setBrowsable(true)
                     .setOnClickListener {
                         if (feed.key == SAVED_CREATORS_FEED) screenManager.push(CarCreatorsScreen(carContext, hub, source))
+                        else if (feed.key == FOLLOWED_WORKS_FEED) screenManager.push(
+                            ResultsScreen(carContext, hub, "$name · ${feed.title}") { source.followedWorks(carContext.graph.creators) }
+                        )
                         // Following on the car: only the rooms that are live now.
                         else if (feed.key == LiveFollow.FEED) screenManager.push(
                             ResultsScreen(carContext, hub, "$name · ${feed.title}") {

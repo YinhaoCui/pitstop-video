@@ -51,11 +51,11 @@ object Settings {
         prefs?.edit()?.putBoolean("background_play", value)?.apply()
     }
 
-    /** True exactly once: the caller then turns starred live rooms into follows (see LiveFollow.fromStarred). */
-    fun takeStarredLiveImport(): Boolean {
+    /** True exactly once: the caller then follows the creators of everything that was starred (see creatorsOf). */
+    fun takeStarredImport(): Boolean {
         val p = prefs ?: return false
-        if (p.getBoolean("starred_live_followed", false)) return false
-        p.edit().putBoolean("starred_live_followed", true).apply()
+        if (p.getBoolean("starred_followed", false)) return false
+        p.edit().putBoolean("starred_followed", true).apply()
         return true
     }
 

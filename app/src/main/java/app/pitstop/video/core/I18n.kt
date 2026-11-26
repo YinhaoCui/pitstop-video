@@ -494,10 +494,16 @@ class Strings(val language: AppLanguage) {
     val biliMusicLogin get() = t("Sign in to Bilibili for higher audio quality.", "登录哔哩哔哩可获得更高音质。")
 
     // Creators
-    val saveCreator get() = t("Save", "收藏")
-    val savedCreator get() = t("Saved", "已收藏")
-    val savedCreators get() = t("Saved creators", "收藏的作者")
-    val noSavedCreators get() = t("No saved creators. Tap a creator's name, then Save.", "还没有收藏的作者。点作者名字，再点“收藏”。")
+    val saveCreator get() = t("Follow", "关注")
+    val savedCreator get() = t("Following", "已关注")
+    val savedCreators get() = t("Followed creators", "关注的作者")
+    val noSavedCreators get() = t("You don't follow any creators here yet. Tap a creator's name, then Follow.", "还没有关注的作者。点作者名字，再点“关注”。")
+    val followedVideos get() = t("Followed videos", "关注的视频")
+    val followedMusic get() = t("Followed music", "关注的音乐")
+    val follow get() = t("Follow", "关注")
+    val unfollow get() = t("Unfollow", "取消关注")
+    fun followedName(name: String) = t("Following $name", "已关注 $name")
+    fun unfollowedName(name: String) = t("Unfollowed $name", "已取消关注 $name")
 
     // Common
     val playlists get() = t("Playlists", "播放列表")
@@ -568,11 +574,6 @@ class Strings(val language: AppLanguage) {
     val previous get() = t("Previous", "上一个")
     val next get() = t("Next", "下一个")
     val addToPlaylist get() = t("Add to playlist", "添加到播放列表")
-    val starred get() = t("Starred", "星标")
-    val star get() = t("Star", "加星标")
-    val unstar get() = t("Remove star", "取消星标")
-    val starAdded get() = t("Added to Starred", "已加入星标")
-    val starRemoved get() = t("Removed from Starred", "已从星标移除")
     val carLayout get() = t("Car layout", "车机布局")
     val fullScreen get() = t("Full screen", "全屏")
     val exitFullScreen get() = t("Exit full screen", "退出全屏")

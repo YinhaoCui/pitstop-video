@@ -1,6 +1,12 @@
 package app.pitstop.video.core
 
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,17 +67,83 @@ object CreatorCodec {
     }
 }
 
+/** The feed that mixes the latest uploads of every followed creator of a platform. */
+const val FOLLOWED_WORKS_FEED = "followed_works"
+
 /**
- * The source's own feeds, plus one "Saved creators" feed when any of its creators are saved (only for
- * sources that list creators). The creators are a category of their own, not a feed each.
- * Live platforms start with their "Following" feed ([LiveFollow.FEED]) instead.
+ * The feeds shown after Categories: what the app follows first, then the platform's own feeds.
+ * Live platforms: "Following" ([LiveFollow.FEED]). Platforms with creators: the followed creators'
+ * latest uploads ([FOLLOWED_WORKS_FEED]) and the followed creators themselves ([SAVED_CREATORS_FEED]).
  */
 fun VideoSource.feedsWith(
     store: CreatorStore,
     title: String = I18n.s.savedCreators,
     followingTitle: String = I18n.s.followingStreamers,
-): List<Feed> =
-    (if (supportsFollowing) listOf(Feed(LiveFollow.FEED, followingTitle)) else emptyList()) + feeds() + if (supportsCreators && store.forSource(id).isNotEmpty()) listOf(Feed(SAVED_CREATORS_FEED, title)) else emptyList()
+    worksTitle: String = if (id.music) I18n.s.followedMusic else I18n.s.followedVideos,
+): List<Feed> = when {
+    supportsFollowing -> listOf(Feed(LiveFollow.FEED, followingTitle))
+    supportsCreators -> listOf(Feed(FOLLOWED_WORKS_FEED, worksTitle), Feed(SAVED_CREATORS_FEED, title))
+    else -> emptyList()
+} + feeds()
+
+/** Feeds a platform opens on: its own, not the follow lists (they ask the platform once per creator). */
+fun isFollowFeed(key: String?) = key == FOLLOWED_WORKS_FEED || key == SAVED_CREATORS_FEED || key == LiveFollow.FEED
+
+/**
+ * Who following [item] follows: a live room's streamer, or a video's / song's creator on platforms
+ * that list creators. Null for anything without one (local files, radio, Drive).
+ */
+fun VideoSource.followTarget(item: VideoItem): Creator? = when {
+    supportsFollowing -> LiveFollow.creatorOf(item)
+    supportsCreators && item.authorId != null -> Creator(item.source, item.authorId, item.author?.trim().orEmpty().ifEmpty { item.title })
+    else -> null
+}
+
+/** Follows for the creators of [items] that aren't followed yet (stars used to be the way to keep things). */
+fun creatorsOf(items: List<VideoItem>, followed: List<Creator>, target: (VideoItem) -> Creator?): List<Creator> {
+    val have = followed.map { it.source to it.id }.toMutableSet()
+    return items.mapNotNull(target).filter { have.add(it.source to it.id) }
+}
+
+object FollowedWorks {
+    /** Uploads taken from each creator, and the most shown. */
+    const val PER_CREATOR = 15
+    const val MAX = 200
+
+    /**
+     * One list from several creators' newest-first uploads: the newest of each, then the second of
+     * each, ... (sources give no common date to sort by). Repeats are dropped.
+     */
+    fun interleave(lists: List<List<VideoItem>>, max: Int = MAX): List<VideoItem> {
+        val out = mutableListOf<VideoItem>()
+        val seen = mutableSetOf<Pair<SourceId, String>>()
+        val longest = lists.maxOfOrNull { it.size } ?: 0
+        for (i in 0 until longest) for (l in lists) {
+            val item = l.getOrNull(i) ?: continue
+            if (out.size < max && seen.add(item.source to item.id)) out += item
+        }
+        return out
+    }
+}
+
+/** The latest uploads of everyone followed on this platform, a few creators at a time. */
+suspend fun VideoSource.followedWorks(store: CreatorStore): List<VideoItem> = coroutineScope {
+    val gate = Semaphore(4)
+    val lists = store.forSource(id).map { c ->
+        async {
+            gate.withPermit {
+                try {
+                    creatorPage(c.id, null).items.take(FollowedWorks.PER_CREATOR)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    emptyList()
+                }
+            }
+        }
+    }.awaitAll()
+    FollowedWorks.interleave(lists)
+}
 
 /** The saved creators of [source] as feeds (one per creator), for lists that open each one. */
 fun CreatorStore.feedsFor(source: SourceId): List<Feed> = forSource(source).map { Feed(CREATOR_FEED_PREFIX + it.id, it.name) }

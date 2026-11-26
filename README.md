@@ -68,28 +68,29 @@ or NetEase instead.
 - *Sort & filter* on every list: sort by title, creator or length; filter by length, words or
   platform. Platform-side options too: YouTube upload date / length, Bilibili sort and length,
   uploader sort, radio sort.
-- Tap a creator's name for their latest uploads. Saved creators are listed together under one
-  *Saved creators* chip (and row in the car), not mixed in with the feeds.
+- Tap a creator's name for their latest uploads, and *Follow* them there, with the person button in
+  the player, or from an item's menu. Every video and music platform with creators gets two chips
+  after Categories: *Followed videos* / *Followed music* (the latest uploads of everyone you follow
+  there, mixed) and *Followed creators* (the list of them). The car has the same rows.
 - **Following** (Live tab, all three platforms, no account needed): tap a streamer's name, or
   *Follow* in a room's menu. The *Following* chip, first on each live platform, lists everyone you
   follow: live rooms first, the rest greyed as *Not live*. It is checked when you open it or pull to
   refresh, never in the background. Under a playing stream, the followed streamers who are live now
-  are one tap away; the car's *Following* row lists the live ones. Rooms starred before this existed
-  are followed automatically the first time.
+  are one tap away; the car's *Following* row lists the live ones.
+- Stars are gone: the first time 0.8.1 runs, the creator of everything you had starred is followed,
+  and the *Starred* playlist stays as an ordinary playlist (rename or delete it as you like).
 
 ### Queue and playlists
 
 - Long-press any item in any list (feeds, search, folders, playlists, the queue) to select several:
   *Select all*, *Invert*, then play, queue, add to a playlist or remove them together. Each item's
-  + button opens its own menu: *Play next*, *Add to queue*, *Star*, *Download*, add to a playlist.
+  + button opens its own menu: *Play next*, *Add to queue*, *Follow* (its creator), *Download*, add to a playlist.
 - Queue rows show thumbnails. Drag the ⋮⋮ grip on the left of a row to reorder; the list scrolls
   when you hold a row near the edge. The ⋮ menu moves a row to the top or removes it;
   *Clear upcoming* empties what's left. Screen readers get *Move up* / *Move down* actions.
 - Playlists mix every platform, videos and songs alike (a song after a video shows its cover, even
   in full screen). Reorder them by dragging (in their own order), sort them and keep a sorted
   order, play or shuffle from the phone or the car.
-- **Starred**: star anything from the player or an item's menu; it lands in the built-in *Starred*
-  playlist, always first, newest star on top.
 - **Duplicates** in a playlist groups items that are probably the same song or video (same item,
   same title, or the same title once tags like "(Official Video)" are ignored) so the extra copies
   can be removed in one go.

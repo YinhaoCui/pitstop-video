@@ -39,23 +39,4 @@ class PlaylistOpsTest {
         val list = listOf(p, Playlist("p2", "Empty"))
         assertEquals(list, PlaylistOps.fromJson(PlaylistOps.toJson(list)))
     }
-
-    @Test fun starredIsFirstAndNamed() {
-        val created = PlaylistOps.withStarred(listOf(p), "Starred")
-        assertEquals(listOf(PlaylistOps.STARRED, "p1"), created.map { it.id })
-        assertEquals(emptyList<VideoItem>(), created[0].items)
-        // An existing one keeps its items, moves first and takes the current language's name.
-        val kept = PlaylistOps.withStarred(listOf(p, Playlist(PlaylistOps.STARRED, "Starred", listOf(a))), "星标")
-        assertEquals(listOf(PlaylistOps.STARRED, "p1"), kept.map { it.id })
-        assertEquals("星标", kept[0].name)
-        assertEquals(listOf(a), kept[0].items)
-    }
-
-    @Test fun toggleStarsNewestFirstAndUnstars() {
-        val s = Playlist(PlaylistOps.STARRED, "Starred")
-        val one = PlaylistOps.toggle(s, a)
-        val two = PlaylistOps.toggle(one, b)
-        assertEquals(listOf(b, a), two.items)
-        assertEquals(listOf(b), PlaylistOps.toggle(two, a.copy(title = "renamed")).items)
-    }
 }

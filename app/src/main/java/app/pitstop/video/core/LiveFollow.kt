@@ -31,12 +31,6 @@ object LiveFollow {
         return Creator(item.source, item.authorId ?: item.id, streamerName(item.author).ifEmpty { item.title })
     }
 
-    /** Streamers of starred live rooms that aren't followed yet (stars were the only way to keep a room). */
-    fun fromStarred(starred: List<VideoItem>, followed: List<Creator>): List<Creator> {
-        val have = followed.map { it.source to it.id }.toMutableSet()
-        return starred.mapNotNull(::creatorOf).filter { have.add(it.source to it.id) }
-    }
-
     /**
      * One list from the app's follows and the account's: a streamer in both counts as followed in the
      * app (so it can be unfollowed there). Live rooms first, each group in its given order.
