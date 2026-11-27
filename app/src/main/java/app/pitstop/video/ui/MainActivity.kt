@@ -81,9 +81,10 @@ open class MainActivity : ComponentActivity() {
         if (graph.inCarDevice) graph.driving.startPhoneGps("device")
         if (carInstance) {
             // The parked-only lock applies here too, on top of Android Auto's own block while driving.
+            carStarted++
             graph.hub.setOnCarDisplay(true)
             graph.driving.startPhoneGps("parked")
-        } else phoneStarted = true
+        } else phoneStarted++
         // The media session service gives background playback, notification and lock-screen controls.
         PlaybackService.start(this)
         graph.hub.setPhoneBackground(false)
@@ -91,12 +92,15 @@ open class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         graph.driving.stopPhoneGps("device")
+        // Counted, not flagged: when Android replaces a window (task cleared, activity recreated), the old
+        // one stops after the new one started, and must not mark the app as hidden.
         if (carInstance) {
             graph.driving.stopPhoneGps("parked")
-            graph.hub.setOnCarDisplay(false)
-        } else phoneStarted = false
-        // The other screen (car or phone) is still showing the app: leave playback alone.
-        val otherVisible = if (carInstance) phoneStarted else graph.hub.state.value.onCarDisplay
+            carStarted = (carStarted - 1).coerceAtLeast(0)
+            if (carStarted == 0) graph.hub.setOnCarDisplay(false)
+        } else phoneStarted = (phoneStarted - 1).coerceAtLeast(0)
+        // Another window of the app (car or phone, or this one's replacement) still shows: leave playback alone.
+        val otherVisible = phoneStarted > 0 || graph.hub.state.value.onCarDisplay
         if (!isChangingConfigurations && !graph.hub.state.value.carActive && !otherVisible) {
             // Screen off / another app: keep the sound (picture paused to save data) or pause.
             if (Settings.backgroundPlay.value) graph.hub.setPhoneBackground(true) else graph.hub.player.pause()
@@ -132,8 +136,9 @@ open class MainActivity : ComponentActivity() {
     }
 
     private companion object {
-        /** The phone instance is visible (between onStart and onStop). */
-        var phoneStarted = false
+        /** Phone / car instances between onStart and onStop (two briefly while one replaces the other). */
+        var phoneStarted = 0
+        var carStarted = 0
     }
 }
 
