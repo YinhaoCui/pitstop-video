@@ -87,10 +87,7 @@ private class HubPlayer(private val hub: PlaybackHub) : ForwardingPlayer(hub.pla
     private val wrapped = HashMap<Player.Listener, Player.Listener>()
 
     override fun addListener(listener: Player.Listener) {
-        val w = object : Player.Listener by listener {
-            override fun onAvailableCommandsChanged(availableCommands: Player.Commands) =
-                listener.onAvailableCommandsChanged(this@HubPlayer.availableCommands)
-        }
+        val w = CommandsListener(listener) { availableCommands }
         wrapped[listener] = w
         super.addListener(w)
     }
@@ -114,4 +111,51 @@ private class HubPlayer(private val hub: PlaybackHub) : ForwardingPlayer(hub.pla
     override fun setPlayWhenReady(playWhenReady: Boolean) {
         if (!playWhenReady || hub.playAllowed()) super.setPlayWhenReady(playWhenReady)
     }
+}
+
+/**
+ * Passes every event on to [l], except that available commands are [commands]. Written out by hand:
+ * Kotlin's `by` delegation skips the interface's Java default methods, which would drop every event.
+ */
+@OptIn(UnstableApi::class)
+@Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+internal class CommandsListener(private val l: Player.Listener, private val commands: () -> Player.Commands) : Player.Listener {
+    override fun onAvailableCommandsChanged(availableCommands: Player.Commands) = l.onAvailableCommandsChanged(commands())
+    override fun onEvents(player: Player, events: Player.Events) = l.onEvents(player, events)
+    override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) = l.onTimelineChanged(timeline, reason)
+    override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) = l.onMediaItemTransition(mediaItem, reason)
+    override fun onTracksChanged(tracks: androidx.media3.common.Tracks) = l.onTracksChanged(tracks)
+    override fun onMediaMetadataChanged(mediaMetadata: androidx.media3.common.MediaMetadata) = l.onMediaMetadataChanged(mediaMetadata)
+    override fun onPlaylistMetadataChanged(mediaMetadata: androidx.media3.common.MediaMetadata) = l.onPlaylistMetadataChanged(mediaMetadata)
+    override fun onIsLoadingChanged(isLoading: Boolean) = l.onIsLoadingChanged(isLoading)
+    override fun onLoadingChanged(isLoading: Boolean) = l.onLoadingChanged(isLoading)
+    override fun onTrackSelectionParametersChanged(parameters: androidx.media3.common.TrackSelectionParameters) = l.onTrackSelectionParametersChanged(parameters)
+    override fun onPlayerStateChanged(playWhenReady: Boolean, playbackState: Int) = l.onPlayerStateChanged(playWhenReady, playbackState)
+    override fun onPlaybackStateChanged(playbackState: Int) = l.onPlaybackStateChanged(playbackState)
+    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = l.onPlayWhenReadyChanged(playWhenReady, reason)
+    override fun onPlaybackSuppressionReasonChanged(reason: Int) = l.onPlaybackSuppressionReasonChanged(reason)
+    override fun onIsPlayingChanged(isPlaying: Boolean) = l.onIsPlayingChanged(isPlaying)
+    override fun onRepeatModeChanged(repeatMode: Int) = l.onRepeatModeChanged(repeatMode)
+    override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = l.onShuffleModeEnabledChanged(shuffleModeEnabled)
+    override fun onPlayerError(error: androidx.media3.common.PlaybackException) = l.onPlayerError(error)
+    override fun onPlayerErrorChanged(error: androidx.media3.common.PlaybackException?) = l.onPlayerErrorChanged(error)
+    override fun onPositionDiscontinuity(reason: Int) = l.onPositionDiscontinuity(reason)
+    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) =
+        l.onPositionDiscontinuity(oldPosition, newPosition, reason)
+    override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) = l.onPlaybackParametersChanged(playbackParameters)
+    override fun onSeekBackIncrementChanged(seekBackIncrementMs: Long) = l.onSeekBackIncrementChanged(seekBackIncrementMs)
+    override fun onSeekForwardIncrementChanged(seekForwardIncrementMs: Long) = l.onSeekForwardIncrementChanged(seekForwardIncrementMs)
+    override fun onMaxSeekToPreviousPositionChanged(maxSeekToPreviousPositionMs: Long) = l.onMaxSeekToPreviousPositionChanged(maxSeekToPreviousPositionMs)
+    override fun onAudioSessionIdChanged(audioSessionId: Int) = l.onAudioSessionIdChanged(audioSessionId)
+    override fun onAudioAttributesChanged(audioAttributes: androidx.media3.common.AudioAttributes) = l.onAudioAttributesChanged(audioAttributes)
+    override fun onVolumeChanged(volume: Float) = l.onVolumeChanged(volume)
+    override fun onSkipSilenceEnabledChanged(skipSilenceEnabled: Boolean) = l.onSkipSilenceEnabledChanged(skipSilenceEnabled)
+    override fun onDeviceInfoChanged(deviceInfo: androidx.media3.common.DeviceInfo) = l.onDeviceInfoChanged(deviceInfo)
+    override fun onDeviceVolumeChanged(volume: Int, muted: Boolean) = l.onDeviceVolumeChanged(volume, muted)
+    override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) = l.onVideoSizeChanged(videoSize)
+    override fun onSurfaceSizeChanged(width: Int, height: Int) = l.onSurfaceSizeChanged(width, height)
+    override fun onRenderedFirstFrame() = l.onRenderedFirstFrame()
+    override fun onCues(cues: List<androidx.media3.common.text.Cue>) = l.onCues(cues)
+    override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) = l.onCues(cueGroup)
+    override fun onMetadata(metadata: androidx.media3.common.Metadata) = l.onMetadata(metadata)
 }
