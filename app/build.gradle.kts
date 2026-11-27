@@ -27,8 +27,8 @@ android {
         // Android 8.0+: older phones, tablets and most aftermarket Android head units.
         minSdk = 26
         targetSdk = 37
-        versionCode = 34
-        versionName = "0.8.1-beta.5"
+        versionCode = 35
+        versionName = "0.8.2"
         buildConfigField("boolean", "YOUTUBE_DOWNLOADS", optIn("pitstop.youtubeDownloads").toString())
         buildConfigField("boolean", "DRIVE_FULL_ACCESS", optIn("pitstop.driveFullAccess").toString())
         // Settings → Check for updates reads this GitHub repository's latest release (owner/name).

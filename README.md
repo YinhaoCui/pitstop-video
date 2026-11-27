@@ -77,7 +77,7 @@ or NetEase instead.
   follow: live rooms first, the rest greyed as *Not live*. It is checked when you open it or pull to
   refresh, never in the background. Under a playing stream, the followed streamers who are live now
   are one tap away; the car's *Following* row lists the live ones.
-- Stars are gone: the first time 0.8.1 runs, the creator of everything you had starred is followed,
+- Stars are gone: the first time 0.8.2 runs, the creator of everything you had starred is followed,
   and the *Starred* playlist stays as an ordinary playlist (rename or delete it as you like).
 
 ### Queue and playlists
