@@ -217,9 +217,12 @@ class PlaybackHub(
                     return
                 }
                 // The server answered, but with an HTTP error: not a lost connection.
-                val status = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
+                val httpError = error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException
+                val status = httpError?.responseCode
                 if (status != null && cur != null && key != null) {
-                    android.util.Log.w("PlaybackHub", "HTTP $status for ${cur.source}:${cur.id}")
+                    // The server (host and path, not the signed query) tells which CDN or file refused.
+                    val uri = httpError.dataSpec.uri
+                    android.util.Log.w("PlaybackHub", "HTTP $status for ${cur.source}:${cur.id} from ${uri.host}${uri.path}")
                     when (httpFailure(status)) {
                         HttpFailure.REFRESH -> {
                             // Tokens (Google Drive) and signed links expire: fetch a fresh one once, quietly.
